@@ -38,9 +38,6 @@
 #include "safe-read.h"
 #include "stat-size.h"
 #include "xbinary-io.h"
-#ifdef USE_AVX2_WC_LINECOUNT
-# include <cpuid.h>
-#endif
 
 #if !defined iswspace && !HAVE_ISWSPACE
 # define iswspace(wc) \
@@ -57,18 +54,12 @@
 /* Size of atomic reads. */
 #define BUFFER_SIZE (16 * 1024)
 
-static bool
-wc_lines (char const *file, int fd, uintmax_t *lines_out,
-          uintmax_t *bytes_out);
 #ifdef USE_AVX2_WC_LINECOUNT
 /* From wc_avx2.c */
 extern bool
 wc_lines_avx2 (char const *file, int fd, uintmax_t *lines_out,
                uintmax_t *bytes_out);
 #endif
-static bool
-(*wc_lines_p) (char const *file, int fd, uintmax_t *lines_out,
-                uintmax_t *bytes_out) = wc_lines;
 
 static bool debug;
 
@@ -157,52 +148,14 @@ static enum total_type total_mode = total_auto;
 static bool
 avx2_supported (void)
 {
-  unsigned int eax = 0;
-  unsigned int ebx = 0;
-  unsigned int ecx = 0;
-  unsigned int edx = 0;
-  bool getcpuid_ok = false;
-  bool avx_enabled = false;
+  bool avx_enabled = 0 < __builtin_cpu_supports ("avx2");
 
-  if (__get_cpuid (1, &eax, &ebx, &ecx, &edx))
-    {
-      getcpuid_ok = true;
-      if (ecx & bit_OSXSAVE)
-        avx_enabled = true;  /* Support is not disabled.  */
-    }
+  if (debug)
+    error (0, 0, (avx_enabled
+                  ? _("using avx2 hardware support")
+                  : _("avx2 support not detected")));
 
-
-  if (avx_enabled)
-    {
-      eax = ebx = ecx = edx = 0;
-      if (! __get_cpuid_count (7, 0, &eax, &ebx, &ecx, &edx))
-        getcpuid_ok = false;
-      else
-        {
-          if (! (ebx & bit_AVX2))
-            avx_enabled = false;  /* Hardware doesn't support it.  */
-        }
-    }
-
-
-  if (! getcpuid_ok)
-    {
-      if (debug)
-        error (0, 0, "%s", _("failed to get cpuid"));
-      return false;
-    }
-  else if (! avx_enabled)
-    {
-      if (debug)
-        error (0, 0, "%s", _("avx2 support not detected"));
-      return false;
-    }
-  else
-    {
-      if (debug)
-        error (0, 0, "%s", _("using avx2 hardware support"));
-      return true;
-    }
+  return avx_enabled;
 }
 #endif
 
@@ -482,8 +435,12 @@ wc (int fd, char const *file_x, struct fstatus *fstatus, off_t current_pos)
   else if (!count_chars && !count_complicated)
     {
 #ifdef USE_AVX2_WC_LINECOUNT
-      if (avx2_supported ())
-        wc_lines_p = wc_lines_avx2;
+      static bool (*wc_lines_p) (char const *, int, uintmax_t *, uintmax_t *);
+      if (!wc_lines_p)
+        wc_lines_p = avx2_supported () ? wc_lines_avx2 : wc_lines;
+#else
+      bool (*wc_lines_p) (char const *, int, uintmax_t *, uintmax_t *)
+        = wc_lines;
 #endif
 
       /* Use a separate loop when counting only lines or lines and bytes --

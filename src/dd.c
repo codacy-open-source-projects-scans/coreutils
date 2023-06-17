@@ -25,7 +25,6 @@
 #include "alignalloc.h"
 #include "close-stream.h"
 #include "die.h"
-#include "error.h"
 #include "fd-reopen.h"
 #include "gethrxtime.h"
 #include "human.h"
@@ -1429,7 +1428,7 @@ parse_integer (char const *str, strtol_error *invalid)
   intmax_t result;
 
   if ((e & ~LONGINT_OVERFLOW) == LONGINT_INVALID_SUFFIX_CHAR
-      && suffix[-1] != 'B' && *suffix == 'B')
+      && *suffix == 'B' && str < suffix && suffix[-1] != 'B')
     {
       suffix++;
       if (!*suffix)
@@ -1437,10 +1436,10 @@ parse_integer (char const *str, strtol_error *invalid)
     }
 
   if ((e & ~LONGINT_OVERFLOW) == LONGINT_INVALID_SUFFIX_CHAR
-      && *suffix == 'x' && ! (suffix[-1] == 'B' && strchr (suffix + 1, 'B')))
+      && *suffix == 'x')
     {
-      uintmax_t o;
-      strtol_error f = xstrtoumax (suffix + 1, &suffix, 10, &o, suffixes);
+      strtol_error f = LONGINT_OK;
+      intmax_t o = parse_integer (suffix + 1, &f);
       if ((f & ~LONGINT_OVERFLOW) != LONGINT_OK)
         {
           e = f;
@@ -1498,7 +1497,7 @@ scanargs (int argc, char *const *argv)
 
       if (val == NULL)
         {
-          diagnose (0, _("unrecognized operand %s"), quote (name));
+          diagnose (0, _("unrecognized operand %s"), quoteaf (name));
           usage (EXIT_FAILURE);
         }
       val++;
@@ -1576,7 +1575,7 @@ scanargs (int argc, char *const *argv)
             }
           else
             {
-              diagnose (0, _("unrecognized operand %s"), quote (name));
+              diagnose (0, _("unrecognized operand %s"), quoteaf (name));
               usage (EXIT_FAILURE);
             }
 
@@ -1587,7 +1586,7 @@ scanargs (int argc, char *const *argv)
 
           if (invalid != LONGINT_OK)
             die (EXIT_FAILURE, invalid == LONGINT_OVERFLOW ? EOVERFLOW : 0,
-                 "%s: %s", _("invalid number"), quote (val));
+                 "%s: %s", _("invalid number"), quoteaf (val));
           else if (converted_idx)
             *converted_idx = n;
         }

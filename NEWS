@@ -11,6 +11,10 @@ GNU coreutils NEWS                                    -*- outline -*-
   cksum again diagnoses read errors in its default CRC32 mode.
   [bug introduced in coreutils-9.0]
 
+  dd again supports more than two multipliers for numbers.
+  Previously numbers of the form '1024x1024x32' gave "invalid number" errors.
+  [bug introduced in coreutils-9.1]
+
   factor, numfmt, and tsort now diagnose read errors on the input.
   [This bug was present in "the beginning".]
 
@@ -18,8 +22,16 @@ GNU coreutils NEWS                                    -*- outline -*-
   Previously such file names would have caused the strip process to fail.
   [This bug was present in "the beginning".]
 
+  ls now shows symlinks specified on the command line that can't be traversed.
+  Previously a "Too many levels of symbolic links" diagnostic was given.
+  [This bug was present in "the beginning".]
+
   'pr --length=1 --double-space' no longer enters an infinite loop.
   [This bug was present in "the beginning".]
+
+  'wc -l' and 'cksum' no longer crash with an "Illegal instruction" error
+  on x86 Linux kernels that disable XSAVE YMM.  This was seen on Xen VMs.
+  [bug introduced in coreutils-9.0]
 
 ** Changes in behavior
 
@@ -28,6 +40,10 @@ GNU coreutils NEWS                                    -*- outline -*-
   I.e., 'cp -u -v' etc. will have the same verbosity as before coreutils-9.3.
 
 ** Improvements
+
+  cp, mv, and install now avoid copy_file_range on linux kernels before 5.3
+  irrespective of which kernel version coreutils is built against,
+  reinstating that behaviour from coreutils-9.0.
 
   split now uses more tuned access patterns for its potentially large input.
   This was seen to improve throughput by 5% when reading from SSD.

@@ -141,54 +141,26 @@ main (void)
 # include "error.h"
 
 # include "cksum.h"
-# if USE_PCLMUL_CRC32
-#  include "cpuid.h"
-# else
-#  define cksum_pclmul cksum_slice8
-# endif /* USE_PCLMUL_CRC32 */
 
 /* Number of bytes to read at once.  */
 # define BUFLEN (1 << 16)
 
-
-static bool
-cksum_slice8 (FILE *fp, uint_fast32_t *crc_out, uintmax_t *length_out);
-static bool
-  (*cksum_fp)(FILE *, uint_fast32_t *, uintmax_t *);
-
+# if USE_PCLMUL_CRC32
 static bool
 pclmul_supported (void)
 {
-# if USE_PCLMUL_CRC32
-  unsigned int eax = 0;
-  unsigned int ebx = 0;
-  unsigned int ecx = 0;
-  unsigned int edx = 0;
-
-  if (! __get_cpuid (1, &eax, &ebx, &ecx, &edx))
-    {
-      if (cksum_debug)
-        error (0, 0, "%s", _("failed to get cpuid"));
-      return false;
-    }
-
-  if (! (ecx & bit_PCLMUL) || ! (ecx & bit_AVX))
-    {
-      if (cksum_debug)
-        error (0, 0, "%s", _("pclmul support not detected"));
-      return false;
-    }
+  bool pclmul_enabled = (0 < __builtin_cpu_supports ("pclmul")
+                         && 0 < __builtin_cpu_supports ("avx"));
 
   if (cksum_debug)
-    error (0, 0, "%s", _("using pclmul hardware support"));
+    error (0, 0, "%s",
+           (pclmul_enabled
+            ? _("using pclmul hardware support")
+            : _("pclmul support not detected")));
 
-  return true;
-# else
-  if (cksum_debug)
-    error (0, 0, "%s", _("using generic hardware support"));
-  return false;
-# endif /* USE_PCLMUL_CRC32 */
+  return pclmul_enabled;
 }
+# endif /* USE_PCLMUL_CRC32 */
 
 static bool
 cksum_slice8 (FILE *fp, uint_fast32_t *crc_out, uintmax_t *length_out)
@@ -253,13 +225,13 @@ crc_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
   uintmax_t total_bytes = 0;
   uint_fast32_t crc = 0;
 
+# if USE_PCLMUL_CRC32
+  static bool (*cksum_fp) (FILE *, uint_fast32_t *, uintmax_t *);
   if (! cksum_fp)
-    {
-       if (pclmul_supported ())
-         cksum_fp = cksum_pclmul;
-       else
-         cksum_fp = cksum_slice8;
-    }
+    cksum_fp = pclmul_supported () ? cksum_pclmul : cksum_slice8;
+# else
+  bool (*cksum_fp) (FILE *, uint_fast32_t *, uintmax_t *) = cksum_slice8;
+# endif
 
   if (! cksum_fp (stream, &crc, &total_bytes))
     return -1;
