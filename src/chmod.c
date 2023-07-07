@@ -22,9 +22,8 @@
 #include <sys/types.h>
 
 #include "system.h"
+#include "assure.h"
 #include "dev-ino.h"
-#include "die.h"
-#include "error.h"
 #include "filemode.h"
 #include "ignore-value.h"
 #include "modechange.h"
@@ -87,7 +86,7 @@ static bool diagnose_surprises;
 static enum Verbosity verbosity = V_off;
 
 /* Pointer to the device and inode numbers of '/', when --recursive.
-   Otherwise NULL.  */
+   Otherwise nullptr.  */
 static struct dev_ino *root_dev_ino;
 
 /* For long options that have no equivalent short option, use a
@@ -101,17 +100,17 @@ enum
 
 static struct option const long_options[] =
 {
-  {"changes", no_argument, NULL, 'c'},
-  {"recursive", no_argument, NULL, 'R'},
-  {"no-preserve-root", no_argument, NULL, NO_PRESERVE_ROOT},
-  {"preserve-root", no_argument, NULL, PRESERVE_ROOT},
-  {"quiet", no_argument, NULL, 'f'},
-  {"reference", required_argument, NULL, REFERENCE_FILE_OPTION},
-  {"silent", no_argument, NULL, 'f'},
-  {"verbose", no_argument, NULL, 'v'},
+  {"changes", no_argument, nullptr, 'c'},
+  {"recursive", no_argument, nullptr, 'R'},
+  {"no-preserve-root", no_argument, nullptr, NO_PRESERVE_ROOT},
+  {"preserve-root", no_argument, nullptr, PRESERVE_ROOT},
+  {"quiet", no_argument, nullptr, 'f'},
+  {"reference", required_argument, nullptr, REFERENCE_FILE_OPTION},
+  {"silent", no_argument, nullptr, 'f'},
+  {"verbose", no_argument, nullptr, 'v'},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
-  {NULL, 0, NULL, 0}
+  {nullptr, 0, nullptr, 0}
 };
 
 /* Return true if the chmodable permission bits of FILE changed.
@@ -191,7 +190,7 @@ describe_change (char const *file, struct change_status const *ch)
       printf (fmt, quoted_file, m, &perms[1]);
       return;
     default:
-      abort ();
+      affirm (false);
     }
   printf (fmt, quoted_file, old_m, &old_perms[1], m, &perms[1]);
 }
@@ -277,7 +276,7 @@ process_file (FTS *fts, FTSENT *ent)
     {
       ch.old_mode = file_stats->st_mode;
       ch.new_mode = mode_adjust (ch.old_mode, S_ISDIR (ch.old_mode) != 0,
-                                 umask_value, change, NULL);
+                                 umask_value, change, nullptr);
       if (chmodat (fts->fts_cwd_fd, file, ch.new_mode) == 0)
         ch.status = CH_SUCCEEDED;
       else
@@ -303,7 +302,8 @@ process_file (FTS *fts, FTSENT *ent)
   if (CH_NO_CHANGE_REQUESTED <= ch.status && diagnose_surprises)
     {
       mode_t naively_expected_mode =
-        mode_adjust (ch.old_mode, S_ISDIR (ch.old_mode) != 0, 0, change, NULL);
+        mode_adjust (ch.old_mode, S_ISDIR (ch.old_mode) != 0,
+                     0, change, nullptr);
       if (ch.new_mode & ~naively_expected_mode)
         {
           char new_perms[12];
@@ -326,7 +326,7 @@ process_file (FTS *fts, FTSENT *ent)
 }
 
 /* Recursively change the modes of the specified FILES (the last entry
-   of which is NULL).  BIT_FLAGS controls how fts works.
+   of which is null).  BIT_FLAGS controls how fts works.
    Return true if successful.  */
 
 static bool
@@ -334,14 +334,14 @@ process_files (char **files, int bit_flags)
 {
   bool ok = true;
 
-  FTS *fts = xfts_open (files, bit_flags, NULL);
+  FTS *fts = xfts_open (files, bit_flags, nullptr);
 
   while (true)
     {
       FTSENT *ent;
 
       ent = fts_read (fts);
-      if (ent == NULL)
+      if (ent == nullptr)
         {
           if (errno != 0)
             {
@@ -416,12 +416,12 @@ Each MODE is of the form '[ugoa]*([-+=]([rwxXst]*|[ugo]))+|[-+=][0-7]+'.\n\
 int
 main (int argc, char **argv)
 {
-  char *mode = NULL;
+  char *mode = nullptr;
   idx_t mode_len = 0;
   idx_t mode_alloc = 0;
   bool ok;
   bool preserve_root = false;
-  char const *reference_file = NULL;
+  char const *reference_file = nullptr;
   int c;
 
   initialize_main (&argc, &argv);
@@ -437,7 +437,7 @@ main (int argc, char **argv)
   while ((c = getopt_long (argc, argv,
                            ("Rcfvr::w::x::X::s::t::u::g::o::a::,::+::=::"
                             "0::1::2::3::4::5::6::7::"),
-                           long_options, NULL))
+                           long_options, nullptr))
          != -1)
     {
       switch (c)
@@ -537,8 +537,8 @@ main (int argc, char **argv)
     {
       change = mode_create_from_ref (reference_file);
       if (!change)
-        die (EXIT_FAILURE, errno, _("failed to get attributes of %s"),
-             quoteaf (reference_file));
+        error (EXIT_FAILURE, errno, _("failed to get attributes of %s"),
+               quoteaf (reference_file));
     }
   else
     {
@@ -555,13 +555,13 @@ main (int argc, char **argv)
     {
       static struct dev_ino dev_ino_buf;
       root_dev_ino = get_root_dev_ino (&dev_ino_buf);
-      if (root_dev_ino == NULL)
-        die (EXIT_FAILURE, errno, _("failed to get attributes of %s"),
-             quoteaf ("/"));
+      if (root_dev_ino == nullptr)
+        error (EXIT_FAILURE, errno, _("failed to get attributes of %s"),
+               quoteaf ("/"));
     }
   else
     {
-      root_dev_ino = NULL;
+      root_dev_ino = nullptr;
     }
 
   ok = process_files (argv + optind,

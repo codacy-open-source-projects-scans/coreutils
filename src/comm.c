@@ -22,8 +22,6 @@
 #include <sys/types.h>
 #include "system.h"
 #include "linebuffer.h"
-#include "die.h"
-#include "error.h"
 #include "fadvise.h"
 #include "hard-locale.h"
 #include "quote.h"
@@ -91,14 +89,14 @@ enum
 
 static struct option const long_options[] =
 {
-  {"check-order", no_argument, NULL, CHECK_ORDER_OPTION},
-  {"nocheck-order", no_argument, NULL, NOCHECK_ORDER_OPTION},
-  {"output-delimiter", required_argument, NULL, OUTPUT_DELIMITER_OPTION},
-  {"total", no_argument, NULL, TOTAL_OPTION},
-  {"zero-terminated", no_argument, NULL, 'z'},
+  {"check-order", no_argument, nullptr, CHECK_ORDER_OPTION},
+  {"nocheck-order", no_argument, nullptr, NOCHECK_ORDER_OPTION},
+  {"output-delimiter", required_argument, nullptr, OUTPUT_DELIMITER_OPTION},
+  {"total", no_argument, nullptr, TOTAL_OPTION},
+  {"zero-terminated", no_argument, nullptr, 'z'},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
-  {NULL, 0, NULL, 0}
+  {nullptr, 0, nullptr, 0}
 };
 
 
@@ -258,7 +256,7 @@ compare_files (char **infiles)
   struct linebuffer lba[2][4];
 
   /* thisline[i] points to the linebuffer holding the next available line
-     in file i, or is NULL if there are no lines left in that file.  */
+     in file i, or is null if there are no lines left in that file.  */
   struct linebuffer *thisline[2];
 
   /* all_line[i][alt[i][0]] also points to the linebuffer holding the
@@ -290,14 +288,14 @@ compare_files (char **infiles)
       alt[i][2] = 0;
       streams[i] = (STREQ (infiles[i], "-") ? stdin : fopen (infiles[i], "r"));
       if (!streams[i])
-        die (EXIT_FAILURE, errno, "%s", quotef (infiles[i]));
+        error (EXIT_FAILURE, errno, "%s", quotef (infiles[i]));
 
       fadvise (streams[i], FADVISE_SEQUENTIAL);
 
       thisline[i] = readlinebuffer_delim (all_line[i][alt[i][0]], streams[i],
                                           delim);
       if (ferror (streams[i]))
-        die (EXIT_FAILURE, errno, "%s", quotef (infiles[i]));
+        error (EXIT_FAILURE, errno, "%s", quotef (infiles[i]));
     }
 
   while (thisline[0] || thisline[1])
@@ -379,7 +377,7 @@ compare_files (char **infiles)
                            all_line[i][alt[i][1]], i + 1);
 
             if (ferror (streams[i]))
-              die (EXIT_FAILURE, errno, "%s", quotef (infiles[i]));
+              error (EXIT_FAILURE, errno, "%s", quotef (infiles[i]));
 
             fill_up[i] = false;
           }
@@ -387,7 +385,7 @@ compare_files (char **infiles)
 
   for (i = 0; i < 2; i++)
     if (fclose (streams[i]) != 0)
-      die (EXIT_FAILURE, errno, "%s", quotef (infiles[i]));
+      error (EXIT_FAILURE, errno, "%s", quotef (infiles[i]));
 
   if (total_option)
     {
@@ -414,7 +412,7 @@ compare_files (char **infiles)
     }
 
   if (issued_disorder_warning[0] || issued_disorder_warning[1])
-    die (EXIT_FAILURE, 0, _("input is not in sorted order"));
+    error (EXIT_FAILURE, 0, _("input is not in sorted order"));
 
   /* Exit here to pacify gcc -fsanitizer=leak.  */
   exit (EXIT_SUCCESS);
@@ -443,7 +441,7 @@ main (int argc, char **argv)
   check_input_order = CHECK_ORDER_DEFAULT;
   total_option = false;
 
-  while ((c = getopt_long (argc, argv, "123z", long_options, NULL)) != -1)
+  while ((c = getopt_long (argc, argv, "123z", long_options, nullptr)) != -1)
     switch (c)
       {
       case '1':
@@ -472,7 +470,7 @@ main (int argc, char **argv)
 
       case OUTPUT_DELIMITER_OPTION:
         if (col_sep_len && !STREQ (col_sep, optarg))
-          die (EXIT_FAILURE, 0, _("multiple output delimiters specified"));
+          error (EXIT_FAILURE, 0, _("multiple output delimiters specified"));
         col_sep = optarg;
         col_sep_len = *optarg ? strlen (optarg) : 1;
         break;

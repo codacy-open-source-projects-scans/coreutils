@@ -52,11 +52,9 @@
 #endif
 #include <getopt.h>
 #include <stdarg.h>
-#include <assert.h>
 
 #include "system.h"
-#include "die.h"
-#include "error.h"
+#include "assure.h"
 #include "fd-reopen.h"
 #include "quote.h"
 #include "xdectoint.h"
@@ -377,7 +375,7 @@ static struct mode_info const mode_info[] =
   {"crt", combination, OMIT, 0, 0},
   {"dec", combination, OMIT, 0, 0},
 
-  {NULL, control, 0, 0, 0}
+  {nullptr, control, 0, 0, 0}
 };
 
 /* Control character settings.  */
@@ -434,7 +432,7 @@ static struct control_info const control_info[] =
   /* These must be last because of the display routines. */
   {"min", 1, VMIN},
   {"time", 0, VTIME},
-  {NULL, 0, 0}
+  {nullptr, 0, 0}
 };
 
 static char const *visible (cc_t ch);
@@ -489,13 +487,13 @@ enum
 
 static struct option const longopts[] =
 {
-  {"all", no_argument, NULL, 'a'},
-  {"save", no_argument, NULL, 'g'},
-  {"file", required_argument, NULL, 'F'},
-  {"-debug", no_argument, NULL, DEV_DEBUG_OPTION},
+  {"all", no_argument, nullptr, 'a'},
+  {"save", no_argument, nullptr, 'g'},
+  {"file", required_argument, nullptr, 'F'},
+  {"-debug", no_argument, nullptr, DEV_DEBUG_OPTION},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
-  {NULL, 0, NULL, 0}
+  {nullptr, 0, nullptr, 0}
 };
 
 /* Print format string MESSAGE and optional args.
@@ -1134,7 +1132,7 @@ apply_settings (bool checking, char const *device_name,
           tcsetattr_options = reversed ? TCSANOW : TCSADRAIN;
           continue;
         }
-      for (i = 0; mode_info[i].name != NULL; ++i)
+      for (i = 0; mode_info[i].name != nullptr; ++i)
         {
           if (STREQ (arg, mode_info[i].name))
             {
@@ -1155,7 +1153,7 @@ apply_settings (bool checking, char const *device_name,
         }
       if (!match_found)
         {
-          for (i = 0; control_info[i].name != NULL; ++i)
+          for (i = 0; control_info[i].name != nullptr; ++i)
             {
               if (STREQ (arg, control_info[i].name))
                 {
@@ -1209,10 +1207,8 @@ apply_settings (bool checking, char const *device_name,
                 continue;
 
               if (ioctl (STDIN_FILENO, TIOCEXT, &val) != 0)
-                {
-                  die (EXIT_FAILURE, errno, _("%s: error setting %s"),
+                error (EXIT_FAILURE, errno, _("%s: error setting %s"),
                        quotef_n (0, device_name), quote_n (1, arg));
-                }
             }
 #endif
 #ifdef TIOCGWINSZ
@@ -1302,7 +1298,7 @@ main (int argc, char **argv)
   bool verbose_output;
   bool recoverable_output;
   bool noargs = true;
-  char *file_name = NULL;
+  char *file_name = nullptr;
   char const *device_name;
 
   initialize_main (&argc, &argv);
@@ -1328,7 +1324,7 @@ main (int argc, char **argv)
      short and long options, --, POSIXLY_CORRECT, etc.  */
 
   while ((optc = getopt_long (argc - argi, argv + argi, "-agF:",
-                              longopts, NULL))
+                              longopts, nullptr))
          != -1)
     {
       switch (optc)
@@ -1345,7 +1341,7 @@ main (int argc, char **argv)
 
         case 'F':
           if (file_name)
-            die (EXIT_FAILURE, 0, _("only one device may be specified"));
+            error (EXIT_FAILURE, 0, _("only one device may be specified"));
           file_name = optarg;
           break;
 
@@ -1377,19 +1373,19 @@ main (int argc, char **argv)
 
       /* Clear fully-parsed arguments, so they don't confuse the 2nd pass.  */
       while (opti < optind)
-        argv[argi + opti++] = NULL;
+        argv[argi + opti++] = nullptr;
     }
 
   /* Specifying both -a and -g gets an error.  */
   if (verbose_output && recoverable_output)
-    die (EXIT_FAILURE, 0,
-         _("the options for verbose and stty-readable output styles are\n"
-           "mutually exclusive"));
+    error (EXIT_FAILURE, 0,
+           _("the options for verbose and stty-readable output styles are\n"
+             "mutually exclusive"));
 
   /* Specifying any other arguments with -a or -g gets an error.  */
   if (!noargs && (verbose_output || recoverable_output))
-    die (EXIT_FAILURE, 0,
-         _("when specifying an output style, modes may not be set"));
+    error (EXIT_FAILURE, 0,
+           _("when specifying an output style, modes may not be set"));
 
   device_name = file_name ? file_name : _("standard input");
 
@@ -1404,15 +1400,15 @@ main (int argc, char **argv)
     {
       int fdflags;
       if (fd_reopen (STDIN_FILENO, device_name, O_RDONLY | O_NONBLOCK, 0) < 0)
-        die (EXIT_FAILURE, errno, "%s", quotef (device_name));
+        error (EXIT_FAILURE, errno, "%s", quotef (device_name));
       if ((fdflags = fcntl (STDIN_FILENO, F_GETFL)) == -1
           || fcntl (STDIN_FILENO, F_SETFL, fdflags & ~O_NONBLOCK) < 0)
-        die (EXIT_FAILURE, errno, _("%s: couldn't reset non-blocking mode"),
-             quotef (device_name));
+        error (EXIT_FAILURE, errno, _("%s: couldn't reset non-blocking mode"),
+               quotef (device_name));
     }
 
   if (tcgetattr (STDIN_FILENO, &mode))
-    die (EXIT_FAILURE, errno, "%s", quotef (device_name));
+    error (EXIT_FAILURE, errno, "%s", quotef (device_name));
 
   if (verbose_output || recoverable_output || noargs)
     {
@@ -1433,7 +1429,7 @@ main (int argc, char **argv)
       static struct termios new_mode;
 
       if (tcsetattr (STDIN_FILENO, tcsetattr_options, &mode))
-        die (EXIT_FAILURE, errno, "%s", quotef (device_name));
+        error (EXIT_FAILURE, errno, "%s", quotef (device_name));
 
       /* POSIX (according to Zlotnick's book) tcsetattr returns zero if
          it performs *any* of the requested operations.  This means it
@@ -1443,7 +1439,7 @@ main (int argc, char **argv)
          compare them to the requested ones.  */
 
       if (tcgetattr (STDIN_FILENO, &new_mode))
-        die (EXIT_FAILURE, errno, "%s", quotef (device_name));
+        error (EXIT_FAILURE, errno, "%s", quotef (device_name));
 
       if (! eq_mode (&mode, &new_mode))
         {
@@ -1459,9 +1455,9 @@ main (int argc, char **argv)
                 }
             }
 
-          die (EXIT_FAILURE, 0,
-                _("%s: unable to perform all requested operations"),
-                quotef (device_name));
+          error (EXIT_FAILURE, 0,
+                 _("%s: unable to perform all requested operations"),
+                 quotef (device_name));
         }
     }
 
@@ -1498,7 +1494,7 @@ set_mode (struct mode_info const *info, bool reversed, struct termios *mode)
 
   bitsp = mode_type_flag (info->type, mode);
 
-  if (bitsp == NULL)
+  if (bitsp == nullptr)
     {
       /* Combination mode. */
       if (STREQ (info->name, "evenp") || STREQ (info->name, "parity"))
@@ -1726,19 +1722,19 @@ set_speed (enum speed_setting type, char const *arg, struct termios *mode)
      Therefore we don't report the device name in any errors.  */
 
   speed_t baud = string_to_baud (arg);
-  assert (baud != (speed_t) -1);
+  affirm (baud != (speed_t) -1);
 
   if (type == input_speed || type == both_speeds)
     {
       last_ibaud = baud;
       if (cfsetispeed (mode, baud))
-        die (EXIT_FAILURE, 0, "unsupported ispeed %s", quoteaf (arg));
+        error (EXIT_FAILURE, 0, _("unsupported ispeed %s"), quoteaf (arg));
     }
   if (type == output_speed || type == both_speeds)
     {
       last_obaud = baud;
       if (cfsetospeed (mode, baud))
-        die (EXIT_FAILURE, 0, "unsupported ospeed %s", quoteaf (arg));
+        error (EXIT_FAILURE, 0, _("unsupported ospeed %s"), quoteaf (arg));
     }
 }
 
@@ -1759,7 +1755,7 @@ set_window_size (int rows, int cols, char const *device_name)
   if (get_win_size (STDIN_FILENO, &win))
     {
       if (errno != EINVAL)
-        die (EXIT_FAILURE, errno, "%s", quotef (device_name));
+        error (EXIT_FAILURE, errno, "%s", quotef (device_name));
       memset (&win, 0, sizeof (win));
     }
 
@@ -1801,16 +1797,16 @@ set_window_size (int rows, int cols, char const *device_name)
       win.ws_col = 1;
 
       if (ioctl (STDIN_FILENO, TIOCSWINSZ, (char *) &win))
-        die (EXIT_FAILURE, errno, "%s", quotef (device_name));
+        error (EXIT_FAILURE, errno, "%s", quotef (device_name));
 
       if (ioctl (STDIN_FILENO, TIOCSSIZE, (char *) &ttysz))
-        die (EXIT_FAILURE, errno, "%s", quotef (device_name));
+        error (EXIT_FAILURE, errno, "%s", quotef (device_name));
       return;
     }
 # endif
 
   if (ioctl (STDIN_FILENO, TIOCSWINSZ, (char *) &win))
-    die (EXIT_FAILURE, errno, "%s", quotef (device_name));
+    error (EXIT_FAILURE, errno, "%s", quotef (device_name));
 }
 
 static void
@@ -1821,11 +1817,11 @@ display_window_size (bool fancy, char const *device_name)
   if (get_win_size (STDIN_FILENO, &win))
     {
       if (errno != EINVAL)
-        die (EXIT_FAILURE, errno, "%s", quotef (device_name));
+        error (EXIT_FAILURE, errno, "%s", quotef (device_name));
       if (!fancy)
-        die (EXIT_FAILURE, 0,
-             _("%s: no size information for this device"),
-             quotef (device_name));
+        error (EXIT_FAILURE, 0,
+               _("%s: no size information for this device"),
+               quotef (device_name));
     }
   else
     {
@@ -1856,8 +1852,8 @@ screen_columns (void)
     /* Use $COLUMNS if it's in [1..INT_MAX].  */
     char *col_string = getenv ("COLUMNS");
     long int n_columns;
-    if (!(col_string != NULL
-          && xstrtol (col_string, NULL, 0, &n_columns, "") == LONGINT_OK
+    if (!(col_string != nullptr
+          && xstrtol (col_string, nullptr, 0, &n_columns, "") == LONGINT_OK
           && 0 < n_columns
           && n_columns <= INT_MAX))
       n_columns = 80;
@@ -1884,10 +1880,10 @@ mode_type_flag (enum mode_type type, struct termios *mode)
       return &mode->c_lflag;
 
     case combination:
-      return NULL;
+      return nullptr;
 
     default:
-      abort ();
+      unreachable ();
     }
 }
 
@@ -1966,7 +1962,7 @@ display_changed (struct termios *mode)
   current_col = 0;
 
   empty_line = true;
-  for (i = 0; mode_info[i].name != NULL; ++i)
+  for (i = 0; mode_info[i].name != nullptr; ++i)
     {
       if (mode_info[i].flags & OMIT)
         continue;
@@ -1983,12 +1979,6 @@ display_changed (struct termios *mode)
 
       bitsp = mode_type_flag (mode_info[i].type, mode);
       mask = mode_info[i].mask ? mode_info[i].mask : mode_info[i].bits;
-
-      /* bitsp would be NULL only for "combination" modes, yet those
-         are filtered out above via the OMIT flag.  Tell static analysis
-         tools that it's ok to dereference bitsp here.  */
-      assert (bitsp);
-
       if ((*bitsp & mask) == mode_info[i].bits)
         {
           if (mode_info[i].flags & SANE_UNSET)
@@ -2058,7 +2048,7 @@ display_all (struct termios *mode, char const *device_name)
     putchar ('\n');
   current_col = 0;
 
-  for (i = 0; mode_info[i].name != NULL; ++i)
+  for (i = 0; mode_info[i].name != nullptr; ++i)
     {
       if (mode_info[i].flags & OMIT)
         continue;
@@ -2071,7 +2061,6 @@ display_all (struct termios *mode, char const *device_name)
 
       bitsp = mode_type_flag (mode_info[i].type, mode);
       mask = mode_info[i].mask ? mode_info[i].mask : mode_info[i].bits;
-      assert (bitsp); /* See the identical assertion and comment above.  */
       if ((*bitsp & mask) == mode_info[i].bits)
         wrapf ("%s", mode_info[i].name);
       else if (mode_info[i].flags & REV)
@@ -2092,9 +2081,9 @@ check_speed (struct termios *mode)
     {
       if (cfgetispeed (mode) != last_ibaud
           || cfgetospeed (mode) != last_obaud)
-        die (EXIT_FAILURE, 0,
-             _("asymmetric input (%lu), output (%lu) speeds not supported"),
-             baud_to_value (last_ibaud), baud_to_value (last_obaud));
+        error (EXIT_FAILURE, 0,
+               _("asymmetric input (%lu), output (%lu) speeds not supported"),
+               baud_to_value (last_ibaud), baud_to_value (last_obaud));
     }
 }
 
@@ -2257,14 +2246,14 @@ static struct speed_map const speeds[] =
 #ifdef B4000000
   {"4000000", B4000000, 4000000},
 #endif
-  {NULL, 0, 0}
+  {nullptr, 0, 0}
 };
 
 ATTRIBUTE_PURE
 static speed_t
 string_to_baud (char const *arg)
 {
-  for (int i = 0; speeds[i].string != NULL; ++i)
+  for (int i = 0; speeds[i].string != nullptr; ++i)
     if (STREQ (arg, speeds[i].string))
       return speeds[i].speed;
   return (speed_t) -1;
@@ -2274,7 +2263,7 @@ ATTRIBUTE_PURE
 static unsigned long int
 baud_to_value (speed_t speed)
 {
-  for (int i = 0; speeds[i].string != NULL; ++i)
+  for (int i = 0; speeds[i].string != nullptr; ++i)
     if (speed == speeds[i].speed)
       return speeds[i].value;
   return 0;
@@ -2295,7 +2284,7 @@ sane_mode (struct termios *mode)
       mode->c_cc[control_info[i].offset] = control_info[i].saneval;
     }
 
-  for (i = 0; mode_info[i].name != NULL; ++i)
+  for (i = 0; mode_info[i].name != nullptr; ++i)
     {
       if (mode_info[i].flags & NO_SETATTR)
         continue;
@@ -2303,13 +2292,13 @@ sane_mode (struct termios *mode)
       if (mode_info[i].flags & SANE_SET)
         {
           bitsp = mode_type_flag (mode_info[i].type, mode);
-          assert (bitsp); /* combination modes will not have SANE_SET.  */
+          assume (bitsp); /* combination modes will not have SANE_SET.  */
           *bitsp = (*bitsp & ~mode_info[i].mask) | mode_info[i].bits;
         }
       else if (mode_info[i].flags & SANE_UNSET)
         {
           bitsp = mode_type_flag (mode_info[i].type, mode);
-          assert (bitsp); /* combination modes will not have SANE_UNSET.  */
+          assume (bitsp); /* combination modes will not have SANE_UNSET.  */
           *bitsp = *bitsp & ~mode_info[i].mask & ~mode_info[i].bits;
         }
     }

@@ -19,7 +19,6 @@
 #include <config.h>
 
 #include "system.h"
-#include "error.h"
 #include "quote.h"
 #include "set-fields.h"
 
@@ -72,7 +71,7 @@ complement_rp (void)
   struct field_range_pair *c = frp;
   size_t n = n_frp;
 
-  frp = NULL;
+  frp = nullptr;
   n_frp = 0;
   n_frp_allocated = 0;
 

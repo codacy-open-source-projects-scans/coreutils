@@ -20,7 +20,6 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <getopt.h>
-#include <assert.h>
 
 /* Redefine.  Otherwise, systems (Unicos for one) with headers that define
    it to be a type get syntax errors for the variable declaration below.  */
@@ -28,8 +27,6 @@
 
 #include "c-ctype.h"
 #include "system.h"
-#include "error.h"
-#include "die.h"
 #include "fadvise.h"
 #include "xdectoint.h"
 
@@ -118,9 +115,9 @@ typedef long int COST;
 
 /* Extra ctype(3)-style macros.  */
 
-#define isopen(c)	(strchr ("(['`\"", c) != NULL)
-#define isclose(c)	(strchr (")]'\"", c) != NULL)
-#define isperiod(c)	(strchr (".?!", c) != NULL)
+#define isopen(c)	(strchr ("(['`\"", c) != nullptr)
+#define isclose(c)	(strchr (")]'\"", c) != nullptr)
+#define isperiod(c)	(strchr (".?!", c) != nullptr)
 
 /* Size of a tab stop, for expansion on input and re-introduction on
    output.  */
@@ -303,16 +300,16 @@ The option -WIDTH is an abbreviated form of --width=DIGITS.\n\
 
 static struct option const long_options[] =
 {
-  {"crown-margin", no_argument, NULL, 'c'},
-  {"prefix", required_argument, NULL, 'p'},
-  {"split-only", no_argument, NULL, 's'},
-  {"tagged-paragraph", no_argument, NULL, 't'},
-  {"uniform-spacing", no_argument, NULL, 'u'},
-  {"width", required_argument, NULL, 'w'},
-  {"goal", required_argument, NULL, 'g'},
+  {"crown-margin", no_argument, nullptr, 'c'},
+  {"prefix", required_argument, nullptr, 'p'},
+  {"split-only", no_argument, nullptr, 's'},
+  {"tagged-paragraph", no_argument, nullptr, 't'},
+  {"uniform-spacing", no_argument, nullptr, 'u'},
+  {"width", required_argument, nullptr, 'w'},
+  {"goal", required_argument, nullptr, 'g'},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
-  {NULL, 0, NULL, 0},
+  {nullptr, 0, nullptr, 0},
 };
 
 int
@@ -320,8 +317,8 @@ main (int argc, char **argv)
 {
   int optchar;
   bool ok = true;
-  char const *max_width_option = NULL;
-  char const *goal_width_option = NULL;
+  char const *max_width_option = nullptr;
+  char const *goal_width_option = nullptr;
 
   initialize_main (&argc, &argv);
   set_program_name (argv[0]);
@@ -348,7 +345,7 @@ main (int argc, char **argv)
     }
 
   while ((optchar = getopt_long (argc, argv, "0123456789cstuw:p:g:",
-                                 long_options, NULL))
+                                 long_options, nullptr))
          != -1)
     switch (optchar)
       {
@@ -406,7 +403,7 @@ main (int argc, char **argv)
       /* Limit goal_width to max_width.  */
       goal_width = xdectoumax (goal_width_option, 0, max_width, "",
                                _("invalid width"), 0);
-      if (max_width_option == NULL)
+      if (max_width_option == nullptr)
         max_width = goal_width + 10;
     }
   else
@@ -435,7 +432,7 @@ main (int argc, char **argv)
             {
               FILE *in_stream;
               in_stream = fopen (file, "r");
-              if (in_stream != NULL)
+              if (in_stream != nullptr)
                 ok &= fmt (in_stream, file);
               else
                 {
@@ -448,7 +445,7 @@ main (int argc, char **argv)
     }
 
   if (have_read_stdin && fclose (stdin) != 0)
-    die (EXIT_FAILURE, errno, "%s", _("closing standard input"));
+    error (EXIT_FAILURE, errno, "%s", _("closing standard input"));
 
   return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }
@@ -618,10 +615,6 @@ get_paragraph (FILE *f)
       while (same_para (c) && in_column == other_indent)
         c = get_line (f, c);
     }
-
-  /* Tell static analysis tools that using word_limit[-1] is ok.
-     word_limit is guaranteed to have been incremented by get_line.  */
-  assert (word < word_limit);
 
   (word_limit - 1)->period = (word_limit - 1)->final = true;
   next_char = c;

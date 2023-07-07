@@ -26,13 +26,11 @@
 #include <config.h>
 #include <getopt.h>
 #include <sys/types.h>
-#include <assert.h>
 #include "system.h"
 #include "argmatch.h"
 #include "argv-iter.h"
+#include "assure.h"
 #include "di-set.h"
-#include "die.h"
-#include "error.h"
 #include "exclude.h"
 #include "fprintftime.h"
 #include "human.h"
@@ -179,10 +177,10 @@ enum time_type
 static enum time_type time_type = time_mtime;
 
 /* User specified date / time style */
-static char const *time_style = NULL;
+static char const *time_style = nullptr;
 
 /* Format used to display date / time. Controlled by --time-style */
-static char const *time_format = NULL;
+static char const *time_format = nullptr;
 
 /* The local time zone rules, as per the TZ environment variable.  */
 static timezone_t localtz;
@@ -216,38 +214,38 @@ enum
 
 static struct option const long_options[] =
 {
-  {"all", no_argument, NULL, 'a'},
-  {"apparent-size", no_argument, NULL, APPARENT_SIZE_OPTION},
-  {"block-size", required_argument, NULL, 'B'},
-  {"bytes", no_argument, NULL, 'b'},
-  {"count-links", no_argument, NULL, 'l'},
-  /* {"-debug", no_argument, NULL, FTS_DEBUG}, */
-  {"dereference", no_argument, NULL, 'L'},
-  {"dereference-args", no_argument, NULL, 'D'},
-  {"exclude", required_argument, NULL, EXCLUDE_OPTION},
-  {"exclude-from", required_argument, NULL, 'X'},
-  {"files0-from", required_argument, NULL, FILES0_FROM_OPTION},
-  {"human-readable", no_argument, NULL, 'h'},
-  {"inodes", no_argument, NULL, INODES_OPTION},
-  {"si", no_argument, NULL, HUMAN_SI_OPTION},
-  {"max-depth", required_argument, NULL, 'd'},
-  {"null", no_argument, NULL, '0'},
-  {"no-dereference", no_argument, NULL, 'P'},
-  {"one-file-system", no_argument, NULL, 'x'},
-  {"separate-dirs", no_argument, NULL, 'S'},
-  {"summarize", no_argument, NULL, 's'},
-  {"total", no_argument, NULL, 'c'},
-  {"threshold", required_argument, NULL, 't'},
-  {"time", optional_argument, NULL, TIME_OPTION},
-  {"time-style", required_argument, NULL, TIME_STYLE_OPTION},
+  {"all", no_argument, nullptr, 'a'},
+  {"apparent-size", no_argument, nullptr, APPARENT_SIZE_OPTION},
+  {"block-size", required_argument, nullptr, 'B'},
+  {"bytes", no_argument, nullptr, 'b'},
+  {"count-links", no_argument, nullptr, 'l'},
+  /* {"-debug", no_argument, nullptr, FTS_DEBUG}, */
+  {"dereference", no_argument, nullptr, 'L'},
+  {"dereference-args", no_argument, nullptr, 'D'},
+  {"exclude", required_argument, nullptr, EXCLUDE_OPTION},
+  {"exclude-from", required_argument, nullptr, 'X'},
+  {"files0-from", required_argument, nullptr, FILES0_FROM_OPTION},
+  {"human-readable", no_argument, nullptr, 'h'},
+  {"inodes", no_argument, nullptr, INODES_OPTION},
+  {"si", no_argument, nullptr, HUMAN_SI_OPTION},
+  {"max-depth", required_argument, nullptr, 'd'},
+  {"null", no_argument, nullptr, '0'},
+  {"no-dereference", no_argument, nullptr, 'P'},
+  {"one-file-system", no_argument, nullptr, 'x'},
+  {"separate-dirs", no_argument, nullptr, 'S'},
+  {"summarize", no_argument, nullptr, 's'},
+  {"total", no_argument, nullptr, 'c'},
+  {"threshold", required_argument, nullptr, 't'},
+  {"time", optional_argument, nullptr, TIME_OPTION},
+  {"time-style", required_argument, nullptr, TIME_STYLE_OPTION},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
-  {NULL, 0, NULL, 0}
+  {nullptr, 0, nullptr, 0}
 };
 
 static char const *const time_args[] =
 {
-  "atime", "access", "use", "ctime", "status", NULL
+  "atime", "access", "use", "ctime", "status", nullptr
 };
 static enum time_type const time_types[] =
 {
@@ -267,7 +265,7 @@ enum time_style
 
 static char const *const time_style_args[] =
 {
-  "full-iso", "long-iso", "iso", NULL
+  "full-iso", "long-iso", "iso", nullptr
 };
 static enum time_style const time_style_types[] =
 {
@@ -523,8 +521,8 @@ process_file (FTS *fts, FTSENT *ent)
           if (info == FTS_NSOK)
             {
               fts_set (fts, ent, FTS_AGAIN);
-              FTSENT const *e = fts_read (fts);
-              assert (e == ent);
+              MAYBE_UNUSED FTSENT const *e = fts_read (fts);
+              affirm (e == ent);
               info = ent->fts_info;
             }
 
@@ -556,8 +554,8 @@ process_file (FTS *fts, FTSENT *ent)
           if (info == FTS_D)
             {
               fts_set (fts, ent, FTS_SKIP);
-              FTSENT const *e = fts_read (fts);
-              assert (e == ent);
+              MAYBE_UNUSED FTSENT const *e = fts_read (fts);
+              affirm (e == ent);
             }
 
           return true;
@@ -635,7 +633,7 @@ process_file (FTS *fts, FTSENT *ent)
              propagate sums from the children (prev_level) to the parent.
              Here, the current level is always one smaller than the
              previous one.  */
-          assert (level == prev_level - 1);
+          affirm (level == prev_level - 1);
           duinfo_add (&dui_to_print, &dulvl[prev_level].ent);
           if (!opt_separate_dirs)
             duinfo_add (&dui_to_print, &dulvl[prev_level].subdir);
@@ -671,7 +669,7 @@ process_file (FTS *fts, FTSENT *ent)
 }
 
 /* Recursively print the sizes of the directories (and, if selected, files)
-   named in FILES, the last entry of which is NULL.
+   named in FILES, the last entry of which is null.
    BIT_FLAGS controls how fts works.
    Return true if successful.  */
 
@@ -682,14 +680,14 @@ du_files (char **files, int bit_flags)
 
   if (*files)
     {
-      FTS *fts = xfts_open (files, bit_flags, NULL);
+      FTS *fts = xfts_open (files, bit_flags, nullptr);
 
       while (true)
         {
           FTSENT *ent;
 
           ent = fts_read (fts);
-          if (ent == NULL)
+          if (ent == nullptr)
             {
               if (errno != 0)
                 {
@@ -725,7 +723,7 @@ main (int argc, char **argv)
   char *cwd_only[2];
   bool max_depth_specified = false;
   bool ok = true;
-  char *files_from = NULL;
+  char *files_from = nullptr;
 
   /* Bit flags that control how fts works.  */
   int bit_flags = FTS_NOSTAT;
@@ -738,7 +736,7 @@ main (int argc, char **argv)
   bool opt_summarize_only = false;
 
   cwd_only[0] = bad_cast (".");
-  cwd_only[1] = NULL;
+  cwd_only[1] = nullptr;
 
   initialize_main (&argc, &argv);
   set_program_name (argv[0]);
@@ -809,7 +807,7 @@ main (int argc, char **argv)
         case 'd':		/* --max-depth=N */
           {
             uintmax_t tmp;
-            if (xstrtoumax (optarg, NULL, 0, &tmp, "") == LONGINT_OK
+            if (xstrtoumax (optarg, nullptr, 0, &tmp, "") == LONGINT_OK
                 && tmp <= SIZE_MAX)
               {
                 max_depth_specified = true;
@@ -840,13 +838,14 @@ main (int argc, char **argv)
         case 't':
           {
             enum strtol_error e;
-            e = xstrtoimax (optarg, NULL, 0, &opt_threshold, "kKmMGTPEZYRQ0");
+            e = xstrtoimax (optarg, nullptr, 0, &opt_threshold,
+                            "kKmMGTPEZYRQ0");
             if (e != LONGINT_OK)
               xstrtol_fatal (e, oi, c, long_options, optarg);
             if (opt_threshold == 0 && *optarg == '-')
               {
                 /* Do not allow -0, as this wouldn't make sense anyway.  */
-                die (EXIT_FAILURE, 0, _("invalid --threshold argument '-0'"));
+                error (EXIT_FAILURE, 0, _("invalid --threshold argument '-0'"));
               }
           }
           break;
@@ -1023,8 +1022,8 @@ main (int argc, char **argv)
         }
 
       if (! (STREQ (files_from, "-") || freopen (files_from, "r", stdin)))
-        die (EXIT_FAILURE, errno, _("cannot open %s for reading"),
-             quoteaf (files_from));
+        error (EXIT_FAILURE, errno, _("cannot open %s for reading"),
+               quoteaf (files_from));
 
       ai = argv_iter_init_stream (stdin);
 
@@ -1057,7 +1056,7 @@ main (int argc, char **argv)
     bit_flags |= FTS_TIGHT_CYCLE_CHECK;
 
   bit_flags |= symlink_deref_bits;
-  static char *temp_argv[] = { NULL, NULL };
+  static char *temp_argv[] = { nullptr, nullptr };
 
   while (true)
     {
@@ -1078,7 +1077,7 @@ main (int argc, char **argv)
             case AI_ERR_MEM:
               xalloc_die ();
             default:
-              assert (!"unexpected error code from argv_iter");
+              affirm (!"unexpected error code from argv_iter");
             }
         }
       if (files_from && STREQ (files_from, "-") && STREQ (file_name, "-"))
@@ -1101,7 +1100,7 @@ main (int argc, char **argv)
              among many, knowing the record number may help.
              FIXME: currently print the record number only with
              --files0-from=FILE.  Maybe do it for argv, too?  */
-          if (files_from == NULL)
+          if (files_from == nullptr)
             error (0, 0, "%s", _("invalid zero-length file name"));
           else
             {
@@ -1131,7 +1130,7 @@ main (int argc, char **argv)
     di_set_free (di_mnt);
 
   if (files_from && (ferror (stdin) || fclose (stdin) != 0) && ok)
-    die (EXIT_FAILURE, 0, _("error reading %s"), quoteaf (files_from));
+    error (EXIT_FAILURE, 0, _("error reading %s"), quoteaf (files_from));
 
   if (print_grand_total)
     print_size (&tot_dui, _("total"));

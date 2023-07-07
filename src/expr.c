@@ -35,8 +35,6 @@
 
 #include <gmp.h>
 #include <regex.h>
-#include "die.h"
-#include "error.h"
 #include "long-options.h"
 #include "mbuiter.h"
 #include "strnumcmp.h"
@@ -331,7 +329,7 @@ main (int argc, char **argv)
   atexit (close_stdout);
 
   parse_long_options (argc, argv, PROGRAM_NAME, PACKAGE_NAME, VERSION,
-                      usage, AUTHORS, (char const *) NULL);
+                      usage, AUTHORS, (char const *) nullptr);
 
   /* The above handles --help and --version.
      Since there is no other invocation of getopt, handle '--' here.  */
@@ -352,8 +350,8 @@ main (int argc, char **argv)
 
   v = eval (true);
   if (!nomoreargs ())
-    die (EXPR_INVALID, 0, _("syntax error: unexpected argument %s"),
-         quotearg_n_style (0, locale_quoting_style, *args));
+    error (EXPR_INVALID, 0, _("syntax error: unexpected argument %s"),
+           quotearg_n_style (0, locale_quoting_style, *args));
 
   printv (v);
 
@@ -409,7 +407,7 @@ printv (VALUE *v)
       puts (v->u.s);
       break;
     default:
-      abort ();
+      unreachable ();
     }
 }
 
@@ -441,7 +439,7 @@ null (VALUE *v)
         return true;
       }
     default:
-      abort ();
+      unreachable ();
     }
 }
 
@@ -470,7 +468,7 @@ tostring (VALUE *v)
     {
     case integer:
       {
-        char *s = mpz_get_str (NULL, 10, v->u.i);
+        char *s = mpz_get_str (nullptr, 10, v->u.i);
         mpz_clear (v->u.i);
         v->u.s = s;
         v->type = string;
@@ -479,7 +477,7 @@ tostring (VALUE *v)
     case string:
       break;
     default:
-      abort ();
+      unreachable ();
     }
 }
 
@@ -499,13 +497,13 @@ toarith (VALUE *v)
         if (! looks_like_integer (s))
           return false;
         if (mpz_init_set_str (v->u.i, s, 10) != 0)
-          die (EXPR_FAILURE, ERANGE, "%s", (s));
+          error (EXPR_FAILURE, ERANGE, "%s", (s));
         free (s);
         v->type = integer;
         return true;
       }
     default:
-      abort ();
+      unreachable ();
     }
 }
 
@@ -527,12 +525,12 @@ getsize (mpz_t i)
 }
 
 /* Return true and advance if the next token matches STR exactly.
-   STR must not be NULL.  */
+   STR must not be null.  */
 
 static bool
 nextarg (char const *str)
 {
-  if (*args == NULL)
+  if (*args == nullptr)
     return false;
   else
     {
@@ -557,8 +555,8 @@ static void
 require_more_args (void)
 {
   if (nomoreargs ())
-    die (EXPR_INVALID, 0, _("syntax error: missing argument after %s"),
-         quotearg_n_style (0, locale_quoting_style, *(args - 1)));
+    error (EXPR_INVALID, 0, _("syntax error: missing argument after %s"),
+           quotearg_n_style (0, locale_quoting_style, *(args - 1)));
 }
 
 
@@ -596,18 +594,18 @@ docolon (VALUE *sv, VALUE *pv)
   tostring (pv);
 
   re_regs.num_regs = 0;
-  re_regs.start = NULL;
-  re_regs.end = NULL;
+  re_regs.start = nullptr;
+  re_regs.end = nullptr;
 
-  re_buffer.buffer = NULL;
+  re_buffer.buffer = nullptr;
   re_buffer.allocated = 0;
   re_buffer.fastmap = fastmap;
-  re_buffer.translate = NULL;
+  re_buffer.translate = nullptr;
   re_syntax_options =
     RE_SYNTAX_POSIX_BASIC & ~RE_CONTEXT_INVALID_DUP & ~RE_NO_EMPTY_RANGES;
   errmsg = re_compile_pattern (pv->u.s, strlen (pv->u.s), &re_buffer);
   if (errmsg)
-    die (EXPR_INVALID, 0, "%s", (errmsg));
+    error (EXPR_INVALID, 0, "%s", (errmsg));
   re_buffer.newline_anchor = 0;
 
   matchlen = re_match (&re_buffer, sv->u.s, strlen (sv->u.s), 0, &re_regs);
@@ -643,16 +641,16 @@ docolon (VALUE *sv, VALUE *pv)
         v = int_value (0);
     }
   else
-    die (EXPR_FAILURE,
-         (matchlen == -2 ? errno : EOVERFLOW),
-         _("error in regular expression matcher"));
+    error (EXPR_FAILURE,
+           matchlen == -2 ? errno : EOVERFLOW,
+           _("error in regular expression matcher"));
 
   if (0 < re_regs.num_regs)
     {
       free (re_regs.start);
       free (re_regs.end);
     }
-  re_buffer.fastmap = NULL;
+  re_buffer.fastmap = nullptr;
   regfree (&re_buffer);
   return v;
 }
@@ -673,16 +671,16 @@ eval7 (bool evaluate)
     {
       v = eval (evaluate);
       if (nomoreargs ())
-        die (EXPR_INVALID, 0, _("syntax error: expecting ')' after %s"),
-             quotearg_n_style (0, locale_quoting_style, *(args - 1)));
+        error (EXPR_INVALID, 0, _("syntax error: expecting ')' after %s"),
+               quotearg_n_style (0, locale_quoting_style, *(args - 1)));
       if (!nextarg (")"))
-        die (EXPR_INVALID, 0, _("syntax error: expecting ')' instead of %s"),
-             quotearg_n_style (0, locale_quoting_style, *args));
+        error (EXPR_INVALID, 0, _("syntax error: expecting ')' instead of %s"),
+               quotearg_n_style (0, locale_quoting_style, *args));
       return v;
     }
 
   if (nextarg (")"))
-    die (EXPR_INVALID, 0, _("syntax error: unexpected ')'"));
+    error (EXPR_INVALID, 0, _("syntax error: unexpected ')'"));
 
   return str_value (*args++);
 }
@@ -828,9 +826,9 @@ eval4 (bool evaluate)
       if (evaluate)
         {
           if (!toarith (l) || !toarith (r))
-            die (EXPR_INVALID, 0, _("non-integer argument"));
+            error (EXPR_INVALID, 0, _("non-integer argument"));
           if (fxn != multiply && mpz_sgn (r->u.i) == 0)
-            die (EXPR_INVALID, 0, _("division by zero"));
+            error (EXPR_INVALID, 0, _("division by zero"));
           ((fxn == multiply ? mpz_mul
             : fxn == divide ? mpz_tdiv_q
             : mpz_tdiv_r)
@@ -865,7 +863,7 @@ eval3 (bool evaluate)
       if (evaluate)
         {
           if (!toarith (l) || !toarith (r))
-            die (EXPR_INVALID, 0, _("non-integer argument"));
+            error (EXPR_INVALID, 0, _("non-integer argument"));
           (fxn == plus ? mpz_add : mpz_sub) (l->u.i, l->u.i, r->u.i);
         }
       freev (r);
@@ -925,10 +923,10 @@ eval2 (bool evaluate)
                 {
                   error (0, errno, _("string comparison failed"));
                   error (0, 0, _("set LC_ALL='C' to work around the problem"));
-                  die (EXPR_INVALID, 0,
-                       _("the strings compared were %s and %s"),
-                       quotearg_n_style (0, locale_quoting_style, l->u.s),
-                       quotearg_n_style (1, locale_quoting_style, r->u.s));
+                  error (EXPR_INVALID, 0,
+                         _("the strings compared were %s and %s"),
+                         quotearg_n_style (0, locale_quoting_style, l->u.s),
+                         quotearg_n_style (1, locale_quoting_style, r->u.s));
                 }
             }
 
@@ -940,7 +938,7 @@ eval2 (bool evaluate)
             case not_equal:     val = (cmp != 0); break;
             case greater_equal: val = (cmp >= 0); break;
             case greater_than:  val = (cmp >  0); break;
-            default: abort ();
+            default: unreachable ();
             }
         }
 

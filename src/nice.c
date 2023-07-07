@@ -29,8 +29,6 @@
 # include <sys/resource.h>
 #endif
 
-#include "die.h"
-#include "error.h"
 #include "quote.h"
 #include "xstrtol.h"
 
@@ -57,10 +55,10 @@
 
 static struct option const longopts[] =
 {
-  {"adjustment", required_argument, NULL, 'n'},
+  {"adjustment", required_argument, nullptr, 'n'},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
-  {NULL, 0, NULL, 0}
+  {nullptr, 0, nullptr, 0}
 };
 
 void
@@ -103,7 +101,7 @@ main (int argc, char **argv)
 {
   int current_niceness;
   int adjustment = 10;
-  char const *adjustment_given = NULL;
+  char const *adjustment_given = nullptr;
   bool ok;
   int i;
 
@@ -137,7 +135,7 @@ main (int argc, char **argv)
           /* Initialize getopt_long's internal state.  */
           optind = 0;
 
-          c = getopt_long (fake_argc, fake_argv, "+n:", longopts, NULL);
+          c = getopt_long (fake_argc, fake_argv, "+n:", longopts, nullptr);
           i += optind - 1;
 
           switch (c)
@@ -170,9 +168,9 @@ main (int argc, char **argv)
          "setpriority" and "nice" do.  */
       enum { MIN_ADJUSTMENT = 1 - 2 * NZERO, MAX_ADJUSTMENT = 2 * NZERO - 1 };
       long int tmp;
-      if (LONGINT_OVERFLOW < xstrtol (adjustment_given, NULL, 10, &tmp, ""))
-        die (EXIT_CANCELED, 0, _("invalid adjustment %s"),
-             quote (adjustment_given));
+      if (LONGINT_OVERFLOW < xstrtol (adjustment_given, nullptr, 10, &tmp, ""))
+        error (EXIT_CANCELED, 0, _("invalid adjustment %s"),
+               quote (adjustment_given));
       adjustment = MAX (MIN_ADJUSTMENT, MIN (tmp, MAX_ADJUSTMENT));
     }
 
@@ -187,7 +185,7 @@ main (int argc, char **argv)
       errno = 0;
       current_niceness = GET_NICENESS ();
       if (current_niceness == -1 && errno != 0)
-        die (EXIT_CANCELED, errno, _("cannot get niceness"));
+        error (EXIT_CANCELED, errno, _("cannot get niceness"));
       printf ("%d\n", current_niceness);
       return EXIT_SUCCESS;
     }
@@ -198,7 +196,7 @@ main (int argc, char **argv)
 #else
   current_niceness = GET_NICENESS ();
   if (current_niceness == -1 && errno != 0)
-    die (EXIT_CANCELED, errno, _("cannot get niceness"));
+    error (EXIT_CANCELED, errno, _("cannot get niceness"));
   ok = (setpriority (PRIO_PROCESS, 0, current_niceness + adjustment) == 0);
 #endif
   if (!ok)

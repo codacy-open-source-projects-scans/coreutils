@@ -105,11 +105,9 @@
 #include <getopt.h>
 #include <stdio.h>
 #include <gmp.h>
-#include <assert.h>
 
 #include "system.h"
-#include "die.h"
-#include "error.h"
+#include "assure.h"
 #include "full-write.h"
 #include "quote.h"
 #include "readtokens.h"
@@ -226,11 +224,11 @@ enum
 
 static struct option const long_options[] =
 {
-  {"exponents", no_argument, NULL, 'h'},
-  {"-debug", no_argument, NULL, DEV_DEBUG_OPTION},
+  {"exponents", no_argument, nullptr, 'h'},
+  {"-debug", no_argument, nullptr, DEV_DEBUG_OPTION},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
-  {NULL, 0, NULL, 0}
+  {nullptr, 0, nullptr, 0}
 };
 
 /* If true, use p^e output format.  */
@@ -289,9 +287,9 @@ static void factor (uintmax_t, uintmax_t, struct factors *);
   do {                                                                  \
     uintmax_t __d1, __d0, __q, __r1, __r0;                              \
                                                                         \
-    assert ((n1) < (d));                                                \
     __d1 = (d); __d0 = 0;                                               \
     __r1 = (n1); __r0 = (n0);                                           \
+    affirm (__r1 < __d1);                                               \
     __q = 0;                                                            \
     for (unsigned int __i = W_TYPE_SIZE; __i > 0; __i--)                \
       {                                                                 \
@@ -412,7 +410,7 @@ mod2 (uintmax_t *r1, uintmax_t a1, uintmax_t a0, uintmax_t d1, uintmax_t d0)
 {
   int cntd, cnta;
 
-  assert (d1 != 0);
+  affirm (d1 != 0);
 
   if (a1 == 0)
     {
@@ -477,7 +475,7 @@ gcd_odd (uintmax_t a, uintmax_t b)
 static uintmax_t
 gcd2_odd (uintmax_t *r1, uintmax_t a1, uintmax_t a0, uintmax_t b1, uintmax_t b0)
 {
-  assert (b0 & 1);
+  affirm (b0 & 1);
 
   if ((a0 | a1) == 0)
     {
@@ -559,7 +557,7 @@ factor_insert_large (struct factors *factors,
 {
   if (p1 > 0)
     {
-      assert (factors->plarge[1] == 0);
+      affirm (factors->plarge[1] == 0);
       factors->plarge[0] = p0;
       factors->plarge[1] = p1;
     }
@@ -594,8 +592,8 @@ static void mp_factor (mpz_t, struct mp_factors *);
 static void
 mp_factor_init (struct mp_factors *factors)
 {
-  factors->p = NULL;
-  factors->e = NULL;
+  factors->p = nullptr;
+  factors->e = nullptr;
   factors->nfactors = 0;
 }
 
@@ -994,9 +992,9 @@ mulredc2 (uintmax_t *r1p,
   uintmax_t r1, r0, q, p1, t1, t0, s1, s0;
   MAYBE_UNUSED uintmax_t p0;
   mi = -mi;
-  assert ((a1 >> (W_TYPE_SIZE - 1)) == 0);
-  assert ((b1 >> (W_TYPE_SIZE - 1)) == 0);
-  assert ((m1 >> (W_TYPE_SIZE - 1)) == 0);
+  affirm ((a1 >> (W_TYPE_SIZE - 1)) == 0);
+  affirm ((b1 >> (W_TYPE_SIZE - 1)) == 0);
+  affirm ((m1 >> (W_TYPE_SIZE - 1)) == 0);
 
   /* First compute a0 * <b1, b0> B^{-1}
         +-----+
@@ -1193,7 +1191,7 @@ mp_millerrabin (mpz_srcptr n, mpz_srcptr nm1, mpz_ptr x, mpz_ptr y,
 
 /* Lucas' prime test.  The number of iterations vary greatly, up to a few dozen
    have been observed.  The average seem to be about 2.  */
-static bool
+static bool ATTRIBUTE_PURE
 prime_p (uintmax_t n)
 {
   int k;
@@ -1271,11 +1269,10 @@ prime_p (uintmax_t n)
         return false;
     }
 
-  error (0, 0, _("Lucas prime test failure.  This should not happen"));
-  abort ();
+  affirm (!"Lucas prime test failure.  This should not happen");
 }
 
-static bool
+static bool ATTRIBUTE_PURE
 prime2_p (uintmax_t n1, uintmax_t n0)
 {
   uintmax_t q[2], nm1[2];
@@ -1371,8 +1368,7 @@ prime2_p (uintmax_t n1, uintmax_t n0)
         return false;
     }
 
-  error (0, 0, _("Lucas prime test failure.  This should not happen"));
-  abort ();
+  affirm (!"Lucas prime test failure.  This should not happen");
 }
 
 static bool
@@ -1389,7 +1385,7 @@ mp_prime_p (mpz_t n)
   if (mpz_cmp_ui (n, (long) FIRST_OMITTED_PRIME * FIRST_OMITTED_PRIME) < 0)
     return true;
 
-  mpz_inits (q, a, nm1, tmp, NULL);
+  mpz_inits (q, a, nm1, tmp, nullptr);
 
   /* Precomputation for Miller-Rabin.  */
   mpz_sub_ui (nm1, n, 1);
@@ -1446,14 +1442,13 @@ mp_prime_p (mpz_t n)
         }
     }
 
-  error (0, 0, _("Lucas prime test failure.  This should not happen"));
-  abort ();
+  affirm (!"Lucas prime test failure.  This should not happen");
 
  ret1:
   if (flag_prove_primality)
     mp_factor_clear (&factors);
  ret2:
-  mpz_clears (q, a, nm1, tmp, NULL);
+  mpz_clears (q, a, nm1, tmp, nullptr);
 
   return is_prime;
 }
@@ -1473,7 +1468,7 @@ factor_using_pollard_rho (uintmax_t n, unsigned long int a,
 
   while (n != 1)
     {
-      assert (a < n);
+      affirm (a < n);
 
       binv (ni, n);             /* FIXME: when could we use old 'ni' value?  */
 
@@ -1677,7 +1672,7 @@ mp_factor_using_pollard_rho (mpz_t n, unsigned long int a,
 
   devmsg ("[pollard-rho (%lu)] ", a);
 
-  mpz_inits (t, t2, NULL);
+  mpz_inits (t, t2, nullptr);
   mpz_init_set_si (y, 2);
   mpz_init_set_si (x, 2);
   mpz_init_set_si (z, 2);
@@ -1757,7 +1752,7 @@ mp_factor_using_pollard_rho (mpz_t n, unsigned long int a,
       mpz_mod (y, y, n);
     }
 
-  mpz_clears (P, t2, t, z, x, y, NULL);
+  mpz_clears (P, t2, t, z, x, y, nullptr);
 }
 
 #if USE_SQUFOF
@@ -1795,7 +1790,7 @@ isqrt2 (uintmax_t nh, uintmax_t nl)
   uintmax_t x;
 
   /* Ensures the remainder fits in an uintmax_t.  */
-  assert (nh < ((uintmax_t) 1 << (W_TYPE_SIZE - 2)));
+  affirm (nh < ((uintmax_t) 1 << (W_TYPE_SIZE - 2)));
 
   if (nh == 0)
     return isqrt (nl);
@@ -1819,12 +1814,12 @@ isqrt2 (uintmax_t nh, uintmax_t nl)
         {
           uintmax_t hi, lo;
           umul_ppmm (hi, lo, x + 1, x + 1);
-          assert (gt2 (hi, lo, nh, nl));
+          affirm (gt2 (hi, lo, nh, nl));
 
           umul_ppmm (hi, lo, x, x);
-          assert (ge2 (nh, nl, hi, lo));
+          affirm (ge2 (nh, nl, hi, lo));
           sub_ddmmss (hi, lo, nh, nl, hi, lo);
-          assert (hi == 0);
+          affirm (hi == 0);
 
           return x;
         }
@@ -1906,7 +1901,7 @@ static const unsigned short invtab[0x81] =
         _mask = -(uintmax_t) (_r >= (d));                               \
         (r) = _r - (_mask & (d));                                       \
         (q) = _q - _mask;                                               \
-        assert ((q) * (d) + (r) == u);					\
+        affirm ((q) * (d) + (r) == u);					\
       }                                                                 \
     else                                                                \
       {                                                                 \
@@ -1997,7 +1992,7 @@ factor_using_squfof (uintmax_t n1, uintmax_t n0, struct factors *factors)
       uintmax_t p1, p0;
 
       umul_ppmm (p1, p0, sqrt_n, sqrt_n);
-      assert (p0 == n0);
+      affirm (p0 == n0);
 
       if (n1 == p1)
         {
@@ -2030,7 +2025,7 @@ factor_using_squfof (uintmax_t n1, uintmax_t n0, struct factors *factors)
       unsigned int mu = *m;
       unsigned int qpos = 0;
 
-      assert (mu * n0 % 4 == 3);
+      affirm (mu * n0 % 4 == 3);
 
       /* In the notation of the paper, with mu * n == 3 (mod 4), we
          get \Delta = 4 mu * n, and the paper's \mu is 2 mu.  As far as
@@ -2055,8 +2050,8 @@ factor_using_squfof (uintmax_t n1, uintmax_t n0, struct factors *factors)
       umul_ppmm (Dh, Dl, n0, mu);
       Dh += n1 * mu;
 
-      assert (Dl % 4 != 1);
-      assert (Dh < (uintmax_t) 1 << (W_TYPE_SIZE - 2));
+      affirm (Dl % 4 != 1);
+      affirm (Dh < (uintmax_t) 1 << (W_TYPE_SIZE - 2));
 
       S = isqrt2 (Dh, Dl);
 
@@ -2080,7 +2075,7 @@ factor_using_squfof (uintmax_t n1, uintmax_t n0, struct factors *factors)
           div_smallq (q, rem, S + P, Q);
           P1 = S - rem; /* P1 = q*Q - P */
 
-          assert (q > 0 && Q > 0);
+          affirm (q > 0 && Q > 0);
 
 # if STAT_SQUFOF
           q_freq[0]++;
@@ -2099,7 +2094,7 @@ factor_using_squfof (uintmax_t n1, uintmax_t n0, struct factors *factors)
               if (g <= L)
                 {
                   if (qpos >= QUEUE_SIZE)
-                    die (EXIT_FAILURE, 0, _("squfof queue overflow"));
+                    error (EXIT_FAILURE, 0, _("squfof queue overflow"));
                   queue[qpos].Q = g;
                   queue[qpos].P = P % g;
                   qpos++;
@@ -2146,7 +2141,7 @@ factor_using_squfof (uintmax_t n1, uintmax_t n0, struct factors *factors)
                   /* We have found a square form, which should give a
                      factor.  */
                   Q1 = r;
-                  assert (S >= P); /* What signs are possible?  */
+                  affirm (S >= P); /* What signs are possible?  */
                   P += r * ((S - P) / r);
 
                   /* Note: Paper says (N - P*P) / Q1, that seems incorrect
@@ -2157,7 +2152,7 @@ factor_using_squfof (uintmax_t n1, uintmax_t n0, struct factors *factors)
                   umul_ppmm (hi, lo, P, P);
                   sub_ddmmss (hi, lo, Dh, Dl, hi, lo);
                   udiv_qrnnd (Q, rem, hi, lo, Q1);
-                  assert (rem == 0);
+                  affirm (rem == 0);
 
                   for (;;)
                     {
@@ -2185,7 +2180,7 @@ factor_using_squfof (uintmax_t n1, uintmax_t n0, struct factors *factors)
                     Q /= 2;
                   Q /= gcd_odd (Q, mu);
 
-                  assert (Q > 1 && (n1 || Q < n0));
+                  affirm (Q > 1 && (n1 || Q < n0));
 
                   if (prime_p (Q))
                     factor_insert (factors, Q);
@@ -2366,7 +2361,7 @@ lbuf_flush (void)
 {
   size_t size = lbuf.end - lbuf.buf;
   if (full_write (STDOUT_FILENO, lbuf.buf, size) != size)
-    die (EXIT_FAILURE, errno, "%s", _("write error"));
+    error (EXIT_FAILURE, errno, "%s", _("write error"));
   lbuf.end = lbuf.buf;
 }
 
@@ -2590,7 +2585,7 @@ do_stdin (void)
       if (token_length == (size_t) -1)
         {
           if (ferror (stdin))
-            die (EXIT_FAILURE, errno, _("error reading input"));
+            error (EXIT_FAILURE, errno, _("error reading input"));
           break;
         }
 
@@ -2615,7 +2610,7 @@ main (int argc, char **argv)
   atexit (lbuf_flush);
 
   int c;
-  while ((c = getopt_long (argc, argv, "h", long_options, NULL)) != -1)
+  while ((c = getopt_long (argc, argv, "h", long_options, nullptr)) != -1)
     {
       switch (c)
         {

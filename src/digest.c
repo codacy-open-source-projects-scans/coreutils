@@ -52,8 +52,6 @@
 #if HASH_ALGO_CKSUM
 # include "sm3.h"
 #endif
-#include "die.h"
-#include "error.h"
 #include "fadvise.h"
 #include "stdio--.h"
 #include "xbinary-io.h"
@@ -300,7 +298,7 @@ enum Algorithm
 static char const *const algorithm_args[] =
 {
   "bsd", "sysv", "crc", "md5", "sha1", "sha224",
-  "sha256", "sha384", "sha512", "blake2b", "sm3", NULL
+  "sha256", "sha384", "sha512", "blake2b", "sm3", nullptr
 };
 static enum Algorithm const algorithm_types[] =
 {
@@ -312,7 +310,7 @@ ARGMATCH_VERIFY (algorithm_args, algorithm_types);
 static char const *const algorithm_tags[] =
 {
   "BSD", "SYSV", "CRC", "MD5", "SHA1", "SHA224",
-  "SHA256", "SHA384", "SHA512", "BLAKE2b", "SM3", NULL
+  "SHA256", "SHA384", "SHA512", "BLAKE2b", "SM3", nullptr
 };
 static int const algorithm_bits[] =
 {
@@ -374,37 +372,37 @@ enum
 static struct option const long_options[] =
 {
 #if HASH_ALGO_BLAKE2 || HASH_ALGO_CKSUM
-  { "length", required_argument, NULL, 'l'},
+  { "length", required_argument, nullptr, 'l'},
 #endif
 
 #if !HASH_ALGO_SUM
-  { "check", no_argument, NULL, 'c' },
-  { "ignore-missing", no_argument, NULL, IGNORE_MISSING_OPTION},
-  { "quiet", no_argument, NULL, QUIET_OPTION },
-  { "status", no_argument, NULL, STATUS_OPTION },
-  { "warn", no_argument, NULL, 'w' },
-  { "strict", no_argument, NULL, STRICT_OPTION },
-  { "tag", no_argument, NULL, TAG_OPTION },
-  { "zero", no_argument, NULL, 'z' },
+  { "check", no_argument, nullptr, 'c' },
+  { "ignore-missing", no_argument, nullptr, IGNORE_MISSING_OPTION},
+  { "quiet", no_argument, nullptr, QUIET_OPTION },
+  { "status", no_argument, nullptr, STATUS_OPTION },
+  { "warn", no_argument, nullptr, 'w' },
+  { "strict", no_argument, nullptr, STRICT_OPTION },
+  { "tag", no_argument, nullptr, TAG_OPTION },
+  { "zero", no_argument, nullptr, 'z' },
 
 # if HASH_ALGO_CKSUM
-  { "algorithm", required_argument, NULL, 'a'},
-  { "base64", no_argument, NULL, 'b' },
-  { "debug", no_argument, NULL, DEBUG_PROGRAM_OPTION},
-  { "raw", no_argument, NULL, RAW_OPTION},
-  { "untagged", no_argument, NULL, UNTAG_OPTION },
+  { "algorithm", required_argument, nullptr, 'a'},
+  { "base64", no_argument, nullptr, 'b' },
+  { "debug", no_argument, nullptr, DEBUG_PROGRAM_OPTION},
+  { "raw", no_argument, nullptr, RAW_OPTION},
+  { "untagged", no_argument, nullptr, UNTAG_OPTION },
 # else
-  { "binary", no_argument, NULL, 'b' },
-  { "text", no_argument, NULL, 't' },
+  { "binary", no_argument, nullptr, 'b' },
+  { "text", no_argument, nullptr, 't' },
 # endif
 
 #else
-  {"sysv", no_argument, NULL, 's'},
+  {"sysv", no_argument, nullptr, 's'},
 #endif
 
   { GETOPT_HELP_OPTION_DECL },
   { GETOPT_VERSION_OPTION_DECL },
-  { NULL, 0, NULL, 0 }
+  { nullptr, 0, nullptr, 0 }
 };
 
 void
@@ -571,7 +569,7 @@ or equivalent standalone program.\
    and each "\\\\" with a single backslash, NUL-terminate it and return S.
    If S is not a valid escaped file name, i.e., if it ends with an odd number
    of backslashes or if it contains a backslash followed by anything other
-   than "n" or another backslash, return NULL.  */
+   than "n" or another backslash, return nullptr.  */
 
 static char *
 filename_unescape (char *s, size_t s_len)
@@ -586,7 +584,7 @@ filename_unescape (char *s, size_t s_len)
           if (i == s_len - 1)
             {
               /* File name ends with an unescaped backslash: invalid.  */
-              return NULL;
+              return nullptr;
             }
           ++i;
           switch (s[i])
@@ -602,13 +600,13 @@ filename_unescape (char *s, size_t s_len)
               break;
             default:
               /* Only '\', 'n' or 'r' may follow a backslash.  */
-              return NULL;
+              return nullptr;
             }
           break;
 
         case '\0':
           /* The file name may not contain a NUL.  */
-          return NULL;
+          return nullptr;
 
         default:
           *dst++ = s[i];
@@ -684,7 +682,7 @@ bsd_split_3 (char *s, size_t s_len,
 
   *file_name = s;
 
-  if (escaped_filename && filename_unescape (s, i) == NULL)
+  if (escaped_filename && filename_unescape (s, i) == nullptr)
     return false;
 
   s[i++] = '\0';
@@ -808,7 +806,7 @@ split_3 (char *s, size_t s_len,
         {
           uintmax_t length;
           char *siend;
-          if (! (xstrtoumax (s + i, &siend, 0, &length, NULL) == LONGINT_OK
+          if (! (xstrtoumax (s + i, &siend, 0, &length, nullptr) == LONGINT_OK
                  && 0 < length && length <= digest_length
                  && length % 8 == 0))
             return false;
@@ -896,7 +894,7 @@ split_3 (char *s, size_t s_len,
   *file_name = &s[i];
 
   if (escaped_filename)
-    return filename_unescape (&s[i], s_len - i) != NULL;
+    return filename_unescape (&s[i], s_len - i) != nullptr;
 
   return true;
 }
@@ -975,7 +973,7 @@ digest_file (char const *filename, int *binary, unsigned char *bin_result,
   else
     {
       fp = fopen (filename, (O_BINARY && *binary ? "rb" : "r"));
-      if (fp == NULL)
+      if (fp == nullptr)
         {
           if (ignore_missing && errno == ENOENT)
             {
@@ -1155,7 +1153,7 @@ digest_check (char const *checkfile_name)
   else
     {
       checkfile_stream = fopen (checkfile_name, "r");
-      if (checkfile_stream == NULL)
+      if (checkfile_stream == nullptr)
         {
           error (0, errno, "%s", quotef (checkfile_name));
           return false;
@@ -1163,7 +1161,7 @@ digest_check (char const *checkfile_name)
     }
 
   line_number = 0;
-  line = NULL;
+  line = nullptr;
   line_chars_allocated = 0;
   do
     {
@@ -1174,8 +1172,8 @@ digest_check (char const *checkfile_name)
 
       ++line_number;
       if (line_number == 0)
-        die (EXIT_FAILURE, 0, _("%s: too many checksum lines"),
-             quotef (checkfile_name));
+        error (EXIT_FAILURE, 0, _("%s: too many checksum lines"),
+               quotef (checkfile_name));
 
       line_length = getline (&line, &line_chars_allocated, checkfile_stream);
       if (line_length <= 0)
@@ -1365,7 +1363,7 @@ main (int argc, char **argv)
 
   /* Line buffer stdout to ensure lines are written atomically and immediately
      so that processes running in parallel do not intersperse their output.  */
-  setvbuf (stdout, NULL, _IOLBF, 0);
+  setvbuf (stdout, nullptr, _IOLBF, 0);
 
 #if HASH_ALGO_SUM
   char const *short_opts = "rs";
@@ -1379,7 +1377,8 @@ main (int argc, char **argv)
   char const *short_opts = "bctwz";
 #endif
 
-  while ((opt = getopt_long (argc, argv, short_opts, long_options, NULL)) != -1)
+  while ((opt = getopt_long (argc, argv, short_opts, long_options, nullptr))
+         != -1)
     switch (opt)
       {
 #if HASH_ALGO_CKSUM
@@ -1401,7 +1400,7 @@ main (int argc, char **argv)
         if (digest_length % 8 != 0)
           {
             error (0, 0, _("invalid length: %s"), quote (digest_length_str));
-            die (EXIT_FAILURE, 0, _("length is not a multiple of 8"));
+            error (EXIT_FAILURE, 0, _("length is not a multiple of 8"));
           }
         break;
 #endif
@@ -1476,16 +1475,16 @@ main (int argc, char **argv)
 #if HASH_ALGO_BLAKE2 || HASH_ALGO_CKSUM
 # if HASH_ALGO_CKSUM
   if (digest_length && cksum_algorithm != blake2b)
-    die (EXIT_FAILURE, 0,
-         _("--length is only supported with --algorithm=blake2b"));
+    error (EXIT_FAILURE, 0,
+           _("--length is only supported with --algorithm=blake2b"));
 # endif
   if (digest_length > BLAKE2B_MAX_LEN * 8)
     {
       error (0, 0, _("invalid length: %s"), quote (digest_length_str));
-      die (EXIT_FAILURE, 0,
-           _("maximum digest length for %s is %d bits"),
-           quote (DIGEST_TYPE_STRING),
-           BLAKE2B_MAX_LEN * 8);
+      error (EXIT_FAILURE, 0,
+             _("maximum digest length for %s is %d bits"),
+             quote (DIGEST_TYPE_STRING),
+             BLAKE2B_MAX_LEN * 8);
     }
   if (digest_length == 0)
     {
@@ -1507,8 +1506,8 @@ main (int argc, char **argv)
     case sysv:
     case crc:
         if (do_check && algorithm_specified)
-          die (EXIT_FAILURE, 0,
-              _("--check is not supported with --algorithm={bsd,sysv,crc}"));
+          error (EXIT_FAILURE, 0,
+                 _("--check is not supported with --algorithm={bsd,sysv,crc}"));
         break;
     default:
         break;
@@ -1599,10 +1598,8 @@ main (int argc, char **argv)
   if (optind == argc)
     *operand_lim++ = bad_cast ("-");
   else if (1 < argc - optind && raw_digest)
-    {
-       die (EXIT_FAILURE, 0,
-            _("the --raw option is not supported with multiple files"));
-    }
+    error (EXIT_FAILURE, 0,
+           _("the --raw option is not supported with multiple files"));
 
   for (char **operandp = argv + optind; operandp < operand_lim; operandp++)
     {
@@ -1626,7 +1623,7 @@ main (int argc, char **argv)
     }
 
   if (have_read_stdin && fclose (stdin) == EOF)
-    die (EXIT_FAILURE, errno, _("standard input"));
+    error (EXIT_FAILURE, errno, _("standard input"));
 
   return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

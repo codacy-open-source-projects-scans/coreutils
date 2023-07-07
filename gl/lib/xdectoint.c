@@ -21,11 +21,11 @@
 
 #include <errno.h>
 #include <inttypes.h>
+#include <stddef.h>
 #include <stdlib.h>
 
 #include "error.h"
 #include "quote.h"
-#include "verify.h"
 #include "xstrtol.h"
 
 /* Parse numeric string N_STR of base BASE, and return the value.
@@ -40,7 +40,7 @@ __xnumtoint (char const *n_str, int base, __xdectoint_t min, __xdectoint_t max,
   strtol_error s_err;
 
   __xdectoint_t tnum;
-  s_err = __xstrtol (n_str, NULL, base, &tnum, suffixes);
+  s_err = __xstrtol (n_str, nullptr, base, &tnum, suffixes);
 
   if (s_err == LONGINT_OK)
     {
@@ -69,7 +69,7 @@ __xnumtoint (char const *n_str, int base, __xdectoint_t min, __xdectoint_t max,
       /* EINVAL error message is redundant in this context.  */
       error (err_exit ? err_exit : EXIT_FAILURE, errno == EINVAL ? 0 : errno,
              "%s: %s", err, quote (n_str));
-      assume (false);
+      unreachable ();
     }
 
   return tnum;

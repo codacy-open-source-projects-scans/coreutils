@@ -23,7 +23,6 @@
 
 #include "system.h"
 #include "long-options.h"
-#include "error.h"
 #include "quote.h"
 
 /* The official name of this program (e.g., no 'g' prefix).  */
@@ -65,7 +64,7 @@ main (int argc, char **argv)
 
   parse_gnu_standard_options_only (argc, argv, PROGRAM_NAME, PACKAGE_NAME,
                                    Version, true, usage, AUTHORS,
-                                   (char const *) NULL);
+                                   (char const *) nullptr);
 
   if (optind < argc)
     {

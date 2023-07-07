@@ -77,7 +77,6 @@
 
 #include <getopt.h>
 #include <stdio.h>
-#include <assert.h>
 #include <setjmp.h>
 #include <sys/types.h>
 #if defined __linux__ && HAVE_SYS_MTIO_H
@@ -87,9 +86,8 @@
 #include "system.h"
 #include "alignalloc.h"
 #include "argmatch.h"
+#include "assure.h"
 #include "xdectoint.h"
-#include "die.h"
-#include "error.h"
 #include "fcntl--.h"
 #include "human.h"
 #include "randint.h"
@@ -120,7 +118,7 @@ enum remove_method
 
 static char const *const remove_args[] =
 {
-  "unlink", "wipe", "wipesync", NULL
+  "unlink", "wipe", "wipesync", nullptr
 };
 
 static enum remove_method const remove_methods[] =
@@ -148,17 +146,17 @@ enum
 
 static struct option const long_opts[] =
 {
-  {"exact", no_argument, NULL, 'x'},
-  {"force", no_argument, NULL, 'f'},
-  {"iterations", required_argument, NULL, 'n'},
-  {"size", required_argument, NULL, 's'},
-  {"random-source", required_argument, NULL, RANDOM_SOURCE_OPTION},
-  {"remove", optional_argument, NULL, 'u'},
-  {"verbose", no_argument, NULL, 'v'},
-  {"zero", no_argument, NULL, 'z'},
+  {"exact", no_argument, nullptr, 'x'},
+  {"force", no_argument, nullptr, 'f'},
+  {"iterations", required_argument, nullptr, 'n'},
+  {"size", required_argument, nullptr, 's'},
+  {"random-source", required_argument, nullptr, RANDOM_SOURCE_OPTION},
+  {"remove", optional_argument, nullptr, 'u'},
+  {"verbose", no_argument, nullptr, 'v'},
+  {"zero", no_argument, nullptr, 'z'},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
-  {NULL, 0, NULL, 0}
+  {nullptr, 0, nullptr, 0}
 };
 
 void
@@ -454,7 +452,7 @@ dopass (int fd, struct stat const *st, char const *qname, off_t *sizep,
   if (n)
     {
       error (0, 0, _("%s: pass %lu/%lu (%s)..."), qname, k, n, pass_string);
-      thresh = time (NULL) + VERBOSE_UPDATE;
+      thresh = time (nullptr) + VERBOSE_UPDATE;
       previous_human_offset = "";
     }
 
@@ -477,9 +475,7 @@ dopass (int fd, struct stat const *st, char const *qname, off_t *sizep,
       for (soff = 0; soff < lim; soff += ssize)
         {
           ssize = write (fd, pbuf + soff, lim - soff);
-          if (0 < ssize)
-            assume (ssize <= lim - soff);
-          else
+          if (ssize <= 0)
             {
               if (! known (size) && (ssize == 0 || errno == ENOSPC))
                 {
@@ -548,7 +544,7 @@ dopass (int fd, struct stat const *st, char const *qname, off_t *sizep,
 
       /* Time to print progress? */
       if (n && ((done && *previous_human_offset)
-                || thresh <= (now = time (NULL))))
+                || thresh <= (now = time (nullptr))))
         {
           char offset_buf[LONGEST_HUMAN_READABLE + 1];
           char size_buf[LONGEST_HUMAN_READABLE + 1];
@@ -768,7 +764,7 @@ genpattern (int *dest, size_t num, struct randint_source *s)
         }
     }
   top = num - randpasses;	/* Top of initialized data */
-  /* assert (d == dest + top); */
+  /* affirm (d == dest + top); */
 
   /*
    * We now have fixed patterns in the dest buffer up to
@@ -809,7 +805,7 @@ genpattern (int *dest, size_t num, struct randint_source *s)
         }
       accum -= randpasses;
     }
-  /* assert (top == num); */
+  /* affirm (top == num); */
 }
 
 /*
@@ -996,8 +992,7 @@ incname (char *name, size_t len)
       char const *p = strchr (nameset, name[len]);
 
       /* Given that NAME is composed of bytes from NAMESET,
-         P will never be NULL here.  */
-      assert (p);
+         P will never be null here.  */
 
       /* If this character has a successor, use it.  */
       if (p[1])
@@ -1173,7 +1168,7 @@ main (int argc, char **argv)
   int n_files;
   int c;
   int i;
-  char const *random_source = NULL;
+  char const *random_source = nullptr;
 
   initialize_main (&argc, &argv);
   set_program_name (argv[0]);
@@ -1186,7 +1181,7 @@ main (int argc, char **argv)
   flags.n_iterations = DEFAULT_PASSES;
   flags.size = -1;
 
-  while ((c = getopt_long (argc, argv, "fn:s:uvxz", long_opts, NULL)) != -1)
+  while ((c = getopt_long (argc, argv, "fn:s:uvxz", long_opts, nullptr)) != -1)
     {
       switch (c)
         {
@@ -1203,12 +1198,12 @@ main (int argc, char **argv)
 
         case RANDOM_SOURCE_OPTION:
           if (random_source && !STREQ (random_source, optarg))
-            die (EXIT_FAILURE, 0, _("multiple random sources specified"));
+            error (EXIT_FAILURE, 0, _("multiple random sources specified"));
           random_source = optarg;
           break;
 
         case 'u':
-          if (optarg == NULL)
+          if (optarg == nullptr)
             flags.remove_file = remove_wipesync;
           else
             flags.remove_file = XARGMATCH ("--remove", optarg,
@@ -1252,8 +1247,8 @@ main (int argc, char **argv)
 
   randint_source = randint_all_new (random_source, SIZE_MAX);
   if (! randint_source)
-    die (EXIT_FAILURE, errno, "%s",
-         quotef (random_source ? random_source : "getrandom"));
+    error (EXIT_FAILURE, errno, "%s",
+           quotef (random_source ? random_source : "getrandom"));
   atexit (clear_random_data);
 
   for (i = 0; i < n_files; i++)

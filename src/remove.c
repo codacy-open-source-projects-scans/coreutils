@@ -19,10 +19,9 @@
 #include <config.h>
 #include <stdio.h>
 #include <sys/types.h>
-#include <assert.h>
 
 #include "system.h"
-#include "error.h"
+#include "assure.h"
 #include "file-type.h"
 #include "filenamecat.h"
 #include "ignore-value.h"
@@ -494,7 +493,7 @@ rm_fts (FTS *fts, FTSENT *ent, struct rm_options const *x)
           if (x->preserve_all_root)
             {
               bool failed = false;
-              char *parent = file_name_concat (ent->fts_accpath, "..", NULL);
+              char *parent = file_name_concat (ent->fts_accpath, "..", nullptr);
               struct stat statbuf;
 
               if (!parent || lstat (parent, &statbuf))
@@ -615,14 +614,14 @@ rm (char *const *file, struct rm_options const *x)
       if (x->one_file_system)
         bit_flags |= FTS_XDEV;
 
-      FTS *fts = xfts_open (file, bit_flags, NULL);
+      FTS *fts = xfts_open (file, bit_flags, nullptr);
 
       while (true)
         {
           FTSENT *ent;
 
           ent = fts_read (fts);
-          if (ent == NULL)
+          if (ent == nullptr)
             {
               if (errno != 0)
                 {
@@ -634,7 +633,7 @@ rm (char *const *file, struct rm_options const *x)
 
           enum RM_status s = rm_fts (fts, ent, x);
 
-          assert (VALID_STATUS (s));
+          affirm (VALID_STATUS (s));
           UPDATE_STATUS (rm_status, s);
         }
 
