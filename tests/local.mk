@@ -137,6 +137,7 @@ all_root_tests =				\
   tests/rm/one-file-system.sh			\
   tests/rm/read-only.sh				\
   tests/rm/empty-immutable-skip.sh		\
+  tests/split/l-chunk-root.sh			\
   tests/tail/append-only.sh			\
   tests/tail/end-of-device.sh			\
   tests/touch/now-owned-by-other.sh
@@ -174,6 +175,7 @@ all_tests =					\
   tests/cp/no-ctx.sh				\
   tests/tty/tty-eof.pl				\
   tests/misc/read-errors.sh			\
+  tests/misc/write-errors.sh			\
   tests/tail/inotify-hash-abuse.sh		\
   tests/tail/inotify-hash-abuse2.sh		\
   tests/tail/F-vs-missing.sh			\

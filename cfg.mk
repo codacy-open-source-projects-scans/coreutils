@@ -503,6 +503,18 @@ sc_prohibit_man_see_also_period:
 	  { echo '$(ME): do not end "SEE ALSO" section with a period'	\
 	      1>&2; exit 1; } || :
 
+sc_prohibit_exit_write_error:
+	@prohibit='error.*EXIT_FAILURE.*write error' \
+	in_vc_files='\.c$$' \
+	halt='Use write_error() instead' \
+	  $(_sc_search_regexp)
+
+sc_prohibit_NULL:
+	@prohibit='$(begword)NULL$(endword)'				\
+	in_vc_files='\.[ch]$$'						\
+	halt='use nullptr instead'					\
+	  $(_sc_search_regexp)
+
 # Don't use "indent-tabs-mode: nil" anymore.  No longer needed.
 sc_prohibit_emacs__indent_tabs_mode__setting:
 	@prohibit='^( *[*#] *)?indent-tabs-mode:'			\
@@ -555,11 +567,23 @@ sc_prohibit_short_facl_mode_spec:
 # Ensure that "stdio--.h" is used where appropriate.
 sc_require_stdio_safer:
 	@if $(VC_LIST_EXCEPT) | grep -l '\.[ch]$$' > /dev/null; then	\
-	  files=$$(grep -l '$(begword)freopen \?(' $$($(VC_LIST_EXCEPT)	\
+	  files=$$(grep -El '$(begword)freopen ?\(' $$($(VC_LIST_EXCEPT)\
 	      | grep '\.[ch]$$'));					\
 	  test -n "$$files" && grep -LE 'include "stdio--.h"' $$files	\
 	      | grep . &&						\
 	  { echo '$(ME): the above files should use "stdio--.h"'	\
+		1>&2; exit 1; } || :;					\
+	else :;								\
+	fi
+
+# Ensure that "stdlib--.h" is used where appropriate.
+sc_require_stdlib_safer:
+	@if $(VC_LIST_EXCEPT) | grep -l '\.[ch]$$' > /dev/null; then	\
+	  files=$$(grep -El '$(begword)mkstemp ?\(' $$($(VC_LIST_EXCEPT)\
+	      | grep '\.[ch]$$'));					\
+	  test -n "$$files" && grep -LE 'include "stdlib--.h"' $$files	\
+	      | grep . &&						\
+	  { echo '$(ME): the above files should use "stdlib--.h"'	\
 		1>&2; exit 1; } || :;					\
 	else :;								\
 	fi
@@ -620,7 +644,8 @@ sc_prohibit_test_empty:
 sc_some_programs_must_avoid_exit_failure:
 	@cd $(srcdir)							\
 	&& grep -nw EXIT_FAILURE					\
-	    $$(git grep -El '[^T]_FAILURE|EXIT_CANCELED' $(srcdir)/src)	\
+	    $$(git grep -El '[^T]_FAILURE|EXIT_CANCELED' src/)		\
+	  | grep -v '^src/system\.h:'					\
 	  | grep -vE '= EXIT_FAILURE|return .* \?' | grep .		\
 	    && { echo '$(ME): do not use EXIT_FAILURE in the above'	\
 		  1>&2; exit 1; } || :

@@ -283,7 +283,11 @@ With more than one FILE, precede each with a header giving the file name.\n\
 "), stdout);
      printf (_("\
   -n, --lines=[+]NUM       output the last NUM lines, instead of the last %d;\n\
-                             or use -n +NUM to output starting with line NUM\n\
+                             or use -n +NUM to skip NUM-1 lines at the start\n\
+"),
+             DEFAULT_N_LINES
+             );
+     printf (_("\
       --max-unchanged-stats=N\n\
                            with --follow=name, reopen a FILE which has not\n\
                              changed size after N (default %d) iterations\n\
@@ -291,7 +295,6 @@ With more than one FILE, precede each with a header giving the file name.\n\
                              (this is the usual case of rotated log files);\n\
                              with inotify, this option is rarely useful\n\
 "),
-             DEFAULT_N_LINES,
              DEFAULT_MAX_N_UNCHANGED_STATS_BETWEEN_OPENS
              );
      fputs (_("\
@@ -1263,7 +1266,7 @@ tail_forever (struct File_spec *f, size_t n_files, double sleep_interval)
         }
 
       if ((!any_input || blocking) && fflush (stdout) != 0)
-        error (EXIT_FAILURE, errno, _("write error"));
+        write_error ();
 
       check_output_alive ();
 
@@ -1417,7 +1420,7 @@ check_fspec (struct File_spec *fspec, struct File_spec **prev_fspec)
     {
       *prev_fspec = fspec;
       if (fflush (stdout) != 0)
-        error (EXIT_FAILURE, errno, _("write error"));
+        write_error ();
     }
 }
 
@@ -2454,7 +2457,7 @@ main (int argc, char **argv)
                  tail_forever_inotify flushes only after writing,
                  not before reading.  */
               if (fflush (stdout) != 0)
-                error (EXIT_FAILURE, errno, _("write error"));
+                write_error ();
 
               Hash_table *ht;
               tail_forever_inotify (wd, F, n_files, sleep_interval, &ht);
