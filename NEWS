@@ -39,8 +39,23 @@ GNU coreutils NEWS                                    -*- outline -*-
   Previously a "Too many levels of symbolic links" diagnostic was given.
   [This bug was present in "the beginning".]
 
+  pinky, uptime, users, and who no longer misbehave on 32-bit GNU/Linux
+  platforms like x86 and ARM where time_t was historically 32 bits.
+  A new configure-time option --enable-systemd enables experimental
+  support for using systemd, to let these programs continue to work on
+  these old platforms even after the year 2038, so long as systemd
+  is also installed.
+  [bug introduced in coreutils-9.0]
+
   'pr --length=1 --double-space' no longer enters an infinite loop.
   [This bug was present in "the beginning".]
+
+  tac now handles short reads on its input.  Previously it may have exited
+  erroneously, especially with large input files with no separators.
+  [This bug was present in "the beginning".]
+
+  'uptime' no longer incorrectly prints "0 users" on OpenBSD.
+  [bug introduced in coreutils-9.2]
 
   'wc -l' and 'cksum' no longer crash with an "Illegal instruction" error
   on x86 Linux kernels that disable XSAVE YMM.  This was seen on Xen VMs.

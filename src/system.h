@@ -192,7 +192,7 @@ select_plural (uintmax_t n)
 }
 
 #define STREQ(a, b) (strcmp (a, b) == 0)
-#define STREQ_LEN(a, b, n) (strncmp (a, b, n) == 0)
+#define STREQ_LEN(a, b, n) (strncmp (a, b, n) == 0) /* n==-1 means unbounded */
 #define STRPREFIX(a, b) (strncmp (a, b, strlen (b)) == 0)
 
 /* Just like strncmp, but the second argument must be a literal string
@@ -241,6 +241,7 @@ struct group *getgrgid (gid_t);
 uid_t getuid (void);
 #endif
 
+#include "idx.h"
 #include "xalloc.h"
 #include "verify.h"
 
@@ -781,8 +782,8 @@ write_error (void)
 static inline char *
 stzncpy (char *restrict dest, char const *restrict src, size_t len)
 {
-  char const *src_end = src + len;
-  while (src < src_end && *src)
+  size_t i;
+  for (i = 0; i < len && *src; i++)
     *dest++ = *src++;
   *dest = 0;
   return dest;

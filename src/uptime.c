@@ -45,13 +45,13 @@
   proper_name ("Kaveh Ghazi")
 
 static void
-print_uptime (size_t n, const STRUCT_UTMP *this)
+print_uptime (idx_t n, const STRUCT_UTMP *this)
 {
-  size_t entries = 0;
+  idx_t entries = 0;
   time_t boot_time = 0;
   time_t time_now;
   time_t uptime = 0;
-  long int updays;
+  intmax_t updays;
   int uphours;
   int upmins;
   struct tm *tmn;
@@ -100,7 +100,6 @@ print_uptime (size_t n, const STRUCT_UTMP *this)
   }
 #endif
 
-#if HAVE_STRUCT_UTMP_UT_TYPE || HAVE_STRUCT_UTMPX_UT_TYPE
   /* Loop through all the utmp entries we just read and count up the valid
      ones, also in the process possibly gleaning boottime. */
   while (n--)
@@ -110,10 +109,6 @@ print_uptime (size_t n, const STRUCT_UTMP *this)
         boot_time = UT_TIME_MEMBER (this);
       ++this;
     }
-#else
-  (void) n;
-  (void) this;
-#endif
 
   time_now = time (nullptr);
 #if defined HAVE_PROC_UPTIME
@@ -125,8 +120,8 @@ print_uptime (size_t n, const STRUCT_UTMP *this)
       uptime = time_now - boot_time;
     }
   updays = uptime / 86400;
-  uphours = (uptime - (updays * 86400)) / 3600;
-  upmins = (uptime - (updays * 86400) - (uphours * 3600)) / 60;
+  uphours = uptime % 86400 / 3600;
+  upmins = uptime % 86400 % 3600 / 60;
   tmn = localtime (&time_now);
   /* procps' version of uptime also prints the seconds field, but
      previous versions of coreutils don't. */
@@ -140,15 +135,15 @@ print_uptime (size_t n, const STRUCT_UTMP *this)
   else
     {
       if (0 < updays)
-        printf (ngettext ("up %ld day %2d:%02d,  ",
-                          "up %ld days %2d:%02d,  ",
+        printf (ngettext ("up %"PRIdMAX" day %2d:%02d,  ",
+                          "up %"PRIdMAX" days %2d:%02d,  ",
                           select_plural (updays)),
                 updays, uphours, upmins);
       else
         printf (_("up  %2d:%02d,  "), uphours, upmins);
     }
-  printf (ngettext ("%lu user", "%lu users", select_plural (entries)),
-          (unsigned long int) entries);
+  printf (ngettext ("%td user", "%td users", select_plural (entries)),
+          entries);
 
   loads = getloadavg (avg, 3);
 
@@ -174,13 +169,11 @@ print_uptime (size_t n, const STRUCT_UTMP *this)
 static _Noreturn void
 uptime (char const *filename, int options)
 {
-  size_t n_users;
+  idx_t n_users;
   STRUCT_UTMP *utmp_buf = nullptr;
 
-#if HAVE_STRUCT_UTMP_UT_TYPE || HAVE_STRUCT_UTMPX_UT_TYPE
   if (read_utmp (filename, &n_users, &utmp_buf, options) != 0)
     error (EXIT_FAILURE, errno, "%s", quotef (filename));
-#endif
 
   print_uptime (n_users, utmp_buf);
 
