@@ -172,18 +172,10 @@ idle_string (time_t when)
 
 /* Return a time string.  */
 static char const *
-time_string (const STRUCT_UTMP *utmp_ent)
+time_string (struct gl_utmp const *utmp_ent)
 {
   static char buf[INT_STRLEN_BOUND (intmax_t) + sizeof "-%m-%d %H:%M"];
-
-  /* Don't take the address of UT_TIME_MEMBER directly.
-     Ulrich Drepper wrote:
-     "... GNU libc (and perhaps other libcs as well) have extended
-     utmp file formats which do not use a simple time_t ut_time field.
-     In glibc, ut_time is a macro which selects for backward compatibility
-     the tv_sec member of a struct timeval value."  */
-  time_t t = UT_TIME_MEMBER (utmp_ent);
-  struct tm *tmp = localtime (&t);
+  struct tm *tmp = localtime (&utmp_ent->ut_ts.tv_sec);
 
   if (tmp)
     {
@@ -191,27 +183,22 @@ time_string (const STRUCT_UTMP *utmp_ent)
       return buf;
     }
   else
-    return timetostr (t, buf);
+    return timetostr (utmp_ent->ut_ts.tv_sec, buf);
 }
 
 /* Display a line of information about UTMP_ENT. */
 
 static void
-print_entry (const STRUCT_UTMP *utmp_ent)
+print_entry (struct gl_utmp const *utmp_ent)
 {
   struct stat stats;
   time_t last_change;
   char mesg;
 
-#ifdef UT_LINE_SIZE
-  char line[UT_LINE_SIZE + 1];
-  stzncpy (line, utmp_ent->ut_line, UT_LINE_SIZE);
-#else
   /* If ut_line contains a space, the device name starts after the space.  */
   char *line = utmp_ent->ut_line;
   char *space = strchr (line, ' ');
   line = space ? space + 1 : line;
-#endif
 
   int dirfd;
   if (IS_ABSOLUTE_FILE_NAME (line))
@@ -239,20 +226,15 @@ print_entry (const STRUCT_UTMP *utmp_ent)
       last_change = 0;
     }
 
-  if (0 <= UT_USER_SIZE || strnlen (UT_USER (utmp_ent), 8) < 8)
-    printf ("%-8.*s", UT_USER_SIZE, UT_USER (utmp_ent));
+  char *ut_user = utmp_ent->ut_user;
+  if (strnlen (ut_user, 8) < 8)
+    printf ("%-8s", ut_user);
   else
-    fputs (UT_USER (utmp_ent), stdout);
+    fputs (ut_user, stdout);
 
   if (include_fullname)
     {
-#ifdef UT_USER_SIZE
-      char name[UT_USER_SIZE + 1];
-      stzncpy (name, UT_USER (utmp_ent), UT_USER_SIZE);
-#else
-      char *name = UT_USER (utmp_ent);
-#endif
-      struct passwd *pw = getpwnam (name);
+      struct passwd *pw = getpwnam (ut_user);
       if (pw == nullptr)
         /* TRANSLATORS: Real name is unknown; at most 19 characters. */
         printf (" %19s", _("        ???"));
@@ -272,8 +254,8 @@ print_entry (const STRUCT_UTMP *utmp_ent)
 
   fputc (' ', stdout);
   fputc (mesg, stdout);
-  if (0 <= UT_LINE_SIZE || strnlen (utmp_ent->ut_line, 8) < 8)
-    printf ("%-8.*s", UT_LINE_SIZE, utmp_ent->ut_line);
+  if (strnlen (utmp_ent->ut_line, 8) < 8)
+    printf ("%-8s", utmp_ent->ut_line);
   else
     fputs (utmp_ent->ut_line, stdout);
 
@@ -293,13 +275,7 @@ print_entry (const STRUCT_UTMP *utmp_ent)
     {
       char *host = nullptr;
       char *display = nullptr;
-
-# ifdef UT_HOST_SIZE
-      char ut_host[UT_HOST_SIZE + 1];
-      stzncpy (ut_host, utmp_ent->ut_host, UT_HOST_SIZE);
-# else
       char *ut_host = utmp_ent->ut_host;
-# endif
 
       /* Look for an X display.  */
       display = strchr (ut_host, ':');
@@ -442,16 +418,10 @@ print_heading (void)
   putchar ('\n');
 }
 
-/* Work around <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109614>,
-   triggered by STREQ_LEN with a negative length.  */
-#if 11 <= __GNUC__
-# pragma GCC diagnostic ignored "-Wstringop-overread"
-#endif
-
 /* Display UTMP_BUF, which should have N entries. */
 
 static void
-scan_entries (idx_t n, const STRUCT_UTMP *utmp_buf,
+scan_entries (idx_t n, struct gl_utmp const *utmp_buf,
               const int argc_names, char *const argv_names[])
 {
   if (hard_locale (LC_TIME))
@@ -475,7 +445,7 @@ scan_entries (idx_t n, const STRUCT_UTMP *utmp_buf,
           if (argc_names)
             {
               for (int i = 0; i < argc_names; i++)
-                if (STREQ_LEN (UT_USER (utmp_buf), argv_names[i], UT_USER_SIZE))
+                if (STREQ (utmp_buf->ut_user, argv_names[i]))
                   {
                     print_entry (utmp_buf);
                     break;
@@ -495,9 +465,8 @@ short_pinky (char const *filename,
              const int argc_names, char *const argv_names[])
 {
   idx_t n_users;
-  STRUCT_UTMP *utmp_buf = nullptr;
-
-  if (read_utmp (filename, &n_users, &utmp_buf, 0) != 0)
+  struct gl_utmp *utmp_buf;
+  if (read_utmp (filename, &n_users, &utmp_buf, READ_UTMP_USER_PROCESS) != 0)
     error (EXIT_FAILURE, errno, "%s", quotef (filename));
 
   scan_entries (n_users, utmp_buf, argc_names, argv_names);

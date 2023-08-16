@@ -406,8 +406,6 @@ AC_DEFUN([coreutils_DUMMY_1],
 ])
 coreutils_DUMMY_1
 
-GNULIB_BOOT_TIME([gl_ADD_PROG([optional_bin_progs], [uptime])])
-
 AC_SYS_POSIX_TERMIOS()
 gl_HEADER_TIOCGWINSZ_NEEDS_SYS_IOCTL
 
@@ -521,7 +519,7 @@ ac_c_werror_flag=$cu_save_c_werror_flag
 ac_save_CFLAGS=$CFLAGS
 CFLAGS="-mavx -mpclmul $CFLAGS"
 AC_MSG_CHECKING([if pclmul intrinsic exists])
-AC_COMPILE_IFELSE(
+AC_LINK_IFELSE(
   [AC_LANG_SOURCE([[
     #include <x86intrin.h>
 
@@ -550,7 +548,7 @@ CFLAGS=$ac_save_CFLAGS
 
 CFLAGS="-mavx2 $CFLAGS"
 AC_MSG_CHECKING([if avx2 intrinstics exists])
-AC_COMPILE_IFELSE(
+AC_LINK_IFELSE(
   [AC_LANG_SOURCE([[
     #include <x86intrin.h>
 
