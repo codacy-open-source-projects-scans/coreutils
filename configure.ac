@@ -64,6 +64,26 @@ gl_SET_CRYPTO_CHECK_DEFAULT([auto-gpl-compat])
 gl_INIT
 coreutils_MACROS
 
+# These are safe, since 'sort', coreutils's only multithreaded app,
+# does not use the relevant modules.
+AC_DEFINE([GNULIB_EXCLUDE_SINGLE_THREAD], [1],
+  [Define to 1 if apps call 'exclude' functions from a single thread.])
+AC_DEFINE([GNULIB_REGEX_SINGLE_THREAD], [1],
+  [Define to 1 if apps call 'regex' functions from a single thread.])
+# This is unsafe, since 'sort' uses mbrtowc indirectly, possibly from
+# multiple threads.
+# AC_DEFINE([GNULIB_MBRTOWC_SINGLE_THREAD], [1],
+#   [Define to 1 if apps call mbrtowc, mbrtoc32, and 'regex' functions
+#    from a single thread.])
+# This is safe, since all apps set locale early.
+AC_DEFINE([GNULIB_WCHAR_SINGLE_LOCALE], [1],
+  [Define to 1 if apps don't set the locale after calling
+   locale-sensitive functions like mbrtowc and wcwidth.])
+
+AC_DEFINE([GNULIB_MBRTOC32_REGULAR], [1],
+  [Do not worry about rare encodings like CP864, EBCDIC, Johab, and Shift JIS
+   that glibc does not support.])
+
 # The test suite needs to know if we have a working perl.
 AM_CONDITIONAL([HAVE_PERL], [test "$gl_cv_prog_perl" != no])
 
@@ -471,11 +491,6 @@ if test $gl_cv_sys_tiocgwinsz_needs_termios_h = no && \
                    [Define if your system defines TIOCGWINSZ in sys/pty.h.])
 fi
 
-# For src/kill.c.
-AC_CHECK_DECLS([strsignal, sys_siglist, _sys_siglist, __sys_siglist], , ,
-  [AC_INCLUDES_DEFAULT
-#include <signal.h>])
-
 # Build df only if there's a point to it.
 if test $gl_cv_list_mounted_fs = yes && test $gl_cv_fs_space = yes; then
   gl_ADD_PROG([optional_bin_progs], [df])
@@ -547,7 +562,7 @@ AM_CONDITIONAL([USE_PCLMUL_CRC32],
 CFLAGS=$ac_save_CFLAGS
 
 CFLAGS="-mavx2 $CFLAGS"
-AC_MSG_CHECKING([if avx2 intrinstics exists])
+AC_MSG_CHECKING([for avx2 intrinsics])
 AC_LINK_IFELSE(
   [AC_LANG_SOURCE([[
     #include <x86intrin.h>

@@ -206,7 +206,7 @@ static bool delete = false;
 static bool complement = false;
 
 /* When tr is performing translation and string1 is longer than string2,
-   POSIX says that the result is unspecified.  That gives the implementor
+   POSIX says that the result is unspecified.  That gives the implementer
    of a POSIX conforming version of tr two reasonable choices for the
    semantics of this case.
 
@@ -1138,7 +1138,7 @@ card_of_complement (struct Spec_list *s)
 {
   int c;
   int cardinality = N_CHARS;
-  bool in_set[N_CHARS] = { 0, };
+  bool in_set[N_CHARS] = {0};
 
   s->state = BEGIN_STATE;
   while ((c = get_next (s, nullptr)) != -1)

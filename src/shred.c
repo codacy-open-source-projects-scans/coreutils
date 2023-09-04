@@ -300,7 +300,6 @@ dosync (int fd, char const *qname)
 {
   int err;
 
-#if HAVE_FDATASYNC
   if (fdatasync (fd) == 0)
     return 0;
   err = errno;
@@ -310,7 +309,6 @@ dosync (int fd, char const *qname)
       errno = err;
       return -1;
     }
-#endif
 
   if (fsync (fd) == 0)
     return 0;
@@ -1163,7 +1161,7 @@ int
 main (int argc, char **argv)
 {
   bool ok = true;
-  struct Options flags = { 0, };
+  struct Options flags = {0};
   char **file;
   int n_files;
   int c;

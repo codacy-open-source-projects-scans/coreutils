@@ -205,7 +205,7 @@ process_file (FTS *fts, FTSENT *ent)
   char const *file_full_name = ent->fts_path;
   char const *file = ent->fts_accpath;
   const struct stat *file_stats = ent->fts_statp;
-  struct change_status ch = { 0, };
+  struct change_status ch = {0};
   ch.status = CH_NO_STAT;
 
   switch (ent->fts_info)
@@ -457,7 +457,7 @@ main (int argc, char **argv)
         case '=':
         case '0': case '1': case '2': case '3':
         case '4': case '5': case '6': case '7':
-          /* Support nonportable uses like "chmod -w", but diagnose
+          /* Support non-portable uses like "chmod -w", but diagnose
              surprises due to umask confusion.  Even though "--", "--r",
              etc., are valid modes, there is no "case '-'" here since
              getopt_long reserves leading "--" for long options.  */

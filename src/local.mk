@@ -260,8 +260,10 @@ src_ln_LDADD += $(CLOCK_TIME_LIB)
 src_ls_LDADD += $(CLOCK_TIME_LIB)
 src_mktemp_LDADD += $(CLOCK_TIME_LIB)
 src_pr_LDADD += $(CLOCK_TIME_LIB)
+src_sort_LDADD += $(CLOCK_TIME_LIB)
+src_split_LDADD += $(CLOCK_TIME_LIB)
 src_tac_LDADD += $(CLOCK_TIME_LIB)
-src_timeout_LDADD += $(LIB_TIMER_TIME)
+src_timeout_LDADD += $(TIMER_TIME_LIB)
 src_touch_LDADD += $(CLOCK_TIME_LIB)
 
 # for gethrxtime
@@ -271,9 +273,9 @@ src_dd_LDADD += $(GETHRXTIME_LIB)
 src_ls_LDADD += $(LIB_CAP)
 
 # for fdatasync
-src_dd_LDADD += $(LIB_FDATASYNC)
-src_shred_LDADD += $(LIB_FDATASYNC)
-src_sync_LDADD += $(LIB_FDATASYNC)
+src_dd_LDADD += $(FDATASYNC_LIB)
+src_shred_LDADD += $(FDATASYNC_LIB)
+src_sync_LDADD += $(FDATASYNC_LIB)
 
 # for xnanosleep
 src_sleep_LDADD += $(NANOSLEEP_LIB)
@@ -294,10 +296,8 @@ src_ls_LDADD += $(FILE_HAS_ACL_LIB)
 # for various xattr functions
 copy_ldadd += $(LIB_XATTR)
 
-# for print_unicode_char, proper_name_utf8
-src_factor_LDADD += $(LIBICONV)
+# for print_unicode_char
 src_printf_LDADD += $(LIBICONV)
-src_ptx_LDADD += $(LIBICONV)
 
 # for libcrypto hash routines
 src_md5sum_LDADD += $(LIB_CRYPTO)

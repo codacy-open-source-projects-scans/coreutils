@@ -92,11 +92,6 @@
 # include <sys/clonefile.h>
 #endif
 
-#ifndef HAVE_FCHOWN
-# define HAVE_FCHOWN false
-# define fchown(fd, uid, gid) (-1)
-#endif
-
 #ifndef USE_ACL
 # define USE_ACL 0
 #endif
@@ -881,6 +876,34 @@ copy_dir (char const *src_name_in, char const *dst_name_in,
   return ok;
 }
 
+/* Change the file mode bits of the file identified by DESC or
+   DIRFD+NAME to MODE.  Use DESC if DESC is valid and fchmod is
+   available, DIRFD+NAME otherwise.  */
+
+static int
+fchmod_or_lchmod (int desc, int dirfd, char const *name, mode_t mode)
+{
+#if HAVE_FCHMOD
+  if (0 <= desc)
+    return fchmod (desc, mode);
+#endif
+  return lchmodat (dirfd, name, mode);
+}
+
+/* Change the ownership of the file identified by DESC or
+   DIRFD+NAME to UID+GID.  Use DESC if DESC is valid and fchown is
+   available, DIRFD+NAME otherwise.  */
+
+static int
+fchown_or_lchown (int desc, int dirfd, char const *name, uid_t uid, gid_t gid)
+{
+#if HAVE_FCHOWN
+  if (0 <= desc)
+    return fchown (desc, uid, gid);
+#endif
+  return lchownat (dirfd, name, uid, gid);
+}
+
 /* Set the owner and owning group of DEST_DESC to the st_uid and
    st_gid fields of SRC_SB.  If DEST_DESC is undefined (-1), set
    the owner and owning group of DST_NAME aka DST_DIRFD+DST_RELNAME
@@ -927,34 +950,16 @@ set_owner (const struct cp_options *x, char const *dst_name,
         }
     }
 
-  if (HAVE_FCHOWN && dest_desc != -1)
-    {
-      if (fchown (dest_desc, uid, gid) == 0)
-        return 1;
-      if (errno == EPERM || errno == EINVAL)
-        {
-          /* We've failed to set *both*.  Now, try to set just the group
-             ID, but ignore any failure here, and don't change errno.  */
-          int saved_errno = errno;
-          ignore_value (fchown (dest_desc, -1, gid));
-          errno = saved_errno;
-        }
-    }
-  else
-    {
-      if (lchownat (dst_dirfd, dst_relname, uid, gid) == 0)
-        return 1;
-      if (errno == EPERM || errno == EINVAL)
-        {
-          /* We've failed to set *both*.  Now, try to set just the group
-             ID, but ignore any failure here, and don't change errno.  */
-          int saved_errno = errno;
-          ignore_value (lchownat (dst_dirfd, dst_relname, -1, gid));
-          errno = saved_errno;
-        }
-    }
+  if (fchown_or_lchown (dest_desc, dst_dirfd, dst_relname, uid, gid) == 0)
+    return 1;
 
-  if (! chown_failure_ok (x))
+  /* The ownership change failed.  If the failure merely means we lack
+     privileges to change owner+group, try to change just the group
+     and ignore any failure of this.  Otherwise, report an error.  */
+  if (chown_failure_ok (x))
+    ignore_value (fchown_or_lchown (dest_desc, dst_dirfd, dst_relname,
+                                    -1, gid));
+  else
     {
       error (0, errno, _("failed to preserve ownership for %s"),
              quoteaf (dst_name));
@@ -1086,20 +1091,6 @@ set_file_security_ctx (char const *dst_name,
     }
 
   return true;
-}
-
-/* Change the file mode bits of the file identified by DESC or
-   DIRFD+NAME to MODE.  Use DESC if DESC is valid and fchmod is
-   available, DIRFD+NAME otherwise.  */
-
-static int
-fchmod_or_lchmod (int desc, int dirfd, char const *name, mode_t mode)
-{
-#if HAVE_FCHMOD
-  if (0 <= desc)
-    return fchmod (desc, mode);
-#endif
-  return lchmodat (dirfd, name, mode);
 }
 
 #ifndef HAVE_STRUCT_STAT_ST_BLOCKS
@@ -2846,7 +2837,10 @@ skip:
           switch (rename_errno)
             {
             case EDQUOT: case EEXIST: case EISDIR: case EMLINK:
-            case ENOSPC: case ENOTEMPTY: case ETXTBSY:
+            case ENOSPC: case ETXTBSY:
+#if ENOTEMPTY != EEXIST
+            case ENOTEMPTY:
+#endif
               /* The destination must be the problem.  Don't mention
                  the source as that is more likely to confuse the user
                  than be helpful.  */
@@ -2993,7 +2987,7 @@ skip:
           omitted_permissions = 0;
 
           /* For directories, the process global context could be reset for
-             descendents, so use it to set the context for existing dirs here.
+             descendants, so use it to set the context for existing dirs here.
              This will also give earlier indication of failure to set ctx.  */
           if (x->set_security_context || x->preserve_security_context)
             if (! set_file_security_ctx (dst_name, false, x))
@@ -3455,9 +3449,16 @@ chown_failure_ok (struct cp_options const *x)
 {
   /* If non-root uses -p, it's ok if we can't preserve ownership.
      But root probably wants to know, e.g. if NFS disallows it,
-     or if the target system doesn't support file ownership.  */
+     or if the target system doesn't support file ownership.
 
-  return ((errno == EPERM || errno == EINVAL) && !x->chown_privileges);
+     Treat EACCES like EPERM and EINVAL to work around a bug in Linux
+     CIFS <https://bugs.gnu.org/65599>.  Although this means coreutils
+     will ignore EACCES errors that it should report, problems should
+     occur only when some other process is racing with coreutils and
+     coreutils is not immune to races anyway.  */
+
+  return ((errno == EPERM || errno == EINVAL || errno == EACCES)
+          && !x->chown_privileges);
 }
 
 /* Similarly, return true if it's OK for chmod and similar operations
@@ -3467,7 +3468,8 @@ chown_failure_ok (struct cp_options const *x)
 static bool
 owner_failure_ok (struct cp_options const *x)
 {
-  return ((errno == EPERM || errno == EINVAL) && !x->owner_privileges);
+  return ((errno == EPERM || errno == EINVAL || errno == EACCES)
+          && !x->owner_privileges);
 }
 
 /* Return the user's umask, caching the result.

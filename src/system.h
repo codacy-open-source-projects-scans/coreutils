@@ -370,12 +370,11 @@ enum
 #undef emit_bug_reporting_address
 
 #include "propername.h"
-/* Define away proper_name (leaving proper_name_utf8, which affects far
-   fewer programs), since it's not worth the cost of adding ~17KB to
+/* Define away proper_name, since it's not worth the cost of adding ~17KB to
    the x86_64 text size of every single program.  This avoids a 40%
    (almost ~2MB) increase in the file system space utilization for the set
    of the 100 binaries. */
-#define proper_name(x) (x)
+#define proper_name(x) proper_name_lite (x, x)
 
 #include "progname.h"
 
@@ -769,8 +768,9 @@ static inline void
 write_error (void)
 {
   int saved_errno = errno;
-  fflush (stdout);    /* Ensure nothing buffered that might induce an error. */
-  clearerr (stdout);  /* To avoid extraneous diagnostic from close_stdout.  */
+  fflush (stdout);    /* Last attempt to write any buffered data.  */
+  fpurge (stdout);    /* Ensure nothing buffered that might induce an error. */
+  clearerr (stdout);  /* Avoid extraneous diagnostic from close_stdout.  */
   error (EXIT_FAILURE, saved_errno, _("write error"));
 }
 
