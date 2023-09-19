@@ -693,25 +693,25 @@ out_string (char *pformat, size_t prefix_len, char const *arg)
 static int
 out_int (char *pformat, size_t prefix_len, intmax_t arg)
 {
-  make_format (pformat, prefix_len, "'-+ 0", PRIdMAX);
+  make_format (pformat, prefix_len, "'-+ 0", "jd");
   return printf (pformat, arg);
 }
 static int
 out_uint (char *pformat, size_t prefix_len, uintmax_t arg)
 {
-  make_format (pformat, prefix_len, "'-0", PRIuMAX);
+  make_format (pformat, prefix_len, "'-0", "ju");
   return printf (pformat, arg);
 }
 static void
 out_uint_o (char *pformat, size_t prefix_len, uintmax_t arg)
 {
-  make_format (pformat, prefix_len, "-#0", PRIoMAX);
+  make_format (pformat, prefix_len, "-#0", "jo");
   printf (pformat, arg);
 }
 static void
 out_uint_x (char *pformat, size_t prefix_len, uintmax_t arg)
 {
-  make_format (pformat, prefix_len, "-#0", PRIxMAX);
+  make_format (pformat, prefix_len, "-#0", "jx");
   printf (pformat, arg);
 }
 static int
@@ -972,7 +972,7 @@ find_bind_mount (char const * name)
           struct stat dev_stats;
 
           if (stat (me->me_devname, &dev_stats) == 0
-              && SAME_INODE (name_stats, dev_stats))
+              && psame_inode (&name_stats, &dev_stats))
             {
               bind_mount = me->me_devname;
               break;
@@ -1139,8 +1139,8 @@ print_it (char const *format, int fd, char const *filename,
   enum
     {
       MAX_ADDITIONAL_BYTES =
-        (MAX (sizeof PRIdMAX,
-              MAX (sizeof PRIoMAX, MAX (sizeof PRIuMAX, sizeof PRIxMAX)))
+        (MAX (sizeof "jd",
+              MAX (sizeof "jo", MAX (sizeof "ju", sizeof "jx")))
          - 1)
     };
   size_t n_alloc = strlen (format) + MAX_ADDITIONAL_BYTES + 1;
@@ -1603,10 +1603,10 @@ print_stat (char *pformat, size_t prefix_len, char mod, char m,
       out_uint (pformat, prefix_len, ST_NBLOCKSIZE);
       break;
     case 'b':
-      out_uint (pformat, prefix_len, ST_NBLOCKS (*statbuf));
+      out_uint (pformat, prefix_len, STP_NBLOCKS (statbuf));
       break;
     case 'o':
-      out_uint (pformat, prefix_len, ST_BLKSIZE (*statbuf));
+      out_uint (pformat, prefix_len, STP_BLKSIZE (statbuf));
       break;
     case 'w':
       {

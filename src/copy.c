@@ -1134,7 +1134,7 @@ infer_scantype (int fd, struct stat const *sb,
      suggests the file is sparse.  */
   if (! (HAVE_STRUCT_STAT_ST_BLOCKS
          && S_ISREG (sb->st_mode)
-         && ST_NBLOCKS (*sb) < sb->st_size / ST_NBLOCKSIZE))
+         && STP_NBLOCKS (sb) < sb->st_size / ST_NBLOCKSIZE))
     return PLAIN_SCANTYPE;
 
 #ifdef SEEK_HOLE
@@ -1220,20 +1220,21 @@ handle_clone_fail (int dst_dirfd, char const *dst_relname,
    *NEW_DST is initially as in copy_internal.
    If successful, set *NEW_DST to true if the destination file was created and
    to false otherwise; if unsuccessful, perhaps set *NEW_DST to some value.
-   SRC_SB is the result of calling follow_fstatat on SRC_NAME.  */
+   SRC_SB is the result of calling follow_fstatat on SRC_NAME;
+   it might be updated by calling fstat again on the same file,
+   to give it slightly more up-to-date contents.  */
 
 static bool
 copy_reg (char const *src_name, char const *dst_name,
           int dst_dirfd, char const *dst_relname,
           const struct cp_options *x,
           mode_t dst_mode, mode_t omitted_permissions, bool *new_dst,
-          struct stat const *src_sb)
+          struct stat *src_sb)
 {
   char *buf = nullptr;
   int dest_desc;
   int dest_errno;
   int source_desc;
-  mode_t src_mode = src_sb->st_mode;
   mode_t extra_permissions;
   struct stat sb;
   struct stat src_open_sb;
@@ -1264,7 +1265,7 @@ copy_reg (char const *src_name, char const *dst_name,
 
   /* Compare the source dev/ino from the open file to the incoming,
      saved ones obtained via a previous call to stat.  */
-  if (! SAME_INODE (*src_sb, src_open_sb))
+  if (! psame_inode (src_sb, &src_open_sb))
     {
       error (0, 0,
              _("skipping file %s, as it was replaced while being copied"),
@@ -1272,6 +1273,11 @@ copy_reg (char const *src_name, char const *dst_name,
       return_val = false;
       goto close_src_desc;
     }
+
+  /* Might as well tell the caller about the latest version of the
+     source file status, since we have it already.  */
+  *src_sb = src_open_sb;
+  mode_t src_mode = src_sb->st_mode;
 
   /* The semantics of the following open calls are mandated
      by the specs for both cp and mv.  */
@@ -1538,8 +1544,8 @@ copy_reg (char const *src_name, char const *dst_name,
   if (data_copy_required)
     {
       /* Choose a suitable buffer size; it may be adjusted later.  */
-      size_t buf_size = io_blksize (sb);
-      size_t hole_size = ST_BLKSIZE (sb);
+      size_t buf_size = io_blksize (&sb);
+      size_t hole_size = STP_BLKSIZE (&sb);
 
       /* Deal with sparse files.  */
       enum scantype scantype = infer_scantype (source_desc, &src_open_sb,
@@ -1567,7 +1573,7 @@ copy_reg (char const *src_name, char const *dst_name,
              Note we read in multiples of the reported block size
              to support (unusual) devices that have this constraint.  */
           size_t blcm_max = MIN (SIZE_MAX, SSIZE_MAX);
-          size_t blcm = buffer_lcm (io_blksize (src_open_sb), buf_size,
+          size_t blcm = buffer_lcm (io_blksize (&src_open_sb), buf_size,
                                     blcm_max);
 
           /* Do not bother with a buffer larger than the input file, plus one
@@ -1737,7 +1743,7 @@ same_file_ok (char const *src_name, struct stat const *src_sb,
   struct stat tmp_src_sb;
 
   bool same_link;
-  bool same = SAME_INODE (*src_sb, *dst_sb);
+  bool same = psame_inode (src_sb, dst_sb);
 
   *return_now = false;
 
@@ -1798,7 +1804,7 @@ same_file_ok (char const *src_name, struct stat const *src_sb,
       src_sb_link = &tmp_src_sb;
       dst_sb_link = &tmp_dst_sb;
 
-      same_link = SAME_INODE (*src_sb_link, *dst_sb_link);
+      same_link = psame_inode (src_sb_link, dst_sb_link);
 
       /* If both are symlinks, then it's ok, but only if the destination
          will be unlinked before being opened.  This is like the test
@@ -1886,7 +1892,7 @@ same_file_ok (char const *src_name, struct stat const *src_sb,
      hard links to the same file.  */
   if (!S_ISLNK (src_sb_link->st_mode) && !S_ISLNK (dst_sb_link->st_mode))
     {
-      if (!SAME_INODE (*src_sb_link, *dst_sb_link))
+      if (!psame_inode (src_sb_link, dst_sb_link))
         return true;
 
       /* If they are the same file, it's ok if we're making hard links.  */
@@ -1947,7 +1953,7 @@ same_file_ok (char const *src_name, struct stat const *src_sb,
       else if (fstatat (dst_dirfd, dst_relname, &tmp_dst_sb, 0) != 0)
         return true;
 
-      if ( ! SAME_INODE (tmp_src_sb, tmp_dst_sb))
+      if (!psame_inode (&tmp_src_sb, &tmp_dst_sb))
         return true;
 
       if (x->hard_link)
@@ -2166,7 +2172,7 @@ source_is_dst_backup (char const *srcbase, struct stat const *src_st,
   struct stat dst_back_sb;
   int dst_back_status = fstatat (dst_dirfd, dst_back, &dst_back_sb, 0);
   free (dst_back);
-  return dst_back_status == 0 && SAME_INODE (*src_st, dst_back_sb);
+  return dst_back_status == 0 && psame_inode (src_st, &dst_back_sb);
 }
 
 /* Copy the file SRC_NAME to the file DST_NAME aka DST_DIRFD+DST_RELNAME.
@@ -2211,12 +2217,6 @@ copy_internal (char const *src_name, char const *dst_name,
   bool dest_is_symlink = false;
   bool have_dst_lstat = false;
 
-  /* Whether the destination is (or was) known to be new, updated as
-     more info comes in.  This may become true if the destination is a
-     dangling symlink, in contexts where dangling symlinks should be
-     treated the same as nonexistent files.  */
-  bool new_dst = 0 < nonexistent_dst;
-
   *copy_into_self = false;
 
   int rename_errno = x->rename_errno;
@@ -2226,7 +2226,7 @@ copy_internal (char const *src_name, char const *dst_name,
         rename_errno = (renameatu (AT_FDCWD, src_name, dst_dirfd, drelname,
                                    RENAME_NOREPLACE)
                         ? errno : 0);
-      nonexistent_dst = *rename_succeeded = new_dst = rename_errno == 0;
+      nonexistent_dst = *rename_succeeded = rename_errno == 0;
     }
 
   if (rename_errno == 0
@@ -2284,8 +2284,21 @@ copy_internal (char const *src_name, char const *dst_name,
 
   bool dereference = should_dereference (x, command_line_arg);
 
-  if (nonexistent_dst <= 0)
+  /* Whether the destination is (or was) known to be new, updated as
+     more info comes in.  This may become true if the destination is a
+     dangling symlink, in contexts where dangling symlinks should be
+     treated the same as nonexistent files.  */
+  bool new_dst = 0 < nonexistent_dst;
+
+  if (! new_dst)
     {
+      /* Normally, fill in DST_SB or set NEW_DST so that later code
+         can use DST_SB if NEW_DST is false.  However, don't bother
+         doing this when rename_errno == EEXIST and X->interactive is
+         I_ALWAYS_NO or I_ALWAYS_SKIP, something that can happen only
+         with mv in which case x->update must be false which means
+         that even if !NEW_DST the move will be abandoned without
+         looking at DST_SB.  */
       if (! (rename_errno == EEXIST
              && (x->interactive == I_ALWAYS_NO
                  || x->interactive == I_ALWAYS_SKIP)))
@@ -2303,26 +2316,26 @@ copy_internal (char const *src_name, char const *dst_name,
                || x->move_mode || x->symbolic_link || x->hard_link
                || x->backup_type != no_backups
                || x->unlink_dest_before_opening);
-          int fstatat_flags = use_lstat ? AT_SYMLINK_NOFOLLOW : 0;
           if (!use_lstat && nonexistent_dst < 0)
             new_dst = true;
-          else if (follow_fstatat (dst_dirfd, drelname, &dst_sb, fstatat_flags)
-                   == 0)
+          else if (0 <= follow_fstatat (dst_dirfd, drelname, &dst_sb,
+                                        use_lstat ? AT_SYMLINK_NOFOLLOW : 0))
             {
               have_dst_lstat = use_lstat;
               rename_errno = EEXIST;
             }
+          else if (errno == ENOENT)
+            new_dst = true;
+          else if (errno == ELOOP && !use_lstat
+                   && x->unlink_dest_after_failed_open)
+            {
+              /* cp -f's destination might be a symlink loop.
+                 Leave new_dst=false so that we try to unlink later.  */
+            }
           else
             {
-              if (errno == ELOOP && x->unlink_dest_after_failed_open)
-                /* leave new_dst=false so we unlink later.  */;
-              else if (errno != ENOENT)
-                {
-                  error (0, errno, _("cannot stat %s"), quoteaf (dst_name));
-                  return false;
-                }
-              else
-                new_dst = true;
+              error (0, errno, _("cannot stat %s"), quoteaf (dst_name));
+              return false;
             }
         }
 
@@ -2587,22 +2600,16 @@ skip:
       && ! x->move_mode
       && x->backup_type == no_backups)
     {
-      bool lstat_ok = true;
-      struct stat tmp_buf;
-      struct stat *dst_lstat_sb;
-
       /* If we did not follow symlinks above, good: use that data.
          Otherwise, use AT_SYMLINK_NOFOLLOW, in case dst_name is a symlink.  */
-      if (have_dst_lstat)
-        dst_lstat_sb = &dst_sb;
-      else if (fstatat (dst_dirfd, drelname, &tmp_buf, AT_SYMLINK_NOFOLLOW)
-               == 0)
-        dst_lstat_sb = &tmp_buf;
-      else
-        lstat_ok = false;
+      struct stat tmp_buf;
+      struct stat *dst_lstat_sb
+        = (have_dst_lstat ? &dst_sb
+           : fstatat (dst_dirfd, drelname, &tmp_buf, AT_SYMLINK_NOFOLLOW) < 0
+           ? nullptr : &tmp_buf);
 
       /* Never copy through a symlink we've just created.  */
-      if (lstat_ok
+      if (dst_lstat_sb
           && S_ISLNK (dst_lstat_sb->st_mode)
           && seen_file (x->dest_info, dst_relname, dst_lstat_sb))
         {
@@ -3035,7 +3042,7 @@ skip:
                             || stat (".", &dot_sb) != 0
                             || (fstatat (dst_dirfd, dst_parent, &dst_parent_sb,
                                          0) != 0)
-                            || SAME_INODE (dot_sb, dst_parent_sb));
+                            || psame_inode (&dot_sb, &dst_parent_sb));
           free (dst_parent);
 
           if (! in_current_dir)

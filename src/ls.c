@@ -1083,7 +1083,7 @@ dired_dump_obstack (char const *prefix, struct obstack *os)
       for (size_t i = 0; i < n_pos; i++)
         {
           intmax_t p = pos[i];
-          printf (" %"PRIdMAX, p);
+          printf (" %jd", p);
         }
       putchar ('\n');
     }
@@ -1403,7 +1403,7 @@ dev_ino_compare (void const *x, void const *y)
 {
   struct dev_ino const *a = x;
   struct dev_ino const *b = y;
-  return SAME_INODE (*a, *b) ? true : false;
+  return PSAME_INODE (a, b);
 }
 
 static void
@@ -2054,6 +2054,8 @@ decode_switches (int argc, char **argv)
           break;
 
         case 'D':
+          format_opt = long_format;
+          print_hyperlink = false;
           dired = true;
           break;
 
@@ -2377,9 +2379,8 @@ decode_switches (int argc, char **argv)
   dirname_quoting_options = clone_quoting_options (nullptr);
   set_char_quoting (dirname_quoting_options, ':', 1);
 
-  /* --dired is meaningful only with --format=long (-l) and sans --hyperlink.
-     Otherwise, ignore it.  FIXME: warn about this?
-     Alternatively, make --dired imply --format=long?  */
+  /* --dired implies --format=long (-l) and sans --hyperlink.
+     So ignore it if those overridden.  */
   dired &= (format == long_format) & !print_hyperlink;
 
   if (eolbyte < dired)
@@ -3610,7 +3611,7 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
       else
         f->filetype = normal;
 
-      blocks = ST_NBLOCKS (f->stat);
+      blocks = STP_NBLOCKS (&f->stat);
       if (format == long_format || print_block_size)
         {
           char buf[LONGEST_HUMAN_READABLE + 1];
@@ -4245,7 +4246,7 @@ format_user_or_group (char const *name, uintmax_t id, int width)
       while (pad--);
     }
   else
-    dired_pos += printf ("%*"PRIuMAX" ", width, id);
+    dired_pos += printf ("%*ju ", width, id);
 }
 
 /* Print the name or id of the user with id U, using a print width of
@@ -4275,7 +4276,7 @@ format_user_or_group_width (char const *name, uintmax_t id)
 {
   return (name
           ? mbswidth (name, MBSWIDTH_FLAGS)
-          : snprintf (nullptr, 0, "%"PRIuMAX, id));
+          : snprintf (nullptr, 0, "%ju", id));
 }
 
 /* Return the number of columns that format_user will print,
@@ -4378,7 +4379,7 @@ print_long_format (const struct fileinfo *f)
       char const *blocks =
         (! f->stat_ok
          ? "?"
-         : human_readable (ST_NBLOCKS (f->stat), hbuf, human_output_opts,
+         : human_readable (STP_NBLOCKS (&f->stat), hbuf, human_output_opts,
                            ST_NBLOCKSIZE, output_block_size));
       int blocks_width = mbswidth (blocks, MBSWIDTH_FLAGS);
       for (int pad = blocks_width < 0 ? 0 : block_size_width - blocks_width;
@@ -4894,7 +4895,7 @@ print_file_name_and_frills (const struct fileinfo *f, size_t start_col)
   if (print_block_size)
     printf ("%*s ", format == with_commas ? 0 : block_size_width,
             ! f->stat_ok ? "?"
-            : human_readable (ST_NBLOCKS (f->stat), buf, human_output_opts,
+            : human_readable (STP_NBLOCKS (&f->stat), buf, human_output_opts,
                               ST_NBLOCKSIZE, output_block_size));
 
   if (print_scontext)
@@ -5126,7 +5127,7 @@ length_of_file_name_and_frills (const struct fileinfo *f)
   if (print_block_size)
     len += 1 + (format == with_commas
                 ? strlen (! f->stat_ok ? "?"
-                          : human_readable (ST_NBLOCKS (f->stat), buf,
+                          : human_readable (STP_NBLOCKS (&f->stat), buf,
                                             human_output_opts, ST_NBLOCKSIZE,
                                             output_block_size))
                 : block_size_width);

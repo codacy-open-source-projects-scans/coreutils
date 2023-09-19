@@ -115,13 +115,12 @@ do_ftruncate (int fd, char const *fname, off_t ssize, off_t rsize,
     }
   if (block_mode)
     {
-      ptrdiff_t blksize = ST_BLKSIZE (sb);
+      ptrdiff_t blksize = STP_BLKSIZE (&sb);
       intmax_t ssize0 = ssize;
       if (ckd_mul (&ssize, ssize, blksize))
         {
           error (0, 0,
-                 _("overflow in %" PRIdMAX
-                   " * %" PRIdPTR " byte blocks for file %s"),
+                 _("overflow in %jd * %td byte blocks for file %s"),
                  ssize0, blksize, quoteaf (fname));
           return false;
         }
@@ -188,9 +187,8 @@ do_ftruncate (int fd, char const *fname, off_t ssize, off_t rsize,
 
   if (ftruncate (fd, nsize) != 0)
     {
-      intmax_t s = nsize;
-      error (0, errno, _("failed to truncate %s at %"PRIdMAX" bytes"),
-             quoteaf (fname), s);
+      error (0, errno, _("failed to truncate %s at %jd bytes"),
+             quoteaf (fname), (intmax_t) nsize);
       return false;
     }
 
