@@ -23,8 +23,7 @@
 #include <sys/types.h>
 #include <getopt.h>
 #include <c-ctype.h>
-#include <wchar.h>
-#include <wctype.h>
+#include <uchar.h>
 
 #include "system.h"
 #include "assure.h"
@@ -319,18 +318,18 @@ replace_invalid_chars (char *cell)
 {
   char *srcend = cell + strlen (cell);
   char *dst = cell;
-  mbstate_t mbstate = {0};
+  mbstate_t mbstate; mbszero (&mbstate);
   size_t n;
 
   for (char *src = cell; src != srcend; src += n)
     {
-      wchar_t wc;
+      char32_t wc;
       size_t srcbytes = srcend - src;
-      n = mbrtowc (&wc, src, srcbytes, &mbstate);
+      n = mbrtoc32 (&wc, src, srcbytes, &mbstate);
       bool ok = n <= srcbytes;
 
       if (ok)
-        ok = !iswcntrl (wc);
+        ok = !c32iscntrl (wc);
       else
         n = 1;
 
