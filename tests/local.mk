@@ -271,6 +271,7 @@ all_tests =					\
   tests/misc/mktemp.pl				\
   tests/misc/arch.sh				\
   tests/misc/join.pl				\
+  tests/misc/join-utf8.sh			\
   tests/pr/pr-tests.pl				\
   tests/pwd/pwd-option.sh			\
   tests/chcon/chcon-fail.sh			\
@@ -634,6 +635,7 @@ all_tests =					\
   tests/ls/no-cap.sh				\
   tests/ls/selinux-segfault.sh			\
   tests/ls/quote-align.sh			\
+  tests/ls/size-align.sh			\
   tests/ls/readdir-mountpoint-inode.sh		\
   tests/ls/recursive.sh				\
   tests/ls/removed-directory.sh			\

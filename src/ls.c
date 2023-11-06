@@ -36,6 +36,7 @@
    Greg Lee <lee@uhunix.uhcc.hawaii.edu>.  */
 
 #include <config.h>
+#include <ctype.h>
 #include <sys/types.h>
 
 #include <termios.h>
@@ -4443,7 +4444,7 @@ print_long_format (const struct fileinfo *f)
                            hbuf, file_human_output_opts, 1,
                            file_output_block_size));
       int size_width = mbswidth (size, MBSWIDTH_FLAGS);
-      for (int pad = size_width < 0 ? 0 : block_size_width - size_width;
+      for (int pad = size_width < 0 ? 0 : file_size_width - size_width;
            0 < pad; pad--)
         *p++ = ' ';
       while ((*p++ = *size++))

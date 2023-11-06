@@ -285,10 +285,10 @@ set_libstdbuf_options (void)
 
           if (*stdbuf[i].optarg == 'L')
             ret = asprintf (&var, "%s%c=L", "_STDBUF_",
-                            toupper (stdbuf[i].optc));
+                            c_toupper (stdbuf[i].optc));
           else
             ret = asprintf (&var, "%s%c=%zu", "_STDBUF_",
-                            toupper (stdbuf[i].optc),
+                            c_toupper (stdbuf[i].optc),
                             stdbuf[i].size);
           if (ret < 0)
             xalloc_die ();

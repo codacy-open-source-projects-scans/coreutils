@@ -142,8 +142,6 @@ enum
 
 #include "timespec.h"
 
-#include <ctype.h>
-
 /* ISDIGIT differs from isdigit, as follows:
    - Its arg may be any int or unsigned int; it need not be an unsigned char
      or EOF.
@@ -157,13 +155,6 @@ enum
    a bit safer than casting to unsigned char, since it catches some type
    errors that the cast doesn't.  */
 static inline unsigned char to_uchar (char ch) { return ch; }
-
-/* '\n' is considered a field separator with  --zero-terminated.  */
-static inline bool
-field_sep (unsigned char ch)
-{
-  return isblank (ch) || ch == '\n';
-}
 
 #include <locale.h>
 
