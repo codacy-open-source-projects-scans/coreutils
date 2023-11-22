@@ -23,8 +23,6 @@ my $limits = getlimits ();
 my $prog = 'uniq';
 my $try = "Try '$prog --help' for more information.\n";
 
-my $inval = "$prog: invalid byte, character or field list\n$try";
-
 # Turn off localization of executable's output.
 @ENV{qw(LANGUAGE LANG LC_ALL)} = ('C') x 3;
 
@@ -274,25 +272,13 @@ if ($mb_locale ne 'C')
   {
     # Duplicate each test vector, appending "-mb" to the test name and
     # inserting {ENV => "LC_ALL=$mb_locale"} in the copy, so that we
-    # provide coverage for the distro-added multi-byte code paths.
+    # provide coverage for multi-byte code paths.
     my @new;
     foreach my $t (@Tests)
       {
         my @new_t = @$t;
         my $test_name = shift @new_t;
 
-        # Depending on whether uniq is multi-byte-patched,
-        # it emits different diagnostics:
-        #   non-MB: invalid byte or field list
-        #   MB:     invalid byte, character or field list
-        # Adjust the expected error output accordingly.
-        if (grep {ref $_ eq 'HASH' && exists $_->{ERR} && $_->{ERR} eq $inval}
-            (@new_t))
-          {
-            my $sub = {ERR_SUBST => 's/, character//'};
-            push @new_t, $sub;
-            push @$t, $sub;
-          }
         # In test #145, replace the each ‘...’ by '...'.
         if ($test_name =~ "145")
           {
@@ -306,6 +292,15 @@ if ($mb_locale ne 'C')
         push @new, ["$test_name-mb", @new_t, {ENV => "LC_ALL=$mb_locale"}];
       }
     push @Tests, @new;
+
+    # Test that -w counts characters, not bytes.
+    my $trouble_with_w1 = "à\ná\n";
+    my @Locale_Tests =
+    (
+      ['w1-mb', '-w1',  {IN => $trouble_with_w1}, {OUT => $trouble_with_w1},
+        {ENV => "LC_ALL=$mb_locale"}]
+    );
+    push @Tests, @Locale_Tests;
    }
 
 # Remember that triple_test creates from each test with exactly one "IN"
