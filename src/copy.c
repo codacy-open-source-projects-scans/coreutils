@@ -766,7 +766,7 @@ copy_attr (char const *src_path, int src_fd,
        ? check_selinux_attr : nullptr);
 
 # if 4 < __GNUC__ + (8 <= __GNUC_MINOR__)
-  /* Pacify gcc -Wsuggest-attribute=format through at least GCC 11.2.1.  */
+  /* Pacify gcc -Wsuggest-attribute=format through at least GCC 13.2.1.  */
 #  pragma GCC diagnostic push
 #  pragma GCC diagnostic ignored "-Wsuggest-attribute=format"
 # endif
@@ -2311,7 +2311,8 @@ copy_internal (char const *src_name, char const *dst_name,
           bool use_lstat
             = ((! S_ISREG (src_mode)
                 && (! x->copy_as_regular
-                    || S_ISDIR (src_mode) || S_ISLNK (src_mode)))
+                    || (S_ISDIR (src_mode) && !x->keep_directory_symlink)
+                    || S_ISLNK (src_mode)))
                || x->move_mode || x->symbolic_link || x->hard_link
                || x->backup_type != no_backups
                || x->unlink_dest_before_opening);

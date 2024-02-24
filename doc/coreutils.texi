@@ -10289,6 +10289,14 @@ option is also specified.
 @opindex --verbose
 Print the name of each file before moving it.
 
+@item --keep-directory-symlink
+@opindex --keep-directory-symlink
+Follow existing symlinks to directories when copying. Note that this option
+should only be used when the contents of the destination directory are trusted
+as when this option is enabled, an attacker can place symlinks in the
+destination directory to make @command{cp} write to arbitrary directories in the
+system.
+
 @optStripTrailingSlashes
 
 @optBackupSuffix
@@ -10740,7 +10748,7 @@ exec 3<>"$i"
 rm -- "$i"
 echo "Hello, world" >&3
 shred - >&3
-exec 3>-
+exec 3>&-
 @end example
 
 However, the command @samp{shred - >file} does not shred the contents
@@ -13588,6 +13596,7 @@ be used as a dummy shell for the purpose of disabling accounts.
 @section @command{test}: Check file types and compare values
 
 @pindex test
+@pindex [
 @cindex check file types
 @cindex compare values
 @cindex expression evaluation
