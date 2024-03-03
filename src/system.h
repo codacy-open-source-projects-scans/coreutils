@@ -345,7 +345,7 @@ enum
    Usually it is just PROGRAM_NAME.  */
 #define USAGE_BUILTIN_WARNING \
   _("\n" \
-"NOTE: your shell may have its own version of %s, which usually supersedes\n" \
+"Your shell may have its own version of %s, which usually supersedes\n" \
 "the version described here.  Please refer to your shell's documentation\n" \
 "for details about the options it supports.\n")
 
@@ -596,8 +596,10 @@ emit_update_parameters_note (void)
 UPDATE controls which existing files in the destination are replaced.\n\
 'all' is the default operation when an --update option is not specified,\n\
 and results in all existing files in the destination being replaced.\n\
-'none' is similar to the --no-clobber option, in that no files in the\n\
-destination are replaced, but also skipped files do not induce a failure.\n\
+'none' is like the --no-clobber option, in that no files in the\n\
+destination are replaced, and skipped files do not induce a failure.\n\
+'none-fail' also ensures no files are replaced in the destination,\n\
+but any skipped files are diagnosed and induce a failure.\n\
 'older' is the default operation when --update is specified, and results\n\
 in files being replaced if they're older than the corresponding source file.\n\
 "), stdout);

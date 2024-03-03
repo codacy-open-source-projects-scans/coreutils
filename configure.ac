@@ -351,6 +351,51 @@ if test $utils_cv_localtime_cache = yes; then
   AC_DEFINE([LOCALTIME_CACHE], [1], [FIXME])
 fi
 
+# Find the library for dynamic loading of shared libraries.
+AC_SEARCH_LIBS([dlopen], [dl])
+AS_CASE([$ac_cv_search_dlopen],
+  [no | 'none required'],
+    [LIB_DL=],
+  [*],
+    [LIB_DL="$ac_cv_search_dlopen"])
+AC_SUBST([LIB_DL])
+
+# Should 'sort' link libcrypto dynamically?
+AS_CASE([$LIB_CRYPTO],
+  [-lcrypto],
+    [# Check for dlopen and libcrypto dynamic linking in one program,
+     # as there's little point to checking them separately.
+     AC_CACHE_CHECK([for dlopen and whether libcrypto is linked dynamically],
+       [utils_cv_dlopen_libcrypto],
+       [utils_cv_dlopen_libcrypto=no
+        saved_LIBS=$LIBS
+        LIBS="$LIBS $LIB_DL $LIB_CRYPTO"
+        AC_LINK_IFELSE(
+          [AC_LANG_PROGRAM(
+             [[#include <dlfcn.h>
+               #include <openssl/sha.h>
+               /* Use SHA512 rather than MD5 here to avoid deprecation warnings.
+                  So need to check HAVE_OPENSSL_MD5.. with DLOPEN_LIBCRYPTO. */
+             ]],
+             [[return !(dlopen ("libcrypto.so", RTLD_LAZY | RTLD_GLOBAL)
+                        && SHA512 (0, 0, 0));]])],
+          [# readelf works with cross-builds; ldd works on more platforms.
+           LIBCRYPTO_SONAME="`(readelf -d conftest$EXEEXT || ldd conftest$EXEEXT
+                              ) 2>/dev/null |
+                              sed -n 's/.*\(libcrypto\.so\.[[.0-9]]*\).*/\1/p'`"
+           AS_CASE([$LIBCRYPTO_SONAME],
+             [*libcrypto*],
+               [utils_cv_dlopen_libcrypto=yes])])
+        LIBS=$saved_LIBS])
+     AS_CASE([$utils_cv_dlopen_libcrypto],
+       [yes],
+         [AC_DEFINE([DLOPEN_LIBCRYPTO], [1],
+                    [Define to 1 if dlopen exists and libcrypto is
+                     linked dynamically.])
+          AC_DEFINE_UNQUOTED([LIBCRYPTO_SONAME], ["$LIBCRYPTO_SONAME"],
+                             [versioned libcrypto])
+         ])])
+
 # macOS >= 10.12
 AC_CHECK_FUNCS([fclonefileat])
 
