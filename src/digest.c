@@ -28,6 +28,10 @@
 #include "xdectoint.h"
 #include "xstrtol.h"
 
+#ifndef HASH_ALGO_CKSUM
+# define HASH_ALGO_CKSUM 0
+#endif
+
 #if HASH_ALGO_SUM || HASH_ALGO_CKSUM
 # include "sum.h"
 #endif
@@ -1346,11 +1350,7 @@ main (int argc, char **argv)
   int opt;
   bool ok = true;
   int binary = -1;
-#if HASH_ALGO_CKSUM
-  bool prefix_tag = true;
-#else
-  bool prefix_tag = false;
-#endif
+  int prefix_tag = -1;
 
   /* Setting values of global variables.  */
   initialize_main (&argc, &argv);
@@ -1397,11 +1397,6 @@ main (int argc, char **argv)
         digest_length = xdectoumax (optarg, 0, UINTMAX_MAX, "",
                                 _("invalid length"), 0);
         digest_length_str = optarg;
-        if (digest_length % 8 != 0)
-          {
-            error (0, 0, _("invalid length: %s"), quote (digest_length_str));
-            error (EXIT_FAILURE, 0, _("length is not a multiple of 8"));
-          }
         break;
 #endif
 #if !HASH_ALGO_SUM
@@ -1443,11 +1438,13 @@ main (int argc, char **argv)
         raw_digest = true;
         break;
       case UNTAG_OPTION:
-        prefix_tag = false;
+        if (prefix_tag == 1)
+          binary = -1;
+        prefix_tag = 0;
         break;
 # endif
       case TAG_OPTION:
-        prefix_tag = true;
+        prefix_tag = 1;
         binary = 1;
         break;
       case 'z':
@@ -1476,6 +1473,11 @@ main (int argc, char **argv)
     error (EXIT_FAILURE, 0,
            _("--length is only supported with --algorithm=blake2b"));
 # endif
+  if (digest_length % 8 != 0)
+    {
+      error (0, 0, _("invalid length: %s"), quote (digest_length_str));
+      error (EXIT_FAILURE, 0, _("length is not a multiple of 8"));
+    }
   if (digest_length > BLAKE2B_MAX_LEN * 8)
     {
       error (0, 0, _("invalid length: %s"), quote (digest_length_str));
@@ -1517,6 +1519,9 @@ main (int argc, char **argv)
      usage (EXIT_FAILURE);
    }
 #endif
+
+  if (prefix_tag == -1)
+    prefix_tag = HASH_ALGO_CKSUM;
 
   if (prefix_tag && !binary)
    {
