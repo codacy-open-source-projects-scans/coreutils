@@ -544,7 +544,8 @@ gl_WARN_ADD([-errwarn], [CFLAGS])
 AC_MSG_CHECKING([whether this system supports stdbuf])
 CFLAGS="-fPIC $CFLAGS"
 LDFLAGS="-shared $LDFLAGS"
-stdbuf_supported=no
+AC_CACHE_VAL([utils_cv_stdbuf_supported],[
+utils_cv_stdbuf_supported=no
 # Note we only LINK here rather than RUN to support cross compilation
 AC_LINK_IFELSE(
   [AC_LANG_PROGRAM([[
@@ -558,9 +559,9 @@ AC_LINK_IFELSE(
     if (stdbuf != 1)
       return 1;]])
   ],
-  [stdbuf_supported=yes])
-AC_MSG_RESULT([$stdbuf_supported])
-if test "$stdbuf_supported" = "yes" && test -z "$EXEEXT"; then
+  [utils_cv_stdbuf_supported=yes])])
+AC_MSG_RESULT([$utils_cv_stdbuf_supported])
+if test "$utils_cv_stdbuf_supported" = "yes" && test -z "$EXEEXT"; then
   gl_ADD_PROG([optional_bin_progs], [stdbuf])
 fi
 CFLAGS=$ac_save_CFLAGS
@@ -569,48 +570,57 @@ ac_c_werror_flag=$cu_save_c_werror_flag
 
 # Test compiler support for half precision floating point types (for od)
 AC_MSG_CHECKING([IEEE 16 bit floating point])
- AC_COMPILE_IFELSE(
+AC_CACHE_VAL([utils_cv_ieee_16_bit_supported],[
+ AC_RUN_IFELSE(
    [AC_LANG_SOURCE([[
      int
      main (void)
      {
-        _Float16 hf;
+        volatile _Float16 hf = 1;
         float f = hf;  /* Ensure compiler can promote to float.  */
+        return !(f == 1.0f);
      }
   ]])
   ],[
-    ieee_16_bit_supported=yes
+    utils_cv_ieee_16_bit_supported=yes
   ],[
-    ieee_16_bit_supported=no
-  ])
-AC_MSG_RESULT([$ieee_16_bit_supported])
-if test $ieee_16_bit_supported = yes; then
+    utils_cv_ieee_16_bit_supported=no
+  ],[
+    utils_cv_ieee_16_bit_supported=no
+  ])])
+AC_MSG_RESULT([$utils_cv_ieee_16_bit_supported])
+if test $utils_cv_ieee_16_bit_supported = yes; then
   AC_DEFINE([FLOAT16_SUPPORTED], [1], [IEEE 16 bit float supported])
 fi
 
 AC_MSG_CHECKING([Brain 16 bit floating point])
- AC_COMPILE_IFELSE(
+AC_CACHE_VAL([utils_cv_brain_16_bit_supported],[
+ AC_RUN_IFELSE(
    [AC_LANG_SOURCE([[
      int
      main (void)
      {
-        __bf16 hf;
+        volatile __bf16 hf = 1;
         float f = hf;  /* Ensure compiler can promote to float.  */
+        return !(f == 1.0f);
      }
   ]])
   ],[
-    brain_16_bit_supported=yes
+    utils_cv_brain_16_bit_supported=yes
   ],[
-    brain_16_bit_supported=no
-  ])
-AC_MSG_RESULT([$brain_16_bit_supported])
-if test $brain_16_bit_supported = yes; then
+    utils_cv_brain_16_bit_supported=no
+  ],[
+    utils_cv_brain_16_bit_supported=no
+  ])])
+AC_MSG_RESULT([$utils_cv_brain_16_bit_supported])
+if test $utils_cv_brain_16_bit_supported = yes; then
   AC_DEFINE([BF16_SUPPORTED], [1], [Brain 16 bit float supported])
 fi
 
 ac_save_CFLAGS=$CFLAGS
 CFLAGS="-mavx -mpclmul $CFLAGS"
 AC_MSG_CHECKING([if pclmul intrinsic exists])
+AC_CACHE_VAL([utils_cv_pclmul_intrinsic_exists],[
 AC_LINK_IFELSE(
   [AC_LANG_SOURCE([[
     #include <x86intrin.h>
@@ -625,21 +635,22 @@ AC_LINK_IFELSE(
     }
   ]])
   ],[
-    pclmul_intrinsic_exists=yes
+    utils_cv_pclmul_intrinsic_exists=yes
   ],[
-    pclmul_intrinsic_exists=no
-  ])
-AC_MSG_RESULT([$pclmul_intrinsic_exists])
-if test $pclmul_intrinsic_exists = yes; then
+    utils_cv_pclmul_intrinsic_exists=no
+  ])])
+AC_MSG_RESULT([$utils_cv_pclmul_intrinsic_exists])
+if test $utils_cv_pclmul_intrinsic_exists = yes; then
   AC_DEFINE([USE_PCLMUL_CRC32], [1],
             [CRC32 calculation by pclmul hardware instruction enabled])
 fi
 AM_CONDITIONAL([USE_PCLMUL_CRC32],
-               [test $pclmul_intrinsic_exists = yes])
+               [test $utils_cv_pclmul_intrinsic_exists = yes])
 CFLAGS=$ac_save_CFLAGS
 
 CFLAGS="-mavx2 $CFLAGS"
 AC_MSG_CHECKING([for avx2 intrinsics])
+AC_CACHE_VAL([utils_cv_avx2_intrinsic_exists],[
 AC_LINK_IFELSE(
   [AC_LANG_SOURCE([[
     #include <x86intrin.h>
@@ -653,16 +664,16 @@ AC_LINK_IFELSE(
     }
   ]])
   ],[
-    avx2_intrinsic_exists=yes
+    utils_cv_avx2_intrinsic_exists=yes
   ],[
-    avx2_intrinsic_exists=no
-  ])
-AC_MSG_RESULT([$avx2_intrinsic_exists])
-if test $avx2_intrinsic_exists = yes; then
+    utils_cv_avx2_intrinsic_exists=no
+  ])])
+AC_MSG_RESULT([$utils_cv_avx2_intrinsic_exists])
+if test $utils_cv_avx2_intrinsic_exists = yes; then
   AC_DEFINE([USE_AVX2_WC_LINECOUNT], [1], [Counting lines with AVX2 enabled])
 fi
 AM_CONDITIONAL([USE_AVX2_WC_LINECOUNT],
-               [test $avx2_intrinsic_exists = yes])
+               [test $utils_cv_avx2_intrinsic_exists = yes])
 
 CFLAGS=$ac_save_CFLAGS
 

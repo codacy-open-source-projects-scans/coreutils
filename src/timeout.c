@@ -207,7 +207,7 @@ cleanup (int sig)
       timed_out = 1;
       sig = term_signal;
     }
-  if (monitored_pid)
+  if (0 < monitored_pid)
     {
       if (kill_after)
         {
@@ -244,8 +244,13 @@ cleanup (int sig)
             }
         }
     }
-  else /* we're the child or the child is not exec'd yet.  */
-    _exit (128 + sig);
+  else if (monitored_pid == -1)
+    { /* were in the parent, so let it continue to exit below.  */
+    }
+  else /* monitored_pid == 0  */
+    { /* parent hasn't forked yet, or child has not exec'd yet.  */
+      _exit (128 + sig);
+    }
 }
 
 void
@@ -462,7 +467,6 @@ int
 main (int argc, char **argv)
 {
   double timeout;
-  char signame[SIG2STR_MAX];
   int c;
 
   initialize_main (&argc, &argv);
@@ -483,7 +487,7 @@ main (int argc, char **argv)
           break;
 
         case 's':
-          term_signal = operand2sig (optarg, signame);
+          term_signal = operand2sig (optarg);
           if (term_signal == -1)
             usage (EXIT_CANCELED);
           break;
@@ -532,14 +536,29 @@ main (int argc, char **argv)
   signal (SIGTTOU, SIG_IGN);   /* Don't stop if background child needs tty.  */
   install_sigchld ();          /* Interrupt sigsuspend() when child exits.   */
 
+  /* We configure timers so that SIGALRM is sent on expiry.
+     Therefore ensure we don't inherit a mask blocking SIGALRM.  */
+  unblock_signal (SIGALRM);
+
+  /* Block signals now, so monitored_pid is deterministic in cleanup().  */
+  sigset_t orig_set;
+  block_cleanup_and_chld (term_signal, &orig_set);
+
   monitored_pid = fork ();
   if (monitored_pid == -1)
     {
       error (0, errno, _("fork system call failed"));
       return EXIT_CANCELED;
     }
-  else if (monitored_pid == 0)
-    {                           /* child */
+  else if (monitored_pid == 0)  /* child */
+    {
+      /* Restore signal mask for child.  */
+      if (sigprocmask (SIG_SETMASK, &orig_set, nullptr) != 0)
+        {
+          error (0, errno, _("child failed to reset signal mask"));
+          return EXIT_CANCELED;
+        }
+
       /* exec doesn't reset SIG_IGN -> SIG_DFL.  */
       signal (SIGTTIN, SIG_DFL);
       signal (SIGTTOU, SIG_DFL);
@@ -556,19 +575,14 @@ main (int argc, char **argv)
       pid_t wait_result;
       int status;
 
-      /* We configure timers so that SIGALRM is sent on expiry.
-         Therefore ensure we don't inherit a mask blocking SIGALRM.  */
-      unblock_signal (SIGALRM);
-
       settimeout (timeout, true);
 
-      /* Ensure we don't cleanup() after waitpid() reaps the child,
+      /* Note signals remain blocked in parent here, to ensure
+         we don't cleanup() after waitpid() reaps the child,
          to avoid sending signals to a possibly different process.  */
-      sigset_t cleanup_set;
-      block_cleanup_and_chld (term_signal, &cleanup_set);
 
       while ((wait_result = waitpid (monitored_pid, &status, WNOHANG)) == 0)
-        sigsuspend (&cleanup_set);  /* Wait with cleanup signals unblocked.  */
+        sigsuspend (&orig_set);  /* Wait with cleanup signals unblocked.  */
 
       if (wait_result < 0)
         {
