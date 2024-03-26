@@ -476,6 +476,7 @@ all_tests =					\
   tests/chmod/thru-dangling.sh			\
   tests/chmod/umask-x.sh			\
   tests/chmod/usage.sh				\
+  tests/chmod/symlinks.sh				\
   tests/chown/deref.sh				\
   tests/chown/preserve-root.sh			\
   tests/chown/separator.sh			\
@@ -698,6 +699,7 @@ all_tests =					\
   tests/mv/into-self-3.sh			\
   tests/mv/into-self-4.sh			\
   tests/mv/leak-fd.sh				\
+  tests/mv/mv-exchange.sh			\
   tests/mv/mv-n.sh				\
   tests/mv/mv-special-1.sh			\
   tests/mv/no-copy.sh				\

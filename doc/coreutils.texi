@@ -1375,11 +1375,11 @@ other parts of that standard.
 
 @cindex symbolic link to directory, controlling traversal of
 
-The following options modify how @command{chown} and @command{chgrp}
 @c FIXME: note that 'du' has these options, too, but they have slightly
 @c different meaning.
-traverse a hierarchy when the @option{--recursive} (@option{-R})
-option is also specified.
+The following options modify how @command {chmod}, @command{chown},
+and @command{chgrp} traverse a hierarchy when
+the @option{--recursive} (@option{-R}) option is also specified.
 If more than one of the following options is specified, only the final
 one takes effect.
 These options specify whether processing a symbolic link to a directory
@@ -1428,10 +1428,14 @@ possibly allowing the attacker to escalate privileges.
 @opindex -P
 @cindex symbolic link to directory, never traverse
 Do not traverse any symbolic links.
+@end macro
+@choptP
+
+@macro choptDefault
 This is the default if none of @option{-H}, @option{-L},
 or @option{-P} is specified.
 @end macro
-@choptP
+@choptDefault
 
 @end table
 
@@ -2632,9 +2636,11 @@ This option might well cause some lines to be truncated.  The number of
 lines in the columns on each page are balanced.  The options @option{-e}
 and @option{-i} are on for multiple text-column output.  Together with
 @option{-J} option column alignment and line truncation is turned off.
+Since spaces are converted to TABs in multicolumn output, they can be converted
+back by further processing through @command{pr -t -e} or @command{expand}.
 Lines of full length are joined in a free field format and @option{-S}
 option may set field separators.  @option{-@var{column}} may not be used
-with @option{-m} option.
+with the @option{-m} option.
 
 @item -a
 @itemx --across
@@ -7962,6 +7968,10 @@ that it is a number rather than a textual name.
 Print question marks for other information that
 cannot be determined.
 
+For block special files and character special files, the size field is
+replaced by the corresponding device major and minor numbers as two decimal
+numbers separated by a comma and at least one space.
+
 Normally the size is printed as a byte count without punctuation, but
 this can be overridden (@pxref{Block size}).
 For example, @option{--human-readable} (@option{-h})
@@ -10269,6 +10279,27 @@ skip existing files but not fail.
 If a file cannot be renamed because the destination file system differs,
 fail with a diagnostic instead of copying and then removing the file.
 
+@item --exchange
+@opindex --exchange
+Exchange source and destination instead of renaming source to destination.
+Both files must exist; they need not be the same type.
+This exchanges all data and metadata.
+
+This option can be used to replace one directory with another.
+When used this way, it should be combined with
+@code{--no-target-directory} (@option{-T})
+to avoid confusion about the destination location.
+For example, you might use @samp{mv -T --exchange @var{d1} @var{d2}}
+to exchange two directories @var{d1} and @var{d2}.
+
+Exchanges are atomic if the source and destination are both in a
+single file system that supports atomic exchange.
+Non-atomic exchanges are not yet supported.
+
+If the source and destination might not be on the same file system,
+using @code{--no-copy} will prevent future versions of @command{mv}
+from implementing the exchange by copying.
+
 @item -u
 @itemx --update
 @opindex -u
@@ -11723,6 +11754,7 @@ Recursively change ownership of directories and their contents.
 @xref{Traversing symlinks}.
 
 @choptP
+@choptDefault
 @xref{Traversing symlinks}.
 
 @end table
@@ -11836,6 +11868,7 @@ Recursively change the group ownership of directories and their contents.
 @xref{Traversing symlinks}.
 
 @choptP
+@choptDefault
 @xref{Traversing symlinks}.
 
 @end table
@@ -11869,13 +11902,14 @@ chmod [@var{option}]@dots{} @{@var{mode} | --reference=@var{ref_file}@}@c
 @end example
 
 @cindex symbolic links, permissions of
-@command{chmod} never changes the permissions of symbolic links, since
-the @command{chmod} system call cannot change their permissions.
-This is not a problem since the permissions of symbolic links are
-never used.  However, for each symbolic link listed on the command
+@command{chmod} doesn't change the permissions of symbolic links, since
+the @command{chmod} system call cannot change their permissions on most systems,
+and most systems ignore permissions of symbolic links.
+However, for each symbolic link listed on the command
 line, @command{chmod} changes the permissions of the pointed-to file.
 In contrast, @command{chmod} ignores symbolic links encountered during
-recursive directory traversals.
+recursive directory traversals. Options that modify this behavior
+are described below.
 
 Only a process whose effective user ID matches the user ID of the file,
 or a process with appropriate privileges, is permitted to change the
@@ -11908,6 +11942,23 @@ The program accepts the following options.  Also see @ref{Common options}.
 @opindex --changes
 Verbosely describe the action for each @var{file} whose permissions
 actually change.
+
+@item --dereference
+@opindex --dereference
+@cindex symbolic links, changing mode
+Do not act on symbolic links themselves but rather on what they point to.
+This is the default for command line arguments, but not for
+symbolic links encountered when recursing.
+@warnOptDerefWithRec
+
+@item -h
+@itemx --no-dereference
+@opindex -h
+@opindex --no-dereference
+@cindex symbolic links, changing mode
+Act on symbolic links themselves instead of what they point to.
+On systems that do not support this, no diagnostic is issued,
+but see @option{--verbose}.
 
 @item -f
 @itemx --silent
@@ -11951,6 +12002,17 @@ of the symbolic link, but rather that of the file it refers to.
 @opindex --recursive
 @cindex recursively changing access permissions
 Recursively change permissions of directories and their contents.
+
+@choptH
+@choptDefault
+@xref{Traversing symlinks}.
+
+@choptL
+@warnOptDerefWithRec
+@xref{Traversing symlinks}.
+
+@choptP
+@xref{Traversing symlinks}.
 
 @end table
 
@@ -16203,11 +16265,13 @@ Print a line of column headings.
 List only the entries that correspond to processes via which the
 system is waiting for a user to login.  The user name is always @samp{LOGIN}.
 
+@macro lookupOption
 @item --lookup
 @opindex --lookup
-Attempt to canonicalize hostnames found in utmp through a DNS lookup.  This
-is not the default because it can cause significant delays on systems with
-automatic dial-up internet access.
+Attempt to canonicalize hostnames found in utmp through a DNS lookup.
+This is not the default because of potential delays.
+@end macro
+@lookupOption
 
 @item -m
 @opindex -m
@@ -16334,6 +16398,8 @@ format.
 @opindex -q
 Omit the user's full name, remote host, and idle time when printing in
 short format.
+
+@lookupOption
 
 @end table
 
@@ -17887,6 +17953,13 @@ Options must precede operands.
 @table @samp
 
 @optNull
+
+@item -a @var{arg}
+@itemx --argv0=@var{arg}
+@opindex -a
+@opindex --argv0
+Override the zeroth argument passed to the command being executed.
+Without this option a default value of @var{command} is used.
 
 @item -u @var{name}
 @itemx --unset=@var{name}

@@ -4,6 +4,10 @@ GNU coreutils NEWS                                    -*- outline -*-
 
 ** Bug fixes
 
+  chmod -R now avoids a race where an attacker may replace a traversed file
+  with a symlink, causing chmod to operate on an unintended file.
+  [This bug was present in "the beginning".]
+
   cp, mv, and install no longer issue spurious diagnostics like "failed
   to preserve ownership" when copying to GNU/Linux CIFS file systems.
   They do this by working around some Linux CIFS bugs.
@@ -65,6 +69,9 @@ GNU coreutils NEWS                                    -*- outline -*-
   numfmt will accept lowercase 'k' to indicate Kilo or Kibi units on input,
   and uses lowercase 'k' when outputting such units in '--to=si' mode.
 
+  pinky no longer tries to canonicalize the user's login location by default,
+  rather requiring the new --lookup option to enable this often slow feature.
+
   wc no longer ignores encoding errors when counting words.
   Instead, it treats them as non white space.
 
@@ -73,6 +80,10 @@ GNU coreutils NEWS                                    -*- outline -*-
   chgrp now accepts the --from=OWNER:GROUP option to restrict changes to files
   with matching current OWNER and/or GROUP, as already supported by chown(1).
 
+  chmod adds support for -h, -H,-L,-P, and --dereference options, providing
+  more control over symlink handling.  This supports more secure handling of
+  CLI arguments, and is more consistent with chown, and chmod on other systems.
+
   cp now accepts the --keep-directory-symlink option (like tar), to preserve
   and follow existing symlinks to directories in the destination.
 
@@ -80,6 +91,16 @@ GNU coreutils NEWS                                    -*- outline -*-
   to the --no-clobber option, except that existing files are diagnosed,
   and the command exits with failure status if existing files.
   The -n,--no-clobber option is best avoided due to platform differences.
+
+  env now accepts the -a,--argv0 option to override the zeroth argument
+  of the command being executed.
+
+  mv now accepts an --exchange option, which causes the source and
+  destination to be exchanged.  It should be combined with
+  --no-target-directory (-T) if the destination is a directory.
+  The exchange is atomic if source and destination are on a single
+  file system that supports atomic exchange; --exchange is not yet
+  supported in other situations.
 
   od now supports printing IEEE half precision floating point with -t fH,
   or brain 16 bit floating point with -t fB, where supported by the compiler.

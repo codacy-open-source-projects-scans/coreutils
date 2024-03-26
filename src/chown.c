@@ -81,7 +81,7 @@ Usage: %s [OPTION]... %s FILE...\n\
   or:  %s [OPTION]... --reference=RFILE FILE...\n\
 "),
               program_name,
-              chown_mode == CHOWN_CHOWN ? "[OWNER][:[GROUP]]" : "GROUP",
+              chown_mode == CHOWN_CHOWN ? _("[OWNER][:[GROUP]]") : _("GROUP"),
               program_name);
       if (chown_mode == CHOWN_CHOWN)
         fputs (_("\
@@ -109,7 +109,13 @@ With --reference, change the group of each FILE to that of RFILE.\n\
                          (useful only on systems that can change the\n\
                          ownership of a symlink)\n\
 "), stdout);
-      emit_from_option_description (chown_mode == CHOWN_CHOWN);
+      fputs (_("\
+      --from=CURRENT_OWNER:CURRENT_GROUP\n\
+                         change the ownership of each file only if\n\
+                         its current owner and/or group match those specified\n\
+                         here. Either may be omitted, in which case a match\n\
+                         is not required for the omitted attribute\n\
+"), stdout);
       fputs (_("\
       --no-preserve-root  do not treat '/' specially (the default)\n\
       --preserve-root    fail to operate recursively on '/'\n\
@@ -121,19 +127,7 @@ With --reference, change the group of each FILE to that of RFILE.\n\
       fputs (_("\
   -R, --recursive        operate on files and directories recursively\n\
 "), stdout);
-      fputs (_("\
-\n\
-The following options modify how a hierarchy is traversed when the -R\n\
-option is also specified.  If more than one is specified, only the final\n\
-one takes effect.\n\
-\n\
-  -H                     if a command line argument is a symbolic link\n\
-                         to a directory, traverse it\n\
-  -L                     traverse every symbolic link to a directory\n\
-                         encountered\n\
-  -P                     do not traverse any symbolic links (default)\n\
-\n\
-"), stdout);
+      emit_symlink_recurse_options ("-P");
       fputs (HELP_OPTION_DESCRIPTION, stdout);
       fputs (VERSION_OPTION_DESCRIPTION, stdout);
       if (chown_mode == CHOWN_CHOWN)

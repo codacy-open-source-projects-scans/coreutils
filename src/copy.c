@@ -2075,9 +2075,10 @@ abandon_move (const struct cp_options *x,
    If BACKUP_DST_NAME is non-null, then also indicate that it is
    the name of a backup file.  */
 static void
-emit_verbose (char const *src, char const *dst, char const *backup_dst_name)
+emit_verbose (char const *format, char const *src, char const *dst,
+              char const *backup_dst_name)
 {
-  printf ("%s -> %s", quoteaf_n (0, src), quoteaf_n (1, dst));
+  printf (format, quoteaf_n (0, src), quoteaf_n (1, dst));
   if (backup_dst_name)
     printf (_(" (backup: %s)"), quoteaf (backup_dst_name));
   putchar ('\n');
@@ -2219,7 +2220,7 @@ copy_internal (char const *src_name, char const *dst_name,
   *copy_into_self = false;
 
   int rename_errno = x->rename_errno;
-  if (x->move_mode)
+  if (x->move_mode && !x->exchange)
     {
       if (rename_errno < 0)
         rename_errno = (renameatu (AT_FDCWD, src_name, dst_dirfd, drelname,
@@ -2449,72 +2450,36 @@ skip:
           if (return_now)
             return return_val;
 
-          if (!S_ISDIR (dst_sb.st_mode))
+          /* Copying a directory onto a non-directory, or vice versa,
+             is ok only with --backup or --exchange.  */
+          if (!S_ISDIR (src_mode) != !S_ISDIR (dst_sb.st_mode)
+              && x->backup_type == no_backups && !x->exchange)
             {
-              if (S_ISDIR (src_mode))
-                {
-                  if (x->move_mode && x->backup_type != no_backups)
-                    {
-                      /* Moving a directory onto an existing
-                         non-directory is ok only with --backup.  */
-                    }
-                  else
-                    {
-                      error (0, 0,
-                       _("cannot overwrite non-directory %s with directory %s"),
-                             quoteaf_n (0, dst_name), quoteaf_n (1, src_name));
-                      return false;
-                    }
-                }
-
-              /* Don't let the user destroy their data, even if they try hard:
-                 This mv command must fail (likewise for cp):
-                   rm -rf a b c; mkdir a b c; touch a/f b/f; mv a/f b/f c
-                 Otherwise, the contents of b/f would be lost.
-                 In the case of 'cp', b/f would be lost if the user simulated
-                 a move using cp and rm.
-                 Note that it works fine if you use --backup=numbered.  */
-              if (command_line_arg
-                  && x->backup_type != numbered_backups
-                  && seen_file (x->dest_info, dst_relname, &dst_sb))
-                {
-                  error (0, 0,
-                         _("will not overwrite just-created %s with %s"),
-                         quoteaf_n (0, dst_name), quoteaf_n (1, src_name));
-                  return false;
-                }
+              error (0, 0,
+                     _(S_ISDIR (src_mode)
+                       ? ("cannot overwrite non-directory %s "
+                          "with directory %s")
+                       : ("cannot overwrite directory %s "
+                          "with non-directory %s")),
+                     quoteaf_n (0, dst_name), quoteaf_n (1, src_name));
+              return false;
             }
 
-          if (!S_ISDIR (src_mode))
+          /* Don't let the user destroy their data, even if they try hard:
+             This mv command must fail (likewise for cp):
+             rm -rf a b c; mkdir a b c; touch a/f b/f; mv a/f b/f c
+             Otherwise, the contents of b/f would be lost.
+             In the case of 'cp', b/f would be lost if the user simulated
+             a move using cp and rm.
+             Nothing is lost if you use --backup=numbered or --exchange.  */
+          if (!S_ISDIR (dst_sb.st_mode) && command_line_arg
+              && x->backup_type != numbered_backups && !x->exchange
+              && seen_file (x->dest_info, dst_relname, &dst_sb))
             {
-              if (S_ISDIR (dst_sb.st_mode))
-                {
-                  if (x->move_mode && x->backup_type != no_backups)
-                    {
-                      /* Moving a non-directory onto an existing
-                         directory is ok only with --backup.  */
-                    }
-                  else
-                    {
-                      error (0, 0,
-                         _("cannot overwrite directory %s with non-directory"),
-                             quoteaf (dst_name));
-                      return false;
-                    }
-                }
-            }
-
-          if (x->move_mode)
-            {
-              /* Don't allow user to move a directory onto a non-directory.  */
-              if (S_ISDIR (src_sb.st_mode) && !S_ISDIR (dst_sb.st_mode)
-                  && x->backup_type == no_backups)
-                {
-                  error (0, 0,
-                       _("cannot move directory onto non-directory: %s -> %s"),
-                         quotef_n (0, src_name), quotef_n (0, dst_name));
-                  return false;
-                }
+              error (0, 0,
+                     _("will not overwrite just-created %s with %s"),
+                     quoteaf_n (0, dst_name), quoteaf_n (1, src_name));
+              return false;
             }
 
           char const *srcbase;
@@ -2625,7 +2590,7 @@ skip:
      sure we'll create a directory.  Also don't announce yet when moving
      so we can distinguish renames versus copies.  */
   if (x->verbose && !x->move_mode && !S_ISDIR (src_mode))
-    emit_verbose (src_name, dst_name, dst_backup);
+    emit_verbose ("%s -> %s", src_name, dst_name, dst_backup);
 
   /* Associate the destination file name with the source device and inode
      so that if we encounter a matching dev/ino pair in the source tree
@@ -2657,7 +2622,7 @@ skip:
      Also, with --recursive, record dev/ino of each command-line directory.
      We'll use that info to detect this problem: cp -R dir dir.  */
 
-  if (rename_errno == 0)
+  if (rename_errno == 0 || x->exchange)
     earlier_file = nullptr;
   else if (x->recursive && S_ISDIR (src_mode))
     {
@@ -2753,16 +2718,18 @@ skip:
   if (x->move_mode)
     {
       if (rename_errno == EEXIST)
-        rename_errno = (renameat (AT_FDCWD, src_name, dst_dirfd, drelname) == 0
+        rename_errno = ((renameatu (AT_FDCWD, src_name, dst_dirfd, drelname,
+                                    x->exchange ? RENAME_EXCHANGE : 0)
+                         == 0)
                         ? 0 : errno);
 
       if (rename_errno == 0)
         {
           if (x->verbose)
-            {
-              printf (_("renamed "));
-              emit_verbose (src_name, dst_name, dst_backup);
-            }
+            emit_verbose (x->exchange
+                          ? _("exchanged %s <-> %s")
+                          : _("renamed %s -> %s"),
+                          src_name, dst_name, dst_backup);
 
           if (x->set_security_context)
             {
@@ -2781,7 +2748,7 @@ skip:
                  _destination_ dev/ino, since the rename above can't have
                  changed those, and 'mv' always uses lstat.
                  We could limit it further by operating
-                 only on non-directories.  */
+                 only on non-directories when !x->exchange.  */
               record_file (x->dest_info, dst_relname, &src_sb);
             }
 
@@ -2828,7 +2795,7 @@ skip:
          where you'd replace '18' with the integer in parentheses that
          was output from the perl one-liner above.
          If necessary, of course, change '/tmp' to some other directory.  */
-      if (rename_errno != EXDEV || x->no_copy)
+      if (rename_errno != EXDEV || x->no_copy || x->exchange)
         {
           /* There are many ways this can happen due to a race condition.
              When something happens between the initial follow_fstatat and the
@@ -2841,25 +2808,29 @@ skip:
              destination file are made too restrictive, the rename will
              fail.  Etc.  */
           char const *quoted_dst_name = quoteaf_n (1, dst_name);
-          switch (rename_errno)
-            {
-            case EDQUOT: case EEXIST: case EISDIR: case EMLINK:
-            case ENOSPC: case ETXTBSY:
+          if (x->exchange)
+            error (0, rename_errno, _("cannot exchange %s and %s"),
+                   quoteaf_n (0, src_name), quoted_dst_name);
+          else
+            switch (rename_errno)
+              {
+              case EDQUOT: case EEXIST: case EISDIR: case EMLINK:
+              case ENOSPC: case ETXTBSY:
 #if ENOTEMPTY != EEXIST
-            case ENOTEMPTY:
+              case ENOTEMPTY:
 #endif
-              /* The destination must be the problem.  Don't mention
-                 the source as that is more likely to confuse the user
-                 than be helpful.  */
-              error (0, rename_errno, _("cannot overwrite %s"),
-                     quoted_dst_name);
-              break;
+                /* The destination must be the problem.  Don't mention
+                   the source as that is more likely to confuse the user
+                   than be helpful.  */
+                error (0, rename_errno, _("cannot overwrite %s"),
+                       quoted_dst_name);
+                break;
 
-            default:
-              error (0, rename_errno, _("cannot move %s to %s"),
-                     quoteaf_n (0, src_name), quoted_dst_name);
-              break;
-            }
+              default:
+                error (0, rename_errno, _("cannot move %s to %s"),
+                       quoteaf_n (0, src_name), quoted_dst_name);
+                break;
+              }
           forget_created (src_sb.st_ino, src_sb.st_dev);
           return false;
         }
@@ -2883,10 +2854,7 @@ skip:
         }
 
       if (x->verbose && !S_ISDIR (src_mode))
-        {
-          printf (_("copied "));
-          emit_verbose (src_name, dst_name, dst_backup);
-        }
+        emit_verbose (_("copied %s -> %s"), src_name, dst_name, dst_backup);
       new_dst = true;
     }
 
@@ -2986,7 +2954,7 @@ skip:
               if (x->move_mode)
                 printf (_("created directory %s\n"), quoteaf (dst_name));
               else
-                emit_verbose (src_name, dst_name, nullptr);
+                emit_verbose ("%s -> %s", src_name, dst_name, nullptr);
             }
         }
       else
