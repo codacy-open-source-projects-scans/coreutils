@@ -4,6 +4,19 @@ GNU coreutils NEWS                                    -*- outline -*-
 
 ** Bug fixes
 
+  ls and printf fix shell quoted output in the edge case of escaped
+  first and last characters, and single quotes in the string.
+  [bug introduced in coreutils-8.26]
+
+  mv works again with macFUSE file systems.  Previously it would
+  have exited with a "Function not implemented" error.
+  [bug introduced in coreutils-8.28]
+
+
+* Noteworthy changes in release 9.5 (2024-03-28) [stable]
+
+** Bug fixes
+
   chmod -R now avoids a race where an attacker may replace a traversed file
   with a symlink, causing chmod to operate on an unintended file.
   [This bug was present in "the beginning".]
@@ -11,6 +24,11 @@ GNU coreutils NEWS                                    -*- outline -*-
   cp, mv, and install no longer issue spurious diagnostics like "failed
   to preserve ownership" when copying to GNU/Linux CIFS file systems.
   They do this by working around some Linux CIFS bugs.
+
+  cp --no-preserve=mode will correctly maintain set-group-ID bits
+  for created directories.  Previously on systems that didn't support ACLs,
+  cp would have reset the set-group-ID bit on created directories.
+  [bug introduced in coreutils-8.20]
 
   join and uniq now support multi-byte characters better.
   For example, 'join -tX' now works even if X is a multi-byte character,
