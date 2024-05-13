@@ -58,6 +58,7 @@
 #include "system.h"
 #include "c-ctype.h"
 #include "cl-strtod.h"
+#include "octhexdigits.h"
 #include "quote.h"
 #include "unicodeio.h"
 #include "xprintf.h"
@@ -66,11 +67,6 @@
 #define PROGRAM_NAME "printf"
 
 #define AUTHORS proper_name ("David MacKenzie")
-
-#define isodigit(c) ((c) >= '0' && (c) <= '7')
-#define hextobin(c) ((c) >= 'a' && (c) <= 'f' ? (c) - 'a' + 10 : \
-                     (c) >= 'A' && (c) <= 'F' ? (c) - 'A' + 10 : (c) - '0')
-#define octtobin(c) ((c) - '0')
 
 /* The value to return to the calling program.  */
 static int exit_status;
@@ -265,20 +261,20 @@ print_esc (char const *escstart, bool octal_0)
       for (esc_length = 0, ++p;
            esc_length < 2 && c_isxdigit (to_uchar (*p));
            ++esc_length, ++p)
-        esc_value = esc_value * 16 + hextobin (*p);
+        esc_value = esc_value * 16 + fromhex (*p);
       if (esc_length == 0)
         error (EXIT_FAILURE, 0, _("missing hexadecimal number in escape"));
       putchar (esc_value);
     }
-  else if (isodigit (*p))
+  else if (isoct (*p))
     {
       /* Parse \0ooo (if octal_0 && *p == '0') or \ooo (otherwise).
          Allow \ooo if octal_0 && *p != '0'; this is an undocumented
          extension to POSIX that is compatible with Bash 2.05b.  */
       for (esc_length = 0, p += octal_0 && *p == '0';
-           esc_length < 3 && isodigit (*p);
+           esc_length < 3 && isoct (*p);
            ++esc_length, ++p)
-        esc_value = esc_value * 8 + octtobin (*p);
+        esc_value = esc_value * 8 + fromoct (*p);
       putchar (esc_value);
     }
   else if (*p && strchr ("\"\\abcefnrtv", *p))
@@ -295,7 +291,7 @@ print_esc (char const *escstart, bool octal_0)
         {
           if (! c_isxdigit (to_uchar (*p)))
             error (EXIT_FAILURE, 0, _("missing hexadecimal number in escape"));
-          uni_value = uni_value * 16 + hextobin (*p);
+          uni_value = uni_value * 16 + fromhex (*p);
         }
 
       /* Error for invalid code points 0000D800 through 0000DFFF inclusive.

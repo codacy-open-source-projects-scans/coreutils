@@ -54,10 +54,12 @@ noinst_HEADERS =		\
   src/iopoll.h			\
   src/longlong.h		\
   src/ls.h			\
+  src/octhexdigits.h		\
   src/operand2sig.h		\
   src/prog-fprintf.h		\
   src/remove.h			\
   src/set-fields.h		\
+  src/show-date.h		\
   src/statx.h			\
   src/system.h			\
   src/temp-stream.h		\
@@ -372,7 +374,9 @@ nodist_src_coreutils_SOURCES = src/coreutils.h
 src_coreutils_SOURCES = src/coreutils.c
 
 src_cp_SOURCES = src/cp.c $(copy_sources) $(selinux_sources)
+src_date_SOURCES = src/date.c src/show-date.c
 src_dir_SOURCES = src/ls.c src/ls-dir.c
+src_du_SOURCES = src/du.c src/show-date.c
 src_env_SOURCES = src/env.c src/operand2sig.c
 src_vdir_SOURCES = src/ls.c src/ls-vdir.c
 src_id_SOURCES = src/id.c src/group-list.c
@@ -633,6 +637,7 @@ src/version.c: Makefile
 	$(AM_V_GEN)rm -f $@
 	$(AM_V_at)${MKDIR_P} src
 	$(AM_V_at)printf '#include <config.h>\n' > $@t
+	$(AM_V_at)printf '#include "version.h"\n' >> $@t
 	$(AM_V_at)printf 'char const *Version = "$(PACKAGE_VERSION)";\n' >> $@t
 	$(AM_V_at)chmod a-w $@t
 	$(AM_V_at)mv $@t $@
