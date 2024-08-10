@@ -510,7 +510,7 @@ main (int argc, char **argv)
     }
   else if (input_range)
     {
-      n_lines = hi_input - lo_input + 1;
+      IF_LINT (n_lines = hi_input - lo_input + 1); /* Avoid GCC 10 warning.  */
       line = nullptr;
     }
   else
