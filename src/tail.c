@@ -443,9 +443,9 @@ dump_remainder (bool want_header, char const *pretty_filename, int fd,
   while (true)
     {
       char buffer[BUFSIZ];
-      size_t n = MIN (n_remaining, BUFSIZ);
-      size_t bytes_read = safe_read (fd, buffer, n);
-      if (bytes_read == SAFE_READ_ERROR)
+      idx_t n = MIN (n_remaining, BUFSIZ);
+      ptrdiff_t bytes_read = safe_read (fd, buffer, n);
+      if (bytes_read < 0)
         {
           if (errno != EAGAIN)
             error (EXIT_FAILURE, errno, _("error reading %s"),
@@ -520,7 +520,6 @@ file_lines (char const *pretty_filename, int fd, struct stat const *sb,
             uintmax_t *read_pos)
 {
   char *buffer;
-  size_t bytes_read;
   blksize_t bufsize = BUFSIZ;
   off_t pos = end_pos;
   bool ok = true;
@@ -545,7 +544,7 @@ file_lines (char const *pretty_filename, int fd, struct stat const *sb,
 
   /* Set 'bytes_read' to the size of the last, probably partial, buffer;
      0 < 'bytes_read' <= 'bufsize'.  */
-  bytes_read = (pos - start_pos) % bufsize;
+  ptrdiff_t bytes_read = (pos - start_pos) % bufsize;
   if (bytes_read == 0)
     bytes_read = bufsize;
   /* Make 'pos' a multiple of 'bufsize' (0 if the file is short), so that all
@@ -553,7 +552,7 @@ file_lines (char const *pretty_filename, int fd, struct stat const *sb,
   pos -= bytes_read;
   xlseek (fd, pos, SEEK_SET, pretty_filename);
   bytes_read = safe_read (fd, buffer, bytes_read);
-  if (bytes_read == SAFE_READ_ERROR)
+  if (bytes_read < 0)
     {
       error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
       ok = false;
@@ -569,7 +568,7 @@ file_lines (char const *pretty_filename, int fd, struct stat const *sb,
     {
       /* Scan backward, counting the newlines in this bufferfull.  */
 
-      size_t n = bytes_read;
+      idx_t n = bytes_read;
       while (n)
         {
           char const *nl;
@@ -602,7 +601,7 @@ file_lines (char const *pretty_filename, int fd, struct stat const *sb,
       xlseek (fd, pos, SEEK_SET, pretty_filename);
 
       bytes_read = safe_read (fd, buffer, bufsize);
-      if (bytes_read == SAFE_READ_ERROR)
+      if (bytes_read < 0)
         {
           error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
           ok = false;
@@ -638,7 +637,7 @@ pipe_lines (char const *pretty_filename, int fd, uintmax_t n_lines,
   LBUFFER *first, *last, *tmp;
   size_t total_lines = 0;	/* Total number of newlines in all buffers.  */
   bool ok = true;
-  size_t n_read;		/* Size in bytes of most recent read */
+  ptrdiff_t n_read;		/* Size in bytes of most recent read */
 
   first = last = xmalloc (sizeof (LBUFFER));
   first->nbytes = first->nlines = 0;
@@ -649,7 +648,7 @@ pipe_lines (char const *pretty_filename, int fd, uintmax_t n_lines,
   while (true)
     {
       n_read = safe_read (fd, tmp->buffer, BUFSIZ);
-      if (n_read == 0 || n_read == SAFE_READ_ERROR)
+      if (n_read <= 0)
         break;
       tmp->nbytes = n_read;
       *read_pos += n_read;
@@ -698,7 +697,7 @@ pipe_lines (char const *pretty_filename, int fd, uintmax_t n_lines,
 
   free (tmp);
 
-  if (n_read == SAFE_READ_ERROR)
+  if (n_read < 0)
     {
       error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
       ok = false;
@@ -777,7 +776,7 @@ pipe_bytes (char const *pretty_filename, int fd, uintmax_t n_bytes,
   size_t i;			/* Index into buffers.  */
   size_t total_bytes = 0;	/* Total characters in all buffers.  */
   bool ok = true;
-  size_t n_read;
+  ptrdiff_t n_read;
 
   first = last = xmalloc (sizeof (CBUFFER));
   first->nbytes = 0;
@@ -788,7 +787,7 @@ pipe_bytes (char const *pretty_filename, int fd, uintmax_t n_bytes,
   while (true)
     {
       n_read = safe_read (fd, tmp->buffer, BUFSIZ);
-      if (n_read == 0 || n_read == SAFE_READ_ERROR)
+      if (n_read <= 0)
         break;
       *read_pos += n_read;
       tmp->nbytes = n_read;
@@ -826,7 +825,7 @@ pipe_bytes (char const *pretty_filename, int fd, uintmax_t n_bytes,
 
   free (tmp);
 
-  if (n_read == SAFE_READ_ERROR)
+  if (n_read < 0)
     {
       error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
       ok = false;
@@ -871,10 +870,10 @@ start_bytes (char const *pretty_filename, int fd, uintmax_t n_bytes,
 
   while (0 < n_bytes)
     {
-      size_t bytes_read = safe_read (fd, buffer, BUFSIZ);
+      ptrdiff_t bytes_read = safe_read (fd, buffer, BUFSIZ);
       if (bytes_read == 0)
         return -1;
-      if (bytes_read == SAFE_READ_ERROR)
+      if (bytes_read < 0)
         {
           error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
           return 1;
@@ -908,10 +907,10 @@ start_lines (char const *pretty_filename, int fd, uintmax_t n_lines,
   while (true)
     {
       char buffer[BUFSIZ];
-      size_t bytes_read = safe_read (fd, buffer, BUFSIZ);
+      ptrdiff_t bytes_read = safe_read (fd, buffer, BUFSIZ);
       if (bytes_read == 0) /* EOF */
         return -1;
-      if (bytes_read == SAFE_READ_ERROR) /* error */
+      if (bytes_read < 0) /* error */
         {
           error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
           return 1;
@@ -1490,7 +1489,6 @@ tail_forever_inotify (int wd, struct File_spec *f, size_t n_files,
   size_t evlen = 0;
   char *evbuf;
   size_t evbuf_off = 0;
-  size_t len = 0;
 
   wd_to_name = hash_initialize (n_files, nullptr, wd_hasher, wd_comparator,
                                 nullptr);
@@ -1625,6 +1623,7 @@ tail_forever_inotify (int wd, struct File_spec *f, size_t n_files,
      ensure that watched files can be re-added when following by name.
      This loop blocks on the 'safe_read' call until a new event is notified.
      But when --pid=P is specified, tail usually waits via poll.  */
+  ptrdiff_t len = 0;
   while (true)
     {
       struct File_spec *fspec;
@@ -1688,7 +1687,7 @@ tail_forever_inotify (int wd, struct File_spec *f, size_t n_files,
 
           /* For kernels prior to 2.6.21, read returns 0 when the buffer
              is too small.  */
-          if ((len == 0 || (len == SAFE_READ_ERROR && errno == EINVAL))
+          if ((len == 0 || (len < 0 && errno == EINVAL))
               && max_realloc--)
             {
               len = 0;
@@ -1697,7 +1696,7 @@ tail_forever_inotify (int wd, struct File_spec *f, size_t n_files,
               continue;
             }
 
-          if (len == 0 || len == SAFE_READ_ERROR)
+          if (len <= 0)
             error (EXIT_FAILURE, errno, _("error reading inotify event"));
         }
 
@@ -1932,10 +1931,17 @@ tail_lines (char const *pretty_filename, int fd, uintmax_t n_lines,
 
   if (from_start)
     {
-      int t = start_lines (pretty_filename, fd, n_lines, read_pos);
-      if (t)
-        return t < 0;
-      *read_pos += dump_remainder (false, pretty_filename, fd, COPY_TO_EOF);
+      /* If skipping all input use lseek if possible, for speed.  */
+      off_t pos;
+      if (n_lines == UINTMAX_MAX && 0 <= (pos = lseek (fd, SEEK_END, 0)))
+        *read_pos = pos;
+      else
+        {
+          int t = start_lines (pretty_filename, fd, n_lines, read_pos);
+          if (t)
+            return t < 0;
+          *read_pos += dump_remainder (false, pretty_filename, fd, COPY_TO_EOF);
+        }
     }
   else
     {
@@ -2213,10 +2219,11 @@ parse_options (int argc, char **argv,
           else if (*optarg == '-')
             ++optarg;
 
-          *n_units = xdectoumax (optarg, 0, UINTMAX_MAX, "bkKmMGTPEZYRQ0",
-                                 count_lines
-                                 ? _("invalid number of lines")
-                                 : _("invalid number of bytes"), 0);
+          *n_units = xnumtoumax (optarg, 10, 0, UINTMAX_MAX, "bkKmMGTPEZYRQ0",
+                                 (count_lines
+                                  ? _("invalid number of lines")
+                                  : _("invalid number of bytes"))
+                                 , 0, XTOINT_MAX_QUIET);
           break;
 
         case 'f':
@@ -2236,8 +2243,10 @@ parse_options (int argc, char **argv,
         case MAX_UNCHANGED_STATS_OPTION:
           /* --max-unchanged-stats=N */
           max_n_unchanged_stats_between_opens =
-            xdectoumax (optarg, 0, UINTMAX_MAX, "",
-              _("invalid maximum number of unchanged stats between opens"), 0);
+            xnumtoumax (optarg, 10, 0, UINTMAX_MAX, "",
+                        _("invalid maximum number of unchanged stats"
+                          " between opens"),
+                        0, XTOINT_MAX_QUIET);
           break;
 
         case DISABLE_INOTIFY_OPTION:
@@ -2351,8 +2360,7 @@ main (int argc, char **argv)
   enum header_mode header_mode = multiple_files;
   bool ok = true;
   /* If from_start, the number of items to skip before printing; otherwise,
-     the number of items at the end of the file to print.  Although the type
-     is signed, the value is never negative.  */
+     the number of items at the end of the file to print.  */
   uintmax_t n_units = DEFAULT_N_LINES;
   size_t n_files;
   char **file;
@@ -2388,11 +2396,7 @@ main (int argc, char **argv)
   /* To start printing with item N_UNITS from the start of the file, skip
      N_UNITS - 1 items.  'tail -n +0' is actually meaningless, but for Unix
      compatibility it's treated the same as 'tail -n +1'.  */
-  if (from_start)
-    {
-      if (n_units)
-        --n_units;
-    }
+  n_units -= from_start && 0 < n_units && n_units < UINTMAX_MAX;
 
   if (optind < argc)
     {
@@ -2436,7 +2440,7 @@ main (int argc, char **argv)
   }
 
   /* Don't read anything if we'll never output anything.  */
-  if (! n_units && ! forever && ! from_start)
+  if (! forever && n_units == (from_start ? UINTMAX_MAX : 0))
     return EXIT_SUCCESS;
 
   F = xnmalloc (n_files, sizeof *F);

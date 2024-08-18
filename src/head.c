@@ -33,7 +33,6 @@
 
 #include "assure.h"
 #include "full-read.h"
-#include "quote.h"
 #include "safe-read.h"
 #include "stat-size.h"
 #include "xbinary-io.h"
@@ -194,14 +193,13 @@ static enum Copy_fd_status
 copy_fd (int src_fd, uintmax_t n_bytes)
 {
   char buf[BUFSIZ];
-  const size_t buf_size = sizeof (buf);
 
   /* Copy the file contents.  */
   while (0 < n_bytes)
     {
-      size_t n_to_read = MIN (buf_size, n_bytes);
-      size_t n_read = safe_read (src_fd, buf, n_to_read);
-      if (n_read == SAFE_READ_ERROR)
+      idx_t n_to_read = MIN (n_bytes, sizeof buf);
+      ptrdiff_t n_read = safe_read (src_fd, buf, n_to_read);
+      if (n_read < 0)
         return COPY_FD_READ_ERROR;
 
       n_bytes -= n_read;
@@ -237,17 +235,16 @@ elseek (int fd, off_t offset, int whence, char const *filename)
 }
 
 /* For an input file with name FILENAME and descriptor FD,
-   output all but the last N_ELIDE_0 bytes.
+   output all but the last N_ELIDE bytes.
    If CURRENT_POS is nonnegative, assume that the input file is
    positioned at CURRENT_POS and that it should be repositioned to
    just before the elided bytes before returning.
    Return true upon success.
    Give a diagnostic and return false upon error.  */
 static bool
-elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide_0,
+elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide,
                        off_t current_pos)
 {
-  size_t n_elide = n_elide_0;
   uintmax_t desired_pos = current_pos;
   bool ok = true;
 
@@ -265,15 +262,8 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide_0,
 #endif
 
 #if HEAD_TAIL_PIPE_BYTECOUNT_THRESHOLD < 2 * READ_BUFSIZE
-  "HEAD_TAIL_PIPE_BYTECOUNT_THRESHOLD must be at least 2 * READ_BUFSIZE"
+# error "HEAD_TAIL_PIPE_BYTECOUNT_THRESHOLD must be at least 2 * READ_BUFSIZE"
 #endif
-
-  if (SIZE_MAX < n_elide_0 + READ_BUFSIZE)
-    {
-      char umax_buf[INT_BUFSIZE_BOUND (n_elide_0)];
-      error (EXIT_FAILURE, 0, _("%s: number of bytes is too large"),
-             umaxtostr (n_elide_0, umax_buf));
-    }
 
   /* Two cases to consider...
      1) n_elide is small enough that we can afford to double-buffer:
@@ -286,11 +276,14 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide_0,
      CAUTION: do not fail (out of memory) when asked to elide
      a ridiculous amount, but when given only a small input.  */
 
+  static_assert (READ_BUFSIZE <= IDX_MAX);
+  static_assert (HEAD_TAIL_PIPE_BYTECOUNT_THRESHOLD <= IDX_MAX - READ_BUFSIZE);
   if (n_elide <= HEAD_TAIL_PIPE_BYTECOUNT_THRESHOLD)
     {
+      idx_t in_elide = n_elide;
       bool first = true;
       bool eof = false;
-      size_t n_to_read = READ_BUFSIZE + n_elide;
+      idx_t n_to_read = READ_BUFSIZE + n_elide;
       bool i;
       char *b[2];
       b[0] = xnmalloc (2, n_to_read);
@@ -298,8 +291,8 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide_0,
 
       for (i = false; ! eof ; i = !i)
         {
-          size_t n_read = full_read (fd, b[i], n_to_read);
-          size_t delta = 0;
+          idx_t n_read = full_read (fd, b[i], n_to_read);
+          idx_t delta = 0;
           if (n_read < n_to_read)
             {
               if (errno != 0)
@@ -310,7 +303,7 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide_0,
                 }
 
               /* reached EOF */
-              if (n_read <= n_elide)
+              if (n_read <= in_elide)
                 {
                   if (first)
                     {
@@ -320,7 +313,7 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide_0,
                     }
                   else
                     {
-                      delta = n_elide - n_read;
+                      delta = in_elide - n_read;
                     }
                 }
               eof = true;
@@ -330,15 +323,15 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide_0,
              the previous round.  */
           if (! first)
             {
-              desired_pos += n_elide - delta;
-              xwrite_stdout (b[!i] + READ_BUFSIZE, n_elide - delta);
+              desired_pos += in_elide - delta;
+              xwrite_stdout (b[!i] + READ_BUFSIZE, in_elide - delta);
             }
           first = false;
 
-          if (n_elide < n_read)
+          if (in_elide < n_read)
             {
-              desired_pos += n_read - n_elide;
-              xwrite_stdout (b[i], n_read - n_elide);
+              desired_pos += n_read - in_elide;
+              xwrite_stdout (b[i], n_read - in_elide);
             }
         }
 
@@ -350,31 +343,24 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide_0,
          bytes.  Then, for each new buffer we read, also write an old one.  */
 
       bool eof = false;
-      size_t n_read;
-      bool buffered_enough;
-      size_t i, i_next;
+      idx_t n_read;
       char **b = nullptr;
-      /* Round n_elide up to a multiple of READ_BUFSIZE.  */
-      size_t rem = READ_BUFSIZE - (n_elide % READ_BUFSIZE);
-      size_t n_elide_round = n_elide + rem;
-      size_t n_bufs = n_elide_round / READ_BUFSIZE + 1;
-      size_t n_alloc = 0;
-      size_t n_array_alloc = 0;
 
-      buffered_enough = false;
+      idx_t remainder = n_elide % READ_BUFSIZE;
+      /* The number of buffers needed to hold n_elide bytes plus one
+         extra buffer.  They are allocated lazily, so don't report
+         overflow now simply because the number does not fit into idx_t.  */
+      uintmax_t n_bufs = n_elide / READ_BUFSIZE + (remainder != 0) + 1;
+      idx_t n_alloc = 0;
+      idx_t n_array_alloc = 0;
+
+      bool buffered_enough = false;
+      idx_t i, i_next;
       for (i = 0, i_next = 1; !eof; i = i_next, i_next = (i_next + 1) % n_bufs)
         {
           if (n_array_alloc == i)
-            {
-              /* reallocate between 16 and n_bufs entries.  */
-              if (n_array_alloc == 0)
-                n_array_alloc = MIN (n_bufs, 16);
-              else if (n_array_alloc <= n_bufs / 2)
-                n_array_alloc *= 2;
-              else
-                n_array_alloc = n_bufs;
-              b = xnrealloc (b, n_array_alloc, sizeof *b);
-            }
+            b = xpalloc (b, &n_array_alloc, 1, MIN (n_bufs, PTRDIFF_MAX),
+                         sizeof *b);
 
           if (! buffered_enough)
             {
@@ -403,42 +389,41 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide_0,
             }
         }
 
-      /* Output any remainder: rem bytes from b[i] + n_read.  */
-      if (rem)
+      /* Output the remainder: rem bytes from b[i] + n_read.  */
+      idx_t rem = READ_BUFSIZE - remainder;
+      if (buffered_enough)
         {
-          if (buffered_enough)
+          idx_t n_bytes_left_in_b_i = READ_BUFSIZE - n_read;
+          desired_pos += rem;
+          if (rem < n_bytes_left_in_b_i)
             {
-              size_t n_bytes_left_in_b_i = READ_BUFSIZE - n_read;
-              desired_pos += rem;
-              if (rem < n_bytes_left_in_b_i)
-                {
-                  xwrite_stdout (b[i] + n_read, rem);
-                }
-              else
-                {
-                  xwrite_stdout (b[i] + n_read, n_bytes_left_in_b_i);
-                  xwrite_stdout (b[i_next], rem - n_bytes_left_in_b_i);
-                }
+              xwrite_stdout (b[i] + n_read, rem);
             }
-          else if (i + 1 == n_bufs)
+          else
             {
-              /* This happens when n_elide < file_size < n_elide_round.
+              xwrite_stdout (b[i] + n_read, n_bytes_left_in_b_i);
+              xwrite_stdout (b[i_next], rem - n_bytes_left_in_b_i);
+            }
+        }
+      else if (i + 1 == n_bufs)
+        {
+          /* This happens when
+             n_elide < file_size < (n_bufs - 1) * READ_BUFSIZE.
 
-                 |READ_BUF.|
-                 |                      |  rem |
-                 |---------!---------!---------!---------|
-                 |---- n_elide ---------|
-                 |                      | x |
-                 |                   |y |
-                 |---- file size -----------|
-                 |                   |n_read|
-                 |---- n_elide_round ----------|
-               */
-              size_t y = READ_BUFSIZE - rem;
-              size_t x = n_read - y;
-              desired_pos += x;
-              xwrite_stdout (b[i_next], x);
-            }
+             |READ_BUF.|
+             |                      |  rem |
+             |---------!---------!---------!---------|
+             |---- n_elide----------|
+             |                      | x |
+             |                   |y |
+             |---- file size -----------|
+             |                   |n_read|
+             |(n_bufs - 1) * READ_BUFSIZE--|
+           */
+          idx_t y = READ_BUFSIZE - rem;
+          idx_t x = n_read - y;
+          desired_pos += x;
+          xwrite_stdout (b[i_next], x);
         }
 
     free_mem:
@@ -487,7 +472,7 @@ elide_tail_bytes_file (char const *filename, int fd, uintmax_t n_elide,
 }
 
 /* For an input file with name FILENAME and descriptor FD,
-   output all but the last N_ELIDE_0 bytes.
+   output all but the last N_ELIDE bytes.
    If CURRENT_POS is nonnegative, the input file is positioned there
    and should be repositioned to just before the elided bytes.
    Buffer the specified number of lines as a linked list of LBUFFERs,
@@ -504,12 +489,12 @@ elide_tail_lines_pipe (char const *filename, int fd, uintmax_t n_elide,
     size_t nlines;
     struct linebuffer *next;
   };
-  uintmax_t desired_pos = current_pos;
+  off_t desired_pos = current_pos;
   typedef struct linebuffer LBUFFER;
   LBUFFER *first, *last, *tmp;
   size_t total_lines = 0;	/* Total number of newlines in all buffers.  */
   bool ok = true;
-  size_t n_read;		/* Size in bytes of most recent read */
+  ptrdiff_t n_read;		/* Size in bytes of most recent read */
 
   first = last = xmalloc (sizeof (LBUFFER));
   first->nbytes = first->nlines = 0;
@@ -522,7 +507,7 @@ elide_tail_lines_pipe (char const *filename, int fd, uintmax_t n_elide,
   while (true)
     {
       n_read = safe_read (fd, tmp->buffer, BUFSIZ);
-      if (n_read == 0 || n_read == SAFE_READ_ERROR)
+      if (n_read <= 0)
         break;
 
       if (! n_elide)
@@ -581,7 +566,7 @@ elide_tail_lines_pipe (char const *filename, int fd, uintmax_t n_elide,
 
   free (tmp);
 
-  if (n_read == SAFE_READ_ERROR)
+  if (n_read < 0)
     {
       error (0, errno, _("error reading %s"), quoteaf (filename));
       ok = false;
@@ -649,7 +634,7 @@ elide_tail_lines_seekable (char const *pretty_filename, int fd,
                            off_t start_pos, off_t size)
 {
   char buffer[BUFSIZ];
-  size_t bytes_read;
+  ptrdiff_t bytes_read;
   off_t pos = size;
 
   /* Set 'bytes_read' to the size of the last, probably partial, buffer;
@@ -663,7 +648,7 @@ elide_tail_lines_seekable (char const *pretty_filename, int fd,
   if (elseek (fd, pos, SEEK_SET, pretty_filename) < 0)
     return false;
   bytes_read = safe_read (fd, buffer, bytes_read);
-  if (bytes_read == SAFE_READ_ERROR)
+  if (bytes_read < 0)
     {
       error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
       return false;
@@ -680,7 +665,7 @@ elide_tail_lines_seekable (char const *pretty_filename, int fd,
     {
       /* Scan backward, counting the newlines in this bufferfull.  */
 
-      size_t n = bytes_read;
+      idx_t n = bytes_read;
       while (n)
         {
           if (all_lines)
@@ -732,7 +717,7 @@ elide_tail_lines_seekable (char const *pretty_filename, int fd,
         return false;
 
       bytes_read = safe_read (fd, buffer, BUFSIZ);
-      if (bytes_read == SAFE_READ_ERROR)
+      if (bytes_read < 0)
         {
           error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
           return false;
@@ -778,11 +763,10 @@ head_bytes (char const *filename, int fd, uintmax_t bytes_to_write)
 
   while (bytes_to_write)
     {
-      size_t bytes_read;
       if (bytes_to_write < bytes_to_read)
         bytes_to_read = bytes_to_write;
-      bytes_read = safe_read (fd, buffer, bytes_to_read);
-      if (bytes_read == SAFE_READ_ERROR)
+      ptrdiff_t bytes_read = safe_read (fd, buffer, bytes_to_read);
+      if (bytes_read < 0)
         {
           error (0, errno, _("error reading %s"), quoteaf (filename));
           return false;
@@ -802,10 +786,10 @@ head_lines (char const *filename, int fd, uintmax_t lines_to_write)
 
   while (lines_to_write)
     {
-      size_t bytes_read = safe_read (fd, buffer, BUFSIZ);
-      size_t bytes_to_write = 0;
+      ptrdiff_t bytes_read = safe_read (fd, buffer, BUFSIZ);
+      idx_t bytes_to_write = 0;
 
-      if (bytes_read == SAFE_READ_ERROR)
+      if (bytes_read < 0)
         {
           error (0, errno, _("error reading %s"), quoteaf (filename));
           return false;
@@ -841,6 +825,10 @@ head (char const *filename, int fd, uintmax_t n_units, bool count_lines,
 
   if (elide_from_end)
     {
+      /* Optimize for "infinite" elisions.  */
+      if (n_units == UINTMAX_MAX)
+        return true;
+
       off_t current_pos = -1;
       struct stat st;
       if (fstat (fd, &st) != 0)
@@ -903,15 +891,18 @@ head_file (char const *filename, uintmax_t n_units, bool count_lines,
 /* Convert a string of decimal digits, N_STRING, with an optional suffix
    to an integral value.  Upon successful conversion,
    return that value.  If it cannot be converted, give a diagnostic and exit.
+   If it is too large, silently return UINTMAX_MAX.
    COUNT_LINES indicates whether N_STRING is a number of bytes or a number
    of lines.  It is used solely to give a more specific diagnostic.  */
 
 static uintmax_t
 string_to_integer (bool count_lines, char const *n_string)
 {
-  return xdectoumax (n_string, 0, UINTMAX_MAX, "bkKmMGTPEZYRQ0",
-                     count_lines ? _("invalid number of lines")
-                                 : _("invalid number of bytes"), 0);
+  return xnumtoumax (n_string, 10, 0, UINTMAX_MAX, "bkKmMGTPEZYRQ0",
+                     (count_lines
+                      ? _("invalid number of lines")
+                      : _("invalid number of bytes")),
+                     0, XTOINT_MAX_QUIET);
 }
 
 int
@@ -922,7 +913,8 @@ main (int argc, char **argv)
   int c;
   size_t i;
 
-  /* Number of items to print. */
+  /* Number of items to output, or to elide from the end.
+     UINTMAX_MAX stands for an essentially unlimited number.  */
   uintmax_t n_units = DEFAULT_NUMBER;
 
   /* If true, interpret the numeric argument as the number of lines.
@@ -1072,13 +1064,6 @@ main (int argc, char **argv)
   if (header_mode == always
       || (header_mode == multiple_files && optind < argc - 1))
     print_headers = true;
-
-  if ( ! count_lines && elide_from_end && OFF_T_MAX < n_units)
-    {
-      char umax_buf[INT_BUFSIZE_BOUND (n_units)];
-      error (EXIT_FAILURE, EOVERFLOW, "%s: %s", _("invalid number of bytes"),
-             quote (umaxtostr (n_units, umax_buf)));
-    }
 
   file_list = (optind < argc
                ? (char const *const *) &argv[optind]

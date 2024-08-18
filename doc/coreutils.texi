@@ -8251,6 +8251,13 @@ Sort by version name and number, lowest first.  It behaves like a default
 sort, except that each sequence of decimal digits is treated numerically
 as an index/version number.  @xref{Version sort ordering}.
 
+@item --sort=name
+@opindex --sort
+@opindex name@r{, sorting option for @command{ls}}
+Sort by file name.  This is the default operation of @command{ls},
+and can be explicitly specified to override any
+previously specified sorting option.
+
 @item --sort=width
 @opindex --sort
 @opindex width@r{, sorting option for @command{ls}}
@@ -13401,10 +13408,12 @@ printf @var{format} [@var{argument}]@dots{}
 
 @command{printf} prints the @var{format} string, interpreting @samp{%}
 directives and @samp{\} escapes to format numeric and string arguments
-in a way that is mostly similar to the C @samp{printf} function.
+in a way that is mostly similar to the C @samp{printf} function,
+and C language escape sequence processing.
 @xref{Output Conversion Syntax,, @command{printf} format directives,
 libc, The GNU C Library Reference Manual}, for details.
-The differences are listed below.
+See also @uref{https://en.cppreference.com/w/c/language/escape,
+C99 string escapes:}.  The differences are listed below.
 
 @mayConflictWithShellBuiltIn{printf}
 
@@ -13437,9 +13446,9 @@ one.
 @kindex %b
 An additional directive @samp{%b}, prints its
 argument string with @samp{\} escapes interpreted in the same way as in
-the @var{format} string, except that octal escapes are of the form
-@samp{\0@var{ooo}} where @var{ooo} is 0 to 3 octal digits.  If
-@samp{\@var{ooo}} is nine-bit value, ignore the ninth bit.
+the @var{format} string, except that octal escapes should have a leading
+@samp{0} like @samp{\0@var{nnn}}.
+If @samp{@var{nnn}} is a nine-bit value, ignore the ninth bit.
 If a precision is also given, it limits the number of bytes printed
 from the converted string.
 
