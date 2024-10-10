@@ -172,20 +172,29 @@ enum filetype
     whiteout,
     arg_directory
   };
+enum { filetype_cardinality = arg_directory + 1 };
 
 /* Display letters and indicators for each filetype.
    Keep these in sync with enum filetype.  */
-static char const filetype_letter[] = "?pcdb-lswd";
+static char const filetype_letter[] =
+  {'?', 'p', 'c', 'd', 'b', '-', 'l', 's', 'w', 'd'};
+static_assert (ARRAY_CARDINALITY (filetype_letter) == filetype_cardinality);
 
-/* Ensure that filetype and filetype_letter have the same
-   number of elements.  */
-static_assert (sizeof filetype_letter - 1 == arg_directory + 1);
+/* Map enum filetype to <dirent.h> d_type values.  */
+static unsigned char const filetype_d_type[] =
+  {
+    DT_UNKNOWN, DT_FIFO, DT_CHR, DT_DIR, DT_BLK, DT_REG, DT_LNK, DT_SOCK,
+    DT_WHT, DT_DIR
+  };
+static_assert (ARRAY_CARDINALITY (filetype_d_type) == filetype_cardinality);
 
-#define FILETYPE_INDICATORS				\
-  {							\
-    C_ORPHAN, C_FIFO, C_CHR, C_DIR, C_BLK, C_FILE,	\
-    C_LINK, C_SOCK, C_FILE, C_DIR			\
-  }
+/* Map d_type values to enum filetype.  */
+static char const d_type_filetype[UCHAR_MAX + 1] =
+  {
+    [DT_BLK] = blockdev, [DT_CHR] = chardev, [DT_DIR] = directory,
+    [DT_FIFO] = fifo, [DT_LNK] = symbolic_link, [DT_REG] = normal,
+    [DT_SOCK] = sock, [DT_WHT] = whiteout
+  };
 
 enum acl_type
   {
@@ -236,7 +245,8 @@ struct fileinfo
     size_t width;
   };
 
-#define LEN_STR_PAIR(s) sizeof (s) - 1, s
+#define BIN_STR(...) \
+  sizeof ((char []) {__VA_ARGS__}), (char const []) {__VA_ARGS__}
 
 /* Null is a valid character in a color indicator (think about Epson
    printers, for example) so we have to use a length/buffer string
@@ -601,11 +611,15 @@ enum indicator_no
     C_CLR_TO_EOL
   };
 
-static char const *const indicator_name[]=
+static char const indicator_name[][2]=
   {
-    "lc", "rc", "ec", "rs", "no", "fi", "di", "ln", "pi", "so",
-    "bd", "cd", "mi", "or", "ex", "do", "su", "sg", "st",
-    "ow", "tw", "ca", "mh", "cl", nullptr
+    {'l','c'}, {'r','c'}, {'e','c'}, {'r','s'}, {'n','o'},
+    {'f','i'}, {'d','i'}, {'l','n'},
+    {'p','i'}, {'s','o'},
+    {'b','d'}, {'c','d'}, {'m','i'}, {'o','r'}, {'e','x'},
+    {'d','o'}, {'s','u'}, {'s','g'},
+    {'s','t'}, {'o','w'}, {'t','w'}, {'c','a'}, {'m','h'},
+    {'c','l'}
   };
 
 struct color_ext_type
@@ -618,30 +632,30 @@ struct color_ext_type
 
 static struct bin_str color_indicator[] =
   {
-    { LEN_STR_PAIR ("\033[") },		/* lc: Left of color sequence */
-    { LEN_STR_PAIR ("m") },		/* rc: Right of color sequence */
+    { BIN_STR ('\033','[') },		/* lc: Left of color sequence */
+    { BIN_STR ('m') },			/* rc: Right of color sequence */
     { 0, nullptr },			/* ec: End color (replaces lc+rs+rc) */
-    { LEN_STR_PAIR ("0") },		/* rs: Reset to ordinary colors */
+    { BIN_STR ('0') },			/* rs: Reset to ordinary colors */
     { 0, nullptr },			/* no: Normal */
     { 0, nullptr },			/* fi: File: default */
-    { LEN_STR_PAIR ("01;34") },		/* di: Directory: bright blue */
-    { LEN_STR_PAIR ("01;36") },		/* ln: Symlink: bright cyan */
-    { LEN_STR_PAIR ("33") },		/* pi: Pipe: yellow/brown */
-    { LEN_STR_PAIR ("01;35") },		/* so: Socket: bright magenta */
-    { LEN_STR_PAIR ("01;33") },		/* bd: Block device: bright yellow */
-    { LEN_STR_PAIR ("01;33") },		/* cd: Char device: bright yellow */
+    { BIN_STR ('0','1',';','3','4') },	/* di: Directory: bright blue */
+    { BIN_STR ('0','1',';','3','6') },	/* ln: Symlink: bright cyan */
+    { BIN_STR ('3','3') },		/* pi: Pipe: yellow/brown */
+    { BIN_STR ('0','1',';','3','5') },	/* so: Socket: bright magenta */
+    { BIN_STR ('0','1',';','3','3') },	/* bd: Block device: bright yellow */
+    { BIN_STR ('0','1',';','3','3') },	/* cd: Char device: bright yellow */
     { 0, nullptr },			/* mi: Missing file: undefined */
     { 0, nullptr },			/* or: Orphaned symlink: undefined */
-    { LEN_STR_PAIR ("01;32") },		/* ex: Executable: bright green */
-    { LEN_STR_PAIR ("01;35") },		/* do: Door: bright magenta */
-    { LEN_STR_PAIR ("37;41") },		/* su: setuid: white on red */
-    { LEN_STR_PAIR ("30;43") },		/* sg: setgid: black on yellow */
-    { LEN_STR_PAIR ("37;44") },		/* st: sticky: black on blue */
-    { LEN_STR_PAIR ("34;42") },		/* ow: other-writable: blue on green */
-    { LEN_STR_PAIR ("30;42") },		/* tw: ow w/ sticky: black on green */
+    { BIN_STR ('0','1',';','3','2') },	/* ex: Executable: bright green */
+    { BIN_STR ('0','1',';','3','5') },	/* do: Door: bright magenta */
+    { BIN_STR ('3','7',';','4','1') },	/* su: setuid: white on red */
+    { BIN_STR ('3','0',';','4','3') },	/* sg: setgid: black on yellow */
+    { BIN_STR ('3','7',';','4','4') },	/* st: sticky: black on blue */
+    { BIN_STR ('3','4',';','4','2') },	/* ow: other-writable: blue on green */
+    { BIN_STR ('3','0',';','4','2') },	/* tw: ow w/ sticky: black on green */
     { 0, nullptr },			/* ca: disabled by default */
     { 0, nullptr },			/* mh: disabled by default */
-    { LEN_STR_PAIR ("\033[K") },	/* cl: clear to end of line */
+    { BIN_STR ('\033','[','K') },	/* cl: clear to end of line */
   };
 
 /* A list mapping file extensions to corresponding display sequence.  */
@@ -752,6 +766,10 @@ static bool format_needs_stat;
    needed.  */
 
 static bool format_needs_type;
+
+/* Like 'format_needs_stat', but set only if capability colors are needed.  */
+
+static bool format_needs_capability;
 
 /* An arbitrary limit on the number of bytes in a printed timestamp.
    This is set to a relatively small value to avoid the need to worry
@@ -1464,11 +1482,14 @@ free_pending_ent (struct pending *p)
 static bool
 is_colored (enum indicator_no type)
 {
+  /* Return true unless the string is "", "0" or "00"; try to be efficient.  */
   size_t len = color_indicator[type].len;
+  if (len == 0)
+    return false;
+  if (2 < len)
+    return true;
   char const *s = color_indicator[type].string;
-  return ! (len == 0
-            || (len == 1 && STRNCMP_LIT (s, "0") == 0)
-            || (len == 2 && STRNCMP_LIT (s, "00") == 0));
+  return (s[0] != '0') | (s[len - 1] != '0');
 }
 
 static void
@@ -1671,7 +1692,7 @@ main (int argc, char **argv)
   initialize_exit_failure (LS_FAILURE);
   atexit (close_stdout);
 
-  static_assert (ARRAY_CARDINALITY (color_indicator) + 1
+  static_assert (ARRAY_CARDINALITY (color_indicator)
                  == ARRAY_CARDINALITY (indicator_name));
 
   exit_status = EXIT_SUCCESS;
@@ -1731,15 +1752,14 @@ main (int argc, char **argv)
 
   localtz = tzalloc (getenv ("TZ"));
 
-  format_needs_stat = sort_type == sort_time || sort_type == sort_size
-    || format == long_format
-    || print_scontext
-    || print_block_size;
-  format_needs_type = (! format_needs_stat
-                       && (recursive
-                           || print_with_color
-                           || indicator_style != none
-                           || directories_first));
+  format_needs_stat = ((sort_type == sort_time) | (sort_type == sort_size)
+                       | (format == long_format)
+                       | print_block_size | print_hyperlink);
+  format_needs_type = ((! format_needs_stat)
+                       & (recursive | print_with_color | print_scontext
+                          | directories_first
+                          | (indicator_style != none)));
+  format_needs_capability = print_with_color && is_colored (C_CAP);
 
   if (dired)
     {
@@ -1769,13 +1789,13 @@ main (int argc, char **argv)
   if (n_files <= 0)
     {
       if (immediate_dirs)
-        gobble_file (".", directory, NOT_AN_INODE_NUMBER, true, "");
+        gobble_file (".", directory, NOT_AN_INODE_NUMBER, true, nullptr);
       else
         queue_directory (".", nullptr, true);
     }
   else
     do
-      gobble_file (argv[i++], unknown, NOT_AN_INODE_NUMBER, true, "");
+      gobble_file (argv[i++], unknown, NOT_AN_INODE_NUMBER, true, nullptr);
     while (i < argc);
 
   if (cwd_n_used)
@@ -2727,8 +2747,7 @@ parse_ls_color (void)
 {
   char const *p;		/* Pointer to character being parsed */
   char *buf;			/* color_buf buffer pointer */
-  int ind_no;			/* Indicator number */
-  char label[3];		/* Indicator label */
+  char label0, label1;		/* Indicator label */
   struct color_ext_type *ext;	/* Extension we are working on */
 
   if ((p = getenv ("LS_COLORS")) == nullptr || *p == '\0')
@@ -2744,7 +2763,6 @@ parse_ls_color (void)
     }
 
   ext = nullptr;
-  strcpy (label, "??");
 
   /* This is an overly conservative estimate, but any possible
      LS_COLORS string will *not* generate a color_buf longer than
@@ -2787,7 +2805,7 @@ parse_ls_color (void)
               goto done;
 
             default:	/* Assume it is file type label */
-              label[0] = *(p++);
+              label0 = *p++;
               state = PS_2;
               break;
             }
@@ -2796,7 +2814,7 @@ parse_ls_color (void)
         case PS_2:		/* Second label character */
           if (*p)
             {
-              label[1] = *(p++);
+              label1 = *p++;
               state = PS_3;
             }
           else
@@ -2807,19 +2825,21 @@ parse_ls_color (void)
           state = PS_FAIL;	/* Assume failure...  */
           if (*(p++) == '=')/* It *should* be...  */
             {
-              for (ind_no = 0; indicator_name[ind_no] != nullptr; ++ind_no)
+              for (int i = 0; i < ARRAY_CARDINALITY (indicator_name); i++)
                 {
-                  if (STREQ (label, indicator_name[ind_no]))
+                  if ((label0 == indicator_name[i][0])
+                      && (label1 == indicator_name[i][1]))
                     {
-                      color_indicator[ind_no].string = buf;
+                      color_indicator[i].string = buf;
                       state = (get_funky_string (&buf, &p, false,
-                                                 &color_indicator[ind_no].len)
+                                                 &color_indicator[i].len)
                                ? PS_START : PS_FAIL);
                       break;
                     }
                 }
               if (state == PS_FAIL)
-                error (0, 0, _("unrecognized prefix: %s"), quote (label));
+                error (0, 0, _("unrecognized prefix: %s"),
+                       quote ((char []) {label0, label1, '\0'}));
             }
           break;
 
@@ -3065,22 +3085,11 @@ print_dir (char const *name, char const *realname, bool command_line_arg)
         {
           if (! file_ignored (next->d_name))
             {
-              enum filetype type = unknown;
-
+              enum filetype type;
 #if HAVE_STRUCT_DIRENT_D_TYPE
-              switch (next->d_type)
-                {
-                case DT_BLK:  type = blockdev;		break;
-                case DT_CHR:  type = chardev;		break;
-                case DT_DIR:  type = directory;		break;
-                case DT_FIFO: type = fifo;		break;
-                case DT_LNK:  type = symbolic_link;	break;
-                case DT_REG:  type = normal;		break;
-                case DT_SOCK: type = sock;		break;
-# ifdef DT_WHT
-                case DT_WHT:  type = whiteout;		break;
-# endif
-                }
+              type = d_type_filetype[next->d_type];
+#else
+              type = unknown;
 #endif
               total_blocks += gobble_file (next->d_name, type,
                                            RELIABLE_D_INO (next),
@@ -3293,7 +3302,7 @@ file_has_aclinfo_cache (char const *file, struct fileinfo *f,
       return 0;
     }
 
-  int n = file_has_aclinfo (file, &f->stat, ai, flags);
+  int n = file_has_aclinfo (file, ai, flags);
   if (n <= 0 && errno_unsupported (ai->u.err))
     unsupported_device = f->stat.st_dev;
   return n;
@@ -3354,6 +3363,7 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
   memset (f, '\0', sizeof *f);
   f->stat.st_ino = inode;
   f->filetype = type;
+  f->scontext = UNKNOWN_SECURITY_CONTEXT;
 
   f->quoted = -1;
   if ((! cwd_some_quoted) && align_variable_outer_quotes)
@@ -3364,13 +3374,14 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
         cwd_some_quoted = 1;
     }
 
-  if (command_line_arg
+  bool check_stat =
+     (command_line_arg
       || print_hyperlink
       || format_needs_stat
-      /* When coloring a directory (we may know the type from
-         direct.d_type), we have to stat it in order to indicate
+      || (format_needs_type && type == unknown)
+      /* When coloring a directory, stat it to indicate
          sticky and/or other-writable attributes.  */
-      || (type == directory && print_with_color
+      || ((type == directory || type == unknown) && print_with_color
           && (is_colored (C_OTHER_WRITABLE)
               || is_colored (C_STICKY)
               || is_colored (C_STICKY_OTHER_WRITABLE)))
@@ -3383,38 +3394,33 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
       /* Command line dereferences are already taken care of by the above
          assertion that the inode number is not yet known.  */
       || (print_inode && inode == NOT_AN_INODE_NUMBER)
-      || (format_needs_type
-          && (type == unknown || command_line_arg
-              /* --indicator-style=classify (aka -F)
-                 requires that we stat each regular file
-                 to see if it's executable.  */
-              || (type == normal && (indicator_style == classify
-                                     /* This is so that --color ends up
-                                        highlighting files with these mode
-                                        bits set even when options like -F are
-                                        not specified.  Note we do a redundant
-                                        stat in the very unlikely case where
-                                        C_CAP is set but not the others. */
-                                     || (print_with_color
-                                         && (is_colored (C_EXEC)
-                                             || is_colored (C_SETUID)
-                                             || is_colored (C_SETGID)
-                                             || is_colored (C_CAP)))
-                                     )))))
+      /* --indicator-style=classify (aka -F) requires statting each
+         regular file to see whether it's executable.  */
+      || ((type == normal || type == unknown)
+          && (indicator_style == classify
+              /* This is so that --color ends up highlighting files with these
+                 mode bits set even when options like -F are not specified.  */
+              || (print_with_color && (is_colored (C_EXEC)
+                                       || is_colored (C_SETUID)
+                                       || is_colored (C_SETGID))))));
 
+  /* Absolute name of this file, if needed.  */
+  char const *full_name = name;
+  if (check_stat | print_scontext | format_needs_capability
+      && name[0] != '/' && dirname)
     {
-      /* Absolute name of this file.  */
-      char *full_name;
-      bool do_deref;
-      int err;
+      char *p = alloca (strlen (name) + strlen (dirname) + 2);
+      attach (p, dirname, name);
+      full_name = p;
+    }
 
-      if (name[0] == '/' || dirname[0] == 0)
-        full_name = (char *) name;
-      else
-        {
-          full_name = alloca (strlen (name) + strlen (dirname) + 2);
-          attach (full_name, dirname, name);
-        }
+  bool do_deref;
+
+  if (!check_stat)
+    do_deref = dereference == DEREF_ALWAYS;
+  else
+    {
+      int err;
 
       if (print_hyperlink)
         {
@@ -3471,8 +3477,6 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
           file_failure (command_line_arg,
                         _("cannot access %s"), full_name);
 
-          f->scontext = UNKNOWN_SECURITY_CONTEXT;
-
           if (command_line_arg)
             return 0;
 
@@ -3483,156 +3487,149 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
         }
 
       f->stat_ok = true;
+      f->filetype = type = d_type_filetype[IFTODT (f->stat.st_mode)];
+    }
 
-      if (format == long_format || print_scontext)
+  if (type == directory && command_line_arg && !immediate_dirs)
+    f->filetype = type = arg_directory;
+
+  bool check_capability = format_needs_capability & (type == normal);
+
+  if ((format == long_format) | print_scontext | check_capability)
+    {
+      struct aclinfo ai;
+      int n = file_has_aclinfo_cache (full_name, f, &ai,
+                                      ((do_deref ? ACL_SYMLINK_FOLLOW : 0)
+                                       | filetype_d_type[type]));
+      bool have_acl = 0 < n;
+      bool have_scontext = !ai.scontext_err;
+      f->acl_type = (!have_scontext && !have_acl
+                     ? ACL_T_NONE
+                     : (have_scontext && !have_acl
+                        ? ACL_T_LSM_CONTEXT_ONLY
+                        : ACL_T_YES));
+      any_has_acl |= f->acl_type != ACL_T_NONE;
+
+      if (format == long_format && n < 0)
+        error (0, ai.u.err, "%s", quotef (full_name));
+      else
         {
-          struct aclinfo ai;
-          int n = file_has_aclinfo_cache (full_name, f, &ai,
-                                          do_deref ? ACL_SYMLINK_FOLLOW : 0);
-          bool have_acl = 0 < n;
-          bool have_scontext = !ai.scontext_err;
-          f->acl_type = (!have_scontext && !have_acl
-                         ? ACL_T_NONE
-                         : (have_scontext && !have_acl
-                            ? ACL_T_LSM_CONTEXT_ONLY
-                            : ACL_T_YES));
-          any_has_acl |= f->acl_type != ACL_T_NONE;
-
-          if (format == long_format && n < 0)
-            error (0, ai.u.err, "%s", quotef (full_name));
-          else
-            {
-              /* When requesting security context information, don't make
-                 ls fail just because the file (even a command line argument)
-                 isn't on the right type of file system.  I.e., a getfilecon
-                 failure isn't in the same class as a stat failure.  */
-              if (print_scontext
-                  && (! (is_ENOTSUP (ai.scontext_err)
-                         || ai.scontext_err == ENODATA)))
-                error (0, ai.scontext_err, "%s", quotef (full_name));
-            }
-
-          /* has_capability adds around 30% runtime to 'ls --color',
-             so call it only if really needed.  */
-          if (0 < ai.size
-              && (type == normal || S_ISREG (f->stat.st_mode))
-              && print_with_color && is_colored (C_CAP)
-              && aclinfo_has_xattr (&ai, XATTR_NAME_CAPS))
-            f->has_capability = has_capability_cache (full_name, f);
-
-          f->scontext = ai.scontext;
-          ai.scontext = nullptr;
-          aclinfo_free (&ai);
+          /* When requesting security context information, don't make
+             ls fail just because the file (even a command line argument)
+             isn't on the right type of file system.  I.e., a getfilecon
+             failure isn't in the same class as a stat failure.  */
+          if (print_scontext && ai.scontext_err
+              && (! (is_ENOTSUP (ai.scontext_err)
+                     || ai.scontext_err == ENODATA)))
+            error (0, ai.scontext_err, "%s", quotef (full_name));
         }
 
-      if (S_ISLNK (f->stat.st_mode)
-          && (format == long_format || check_symlink_mode))
+      /* has_capability adds around 30% runtime to 'ls --color',
+         so call it only if really needed.  Note capability coloring
+         is disabled in the default color config.  */
+      if (check_capability && aclinfo_has_xattr (&ai, XATTR_NAME_CAPS))
+        f->has_capability = has_capability_cache (full_name, f);
+
+      f->scontext = ai.scontext;
+      ai.scontext = nullptr;
+      aclinfo_free (&ai);
+    }
+
+  if ((type == symbolic_link)
+      & ((format == long_format) | check_symlink_mode))
+    {
+      struct stat linkstats;
+
+      get_link_name (full_name, f, command_line_arg);
+
+      /* Use the slower quoting path for this entry, though
+         don't update CWD_SOME_QUOTED since alignment not affected.  */
+      if (f->linkname && f->quoted == 0 && needs_quoting (f->linkname))
+        f->quoted = -1;
+
+      /* Avoid following symbolic links when possible, i.e., when
+         they won't be traced and when no indicator is needed.  */
+      if (f->linkname
+          && (file_type <= indicator_style || check_symlink_mode)
+          && stat_for_mode (full_name, &linkstats) == 0)
         {
-          struct stat linkstats;
+          f->linkok = true;
+          f->linkmode = linkstats.st_mode;
+        }
+    }
 
-          get_link_name (full_name, f, command_line_arg);
+  blocks = STP_NBLOCKS (&f->stat);
+  if (format == long_format || print_block_size)
+    {
+      char buf[LONGEST_HUMAN_READABLE + 1];
+      int len = mbswidth (human_readable (blocks, buf, human_output_opts,
+                                          ST_NBLOCKSIZE, output_block_size),
+                          MBSWIDTH_FLAGS);
+      if (block_size_width < len)
+        block_size_width = len;
+    }
 
-          /* Use the slower quoting path for this entry, though
-             don't update CWD_SOME_QUOTED since alignment not affected.  */
-          if (f->linkname && f->quoted == 0 && needs_quoting (f->linkname))
-            f->quoted = -1;
-
-          /* Avoid following symbolic links when possible, i.e., when
-             they won't be traced and when no indicator is needed.  */
-          if (f->linkname
-              && (file_type <= indicator_style || check_symlink_mode)
-              && stat_for_mode (full_name, &linkstats) == 0)
-            {
-              f->linkok = true;
-              f->linkmode = linkstats.st_mode;
-            }
+  if (format == long_format)
+    {
+      if (print_owner)
+        {
+          int len = format_user_width (f->stat.st_uid);
+          if (owner_width < len)
+            owner_width = len;
         }
 
-      if (S_ISLNK (f->stat.st_mode))
-        f->filetype = symbolic_link;
-      else if (S_ISDIR (f->stat.st_mode))
+      if (print_group)
         {
-          if (command_line_arg && !immediate_dirs)
-            f->filetype = arg_directory;
-          else
-            f->filetype = directory;
+          int len = format_group_width (f->stat.st_gid);
+          if (group_width < len)
+            group_width = len;
+        }
+
+      if (print_author)
+        {
+          int len = format_user_width (f->stat.st_author);
+          if (author_width < len)
+            author_width = len;
+        }
+    }
+
+  if (print_scontext)
+    {
+      int len = strlen (f->scontext);
+      if (scontext_width < len)
+        scontext_width = len;
+    }
+
+  if (format == long_format)
+    {
+      char b[INT_BUFSIZE_BOUND (uintmax_t)];
+      int b_len = strlen (umaxtostr (f->stat.st_nlink, b));
+      if (nlink_width < b_len)
+        nlink_width = b_len;
+
+      if ((type == chardev) | (type == blockdev))
+        {
+          char buf[INT_BUFSIZE_BOUND (uintmax_t)];
+          int len = strlen (umaxtostr (major (f->stat.st_rdev), buf));
+          if (major_device_number_width < len)
+            major_device_number_width = len;
+          len = strlen (umaxtostr (minor (f->stat.st_rdev), buf));
+          if (minor_device_number_width < len)
+            minor_device_number_width = len;
+          len = major_device_number_width + 2 + minor_device_number_width;
+          if (file_size_width < len)
+            file_size_width = len;
         }
       else
-        f->filetype = normal;
-
-      blocks = STP_NBLOCKS (&f->stat);
-      if (format == long_format || print_block_size)
         {
           char buf[LONGEST_HUMAN_READABLE + 1];
-          int len = mbswidth (human_readable (blocks, buf, human_output_opts,
-                                              ST_NBLOCKSIZE, output_block_size),
+          uintmax_t size = unsigned_file_size (f->stat.st_size);
+          int len = mbswidth (human_readable (size, buf,
+                                              file_human_output_opts,
+                                              1, file_output_block_size),
                               MBSWIDTH_FLAGS);
-          if (block_size_width < len)
-            block_size_width = len;
-        }
-
-      if (format == long_format)
-        {
-          if (print_owner)
-            {
-              int len = format_user_width (f->stat.st_uid);
-              if (owner_width < len)
-                owner_width = len;
-            }
-
-          if (print_group)
-            {
-              int len = format_group_width (f->stat.st_gid);
-              if (group_width < len)
-                group_width = len;
-            }
-
-          if (print_author)
-            {
-              int len = format_user_width (f->stat.st_author);
-              if (author_width < len)
-                author_width = len;
-            }
-        }
-
-      if (print_scontext)
-        {
-          int len = strlen (f->scontext);
-          if (scontext_width < len)
-            scontext_width = len;
-        }
-
-      if (format == long_format)
-        {
-          char b[INT_BUFSIZE_BOUND (uintmax_t)];
-          int b_len = strlen (umaxtostr (f->stat.st_nlink, b));
-          if (nlink_width < b_len)
-            nlink_width = b_len;
-
-          if (S_ISCHR (f->stat.st_mode) || S_ISBLK (f->stat.st_mode))
-            {
-              char buf[INT_BUFSIZE_BOUND (uintmax_t)];
-              int len = strlen (umaxtostr (major (f->stat.st_rdev), buf));
-              if (major_device_number_width < len)
-                major_device_number_width = len;
-              len = strlen (umaxtostr (minor (f->stat.st_rdev), buf));
-              if (minor_device_number_width < len)
-                minor_device_number_width = len;
-              len = major_device_number_width + 2 + minor_device_number_width;
-              if (file_size_width < len)
-                file_size_width = len;
-            }
-          else
-            {
-              char buf[LONGEST_HUMAN_READABLE + 1];
-              uintmax_t size = unsigned_file_size (f->stat.st_size);
-              int len = mbswidth (human_readable (size, buf,
-                                                  file_human_output_opts,
-                                                  1, file_output_block_size),
-                                  MBSWIDTH_FLAGS);
-              if (file_size_width < len)
-                file_size_width = len;
-            }
+          if (file_size_width < len)
+            file_size_width = len;
         }
     }
 
@@ -4949,7 +4946,13 @@ get_color_indicator (const struct fileinfo *f, bool symlink_target)
     type = C_MISSING;
   else if (!f->stat_ok)
     {
-      static enum indicator_no filetype_indicator[] = FILETYPE_INDICATORS;
+      static enum indicator_no const filetype_indicator[] =
+        {
+          C_ORPHAN, C_FIFO, C_CHR, C_DIR, C_BLK, C_FILE,
+          C_LINK, C_SOCK, C_FILE, C_DIR
+        };
+      static_assert (ARRAY_CARDINALITY (filetype_indicator)
+                     == filetype_cardinality);
       type = filetype_indicator[f->filetype];
     }
   else
@@ -4962,7 +4965,7 @@ get_color_indicator (const struct fileinfo *f, bool symlink_target)
             type = C_SETUID;
           else if ((mode & S_ISGID) != 0 && is_colored (C_SETGID))
             type = C_SETGID;
-          else if (is_colored (C_CAP) && f->has_capability)
+          else if (f->has_capability)
             type = C_CAP;
           else if ((mode & S_IXUGO) != 0 && is_colored (C_EXEC))
             type = C_EXEC;
