@@ -172,7 +172,8 @@ typedef unsigned long int UDItype;
 
 /* longlong.h uses these macros only in certain system compiler combinations.
    Ensure usage to pacify -Wunused-macros.  */
-# if defined ASSERT || defined UHWtype || defined __GMP_DECLSPEC
+# if (defined ASSERT || defined UHWtype \
+      || defined __GMP_DECLSPEC || defined __GMP_GNUC_PREREQ)
 # endif
 
 # if _ARCH_PPC
@@ -2415,7 +2416,7 @@ lbuf_putint_append (uintmax_t i, char *bufend)
 static void
 lbuf_putint (uintmax_t i)
 {
-  return lbuf_putint_append (i, lbuf_buf + sizeof lbuf_buf);
+  lbuf_putint_append (i, lbuf_buf + sizeof lbuf_buf);
 }
 
 /* Append the string representation of T to lbuf_buf.  */

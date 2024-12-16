@@ -4051,7 +4051,8 @@ and the file name unless no arguments were given.
 The 32-bit CRC used is based on the polynomial used
 for CRC error checking in the ISO/IEC 8802-3:1996 standard (Ethernet).
 Similar output formats are used for the other legacy checksums
-selectable with @option{--algorithm=sysv} or @option{--algorithm=bsd},
+selectable with @option{--algorithm=crc32b}, and
+@option{--algorithm=sysv} or @option{--algorithm=bsd}
 detailed at @ref{sum invocation}.
 
 @item Tagged output format
@@ -4100,6 +4101,7 @@ Supported legacy checksums (which are not supported by @option{--check}):
 @samp{sysv}      equivalent to @command{sum -s}
 @samp{bsd}       equivalent to @command{sum -r}
 @samp{crc}       equivalent to @command{cksum} (the default)
+@samp{crc32b}    only available through @command{cksum}
 @end example
 
 Supported more modern digest algorithms are:
@@ -4151,7 +4153,7 @@ as the length is automatically determined when checking.
 Print only the unencoded raw binary digest for a single input.
 Do not output the file name or anything else.
 Use network byte order (big endian) where applicable:
-for @samp{bsd}, @samp{crc}, and @samp{sysv}.
+for @samp{bsd}, @samp{crc}, @samp{crc32b}, and @samp{sysv}.
 This option works only with a single input.
 Unlike other output formats, @command{cksum} provides no way to
 @option{--check} a @option{--raw} checksum.
@@ -4225,7 +4227,7 @@ a checksum inconsistent with the associated file, or if no valid
 line is found, @command{cksum} exits with nonzero status.  Otherwise,
 it exits successfully.
 The @command{cksum} command does not support @option{--check}
-with the older @samp{sysv}, @samp{bsd}, or @samp{crc} algorithms.
+with the older @samp{sysv}, @samp{bsd}, @samp{crc} or @samp{crc32b} algorithms.
 
 @item --ignore-missing
 @opindex --ignore-missing
@@ -13733,7 +13735,7 @@ Exit status:
 * File type tests::             @code{-[bcdfhLpSt]}
 * Access permission tests::     @code{-[gkruwxOG]}
 * File characteristic tests::   @code{-e -s -nt -ot -ef}
-* String tests::                @code{-z -n = == !=}
+* String tests::                @code{-z -n = == != > <}
 * Numeric tests::               @code{-eq -ne -lt -le -gt -ge}
 * Connectives for test::        @code{! -a -o}
 @end menu
@@ -13941,6 +13943,16 @@ shells and systems.
 @opindex !=
 @cindex not-equal string check
 True if the strings are not equal.
+
+@item @var{string1} > @var{string2}
+@opindex >
+@cindex greater-than string check
+True if @var{string1} is greater than @var{string2} in the current locale.
+
+@item @var{string1} < @var{string2}
+@opindex <
+@cindex less-than string check
+True if @var{string1} is less than @var{string2} in the current locale.
 
 @end table
 
@@ -15855,13 +15867,14 @@ Set the output speed to @var{n}.
 @item rows @var{n}
 @opindex rows
 Tell the tty kernel driver that the terminal has @var{n} rows.
-Non-POSIX.
 
 @item cols @var{n}
-@itemx columns @var{n}
 @opindex cols
+Tell the kernel that the terminal has @var{n} columns.
+
+@item columns @var{n}
 @opindex columns
-Tell the kernel that the terminal has @var{n} columns.  Non-POSIX.
+Same as @samp{cols}.  Non-POSIX.
 
 @item drain
 @opindex drain
@@ -15886,7 +15899,6 @@ Print the number of rows and columns that the kernel thinks the
 terminal has.  (Systems that don't support rows and columns in the kernel
 typically use the environment variables @env{LINES} and @env{COLUMNS}
 instead; however, GNU @command{stty} does not know anything about them.)
-Non-POSIX.
 
 @item line @var{n}
 @opindex line
@@ -18810,13 +18822,9 @@ The program accepts the following options.  Also see @ref{Common options}.
 Options must precede operands.
 
 @table @samp
-@item --preserve-status
-@opindex --preserve-status
-Return the exit status of the managed @var{command} on timeout, rather than
-a specific exit status indicating a timeout.  This is useful if the
-managed @var{command} supports running for an indeterminate amount of time.
-
-@item --foreground
+@item -f
+@itemx --foreground
+@opindex -f
 @opindex --foreground
 Don't create a separate background program group, so that
 the managed @var{command} can use the foreground TTY normally.
@@ -18855,6 +18863,14 @@ This option may be useful if the selected signal did not kill the @var{command},
 either because the signal was blocked or ignored, or if the @var{command} takes
 too long (e.g. for cleanup work) to terminate itself within a certain amount
 of time.
+
+@item -p
+@itemx --preserve-status
+@opindex -p
+@opindex --preserve-status
+Return the exit status of the managed @var{command} on timeout, rather than
+a specific exit status indicating a timeout.  This is useful if the
+managed @var{command} supports running for an indeterminate amount of time.
 
 @item -s @var{signal}
 @itemx --signal=@var{signal}

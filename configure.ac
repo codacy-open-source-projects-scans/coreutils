@@ -619,6 +619,40 @@ if test $utils_cv_brain_16_bit_supported = yes; then
 fi
 
 ac_save_CFLAGS=$CFLAGS
+CFLAGS="-march=armv8-a+crypto $CFLAGS"
+AC_MSG_CHECKING([if vmull intrinsic exists])
+AC_CACHE_VAL([utils_cv_vmull_intrinsic_exists],[
+AC_LINK_IFELSE(
+  [AC_LANG_SOURCE([[
+    #include <stdio.h>
+    #include <sys/auxv.h>
+    #include <asm/hwcap.h>
+    #include <arm_neon.h>
+
+    int
+    main (void)
+    {
+      uint64x2_t a;
+      poly64_t shift64 = vget_lane_p64(vcreate_p64(0xB8BC6765), 0);
+      a = vreinterpretq_u64_p128(vmull_p64(shift64, vreinterpretq_p128_u64(a)));
+      return (getauxval(AT_HWCAP) & HWCAP_PMULL) > 0;
+    }
+  ]])
+  ],[
+    utils_cv_vmull_intrinsic_exists=yes
+  ],[
+    utils_cv_vmull_intrinsic_exists=no
+  ])])
+AC_MSG_RESULT([$utils_cv_vmull_intrinsic_exists])
+if test $utils_cv_vmull_intrinsic_exists = yes; then
+  AC_DEFINE([USE_VMULL_CRC32], [1],
+            [CRC32 calculation by vmull hardware instruction enabled])
+fi
+AM_CONDITIONAL([USE_VMULL_CRC32],
+               [test $utils_cv_vmull_intrinsic_exists = yes])
+CFLAGS=$ac_save_CFLAGS
+
+ac_save_CFLAGS=$CFLAGS
 CFLAGS="-mavx -mpclmul $CFLAGS"
 AC_MSG_CHECKING([if pclmul intrinsic exists])
 AC_CACHE_VAL([utils_cv_pclmul_intrinsic_exists],[
@@ -647,6 +681,70 @@ if test $utils_cv_pclmul_intrinsic_exists = yes; then
 fi
 AM_CONDITIONAL([USE_PCLMUL_CRC32],
                [test $utils_cv_pclmul_intrinsic_exists = yes])
+CFLAGS=$ac_save_CFLAGS
+
+ac_save_CFLAGS=$CFLAGS
+CFLAGS=" -mavx2 -mvpclmulqdq $CFLAGS"
+AC_MSG_CHECKING([if avx2 pclmul intrinsic exists])
+AC_CACHE_VAL([utils_cv_avx2_pclmul_intrinsic_exists],[
+AC_LINK_IFELSE(
+  [AC_LANG_SOURCE([[
+    #include <x86intrin.h>
+
+    int
+    main (void)
+    {
+      __m256i a, b;
+      a = _mm256_clmulepi64_epi128 (a, b, 0x00);
+      a = _mm256_shuffle_epi8 (a, b);
+      return __builtin_cpu_supports ("avx2") &&
+        __builtin_cpu_supports ("vpclmulqdq");
+    }
+  ]])
+  ],[
+    utils_cv_avx2_pclmul_intrinsic_exists=yes
+  ],[
+    utils_cv_avx2_pclmul_intrinsic_exists=no
+  ])])
+AC_MSG_RESULT([$utils_cv_avx2_pclmul_intrinsic_exists])
+if test $utils_cv_avx2_pclmul_intrinsic_exists = yes; then
+  AC_DEFINE([USE_AVX2_CRC32], [1],
+            [CRC32 calculation by avx2 hardware instructions enabled])
+fi
+AM_CONDITIONAL([USE_AVX2_CRC32],
+               [test $utils_cv_avx2_pclmul_intrinsic_exists = yes])
+CFLAGS=$ac_save_CFLAGS
+
+ac_save_CFLAGS=$CFLAGS
+CFLAGS=" -mavx512bw -mavx512f -mvpclmulqdq $CFLAGS"
+AC_MSG_CHECKING([if avx512 pclmul intrinsic exists])
+AC_CACHE_VAL([utils_cv_avx512_pclmul_intrinsic_exists],[
+AC_LINK_IFELSE(
+  [AC_LANG_SOURCE([[
+    #include <x86intrin.h>
+
+    int
+    main (void)
+    {
+      __m512i a, b;
+      a = _mm512_clmulepi64_epi128 (a, b, 0x00);
+      a = _mm512_shuffle_epi8 (a, b);
+      return __builtin_cpu_supports ("avx512bw") &&
+        __builtin_cpu_supports ("avx512f");
+    }
+  ]])
+  ],[
+    utils_cv_avx512_pclmul_intrinsic_exists=yes
+  ],[
+    utils_cv_avx512_pclmul_intrinsic_exists=no
+  ])])
+AC_MSG_RESULT([$utils_cv_avx512_pclmul_intrinsic_exists])
+if test $utils_cv_avx512_pclmul_intrinsic_exists = yes; then
+  AC_DEFINE([USE_AVX512_CRC32], [1],
+            [CRC32 calculation by avx512 hardware instructions enabled])
+fi
+AM_CONDITIONAL([USE_AVX512_CRC32],
+               [test $utils_cv_avx512_pclmul_intrinsic_exists = yes])
 CFLAGS=$ac_save_CFLAGS
 
 CFLAGS="-mavx2 $CFLAGS"

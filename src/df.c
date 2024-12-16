@@ -36,6 +36,7 @@
 #include "find-mount-point.h"
 #include "hash.h"
 #include "xstrtol-error.h"
+#include "xvasprintf.h"
 
 /* The official name of this program (e.g., no 'g' prefix).  */
 #define PROGRAM_NAME "df"
@@ -218,8 +219,8 @@ static char const *all_args_string =
 /* Storage for the definition of output columns.  */
 static struct field_data_t **columns;
 
-/* The current number of output columns.  */
-static size_t ncolumns;
+/* The current and allocated number of output columns.  */
+static idx_t ncolumns, ncolumns_alloc;
 
 /* Field values.  */
 struct field_values_t
@@ -237,8 +238,9 @@ struct field_values_t
 /* Storage for pointers for each string (cell of table).  */
 static char ***table;
 
-/* The current number of processed rows (including header).  */
-static size_t nrows;
+/* The current number of processed rows (including header),
+   and the number of slots allocated for rows.  */
+static idx_t nrows, nrows_alloc;
 
 /* For long options that have no equivalent short option, use a
    non-character as a pseudo short option, starting with CHAR_MAX + 1.  */
@@ -305,7 +307,7 @@ replace_control_chars (char *cell)
   char *p = cell;
   while (*p)
     {
-      if (c_iscntrl (to_uchar (*p)))
+      if (c_iscntrl (*p))
         *p = '?';
       p++;
     }
@@ -341,7 +343,7 @@ replace_invalid_chars (char *cell)
       else
         {
           *dst++ = '?';
-          memset (&mbstate, 0, sizeof mbstate);
+          mbszero (&mbstate);
         }
     }
 
@@ -365,9 +367,9 @@ replace_problematic_chars (char *cell)
 static void
 alloc_table_row (void)
 {
-  nrows++;
-  table = xnrealloc (table, nrows, sizeof (char **));
-  table[nrows - 1] = xnmalloc (ncolumns, sizeof (char *));
+  if (nrows == nrows_alloc)
+    table = xpalloc (table, &nrows_alloc, 1, -1, sizeof *table);
+  table[nrows++] = xinmalloc (ncolumns, sizeof *table[0]);
 }
 
 /* Output each cell in the table, accounting for the
@@ -376,12 +378,9 @@ alloc_table_row (void)
 static void
 print_table (void)
 {
-  size_t row;
-
-  for (row = 0; row < nrows; row++)
+  for (idx_t row = 0; row < nrows; row++)
     {
-      size_t col;
-      for (col = 0; col < ncolumns; col++)
+      for (idx_t col = 0; col < ncolumns; col++)
         {
           char *cell = table[row][col];
 
@@ -412,11 +411,11 @@ print_table (void)
 static void
 alloc_field (int f, char const *c)
 {
-  ncolumns++;
-  columns = xnrealloc (columns, ncolumns, sizeof (struct field_data_t *));
-  columns[ncolumns - 1] = &field_data[f];
+  if (ncolumns == ncolumns_alloc)
+    columns = xpalloc (columns, &ncolumns_alloc, 1, -1, sizeof *columns);
+  columns[ncolumns++] = &field_data[f];
   if (c != nullptr)
-    columns[ncolumns - 1]->caption = c;
+    field_data[f].caption = c;
 
   affirm (!field_data[f].used);
 
@@ -567,13 +566,11 @@ get_field_list (void)
 static void
 get_header (void)
 {
-  size_t col;
-
   alloc_table_row ();
 
-  for (col = 0; col < ncolumns; col++)
+  for (idx_t col = 0; col < ncolumns; col++)
     {
-      char *cell = nullptr;
+      char *cell;
       char const *header = _(columns[col]->caption);
 
       if (columns[col]->field == SIZE_FIELD
@@ -616,8 +613,7 @@ get_header (void)
           header = _("blocks");
 
           /* TRANSLATORS: this is the "1K-blocks" header in "df" output.  */
-          if (asprintf (&cell, _("%s-%s"), num, header) == -1)
-            cell = nullptr;
+          cell = xasprintf (_("%s-%s"), num, header);
         }
       else if (header_mode == POSIX_MODE && columns[col]->field == SIZE_FIELD)
         {
@@ -625,14 +621,10 @@ get_header (void)
           char *num = umaxtostr (output_block_size, buf);
 
           /* TRANSLATORS: this is the "1024-blocks" header in "df -P".  */
-          if (asprintf (&cell, _("%s-%s"), num, header) == -1)
-            cell = nullptr;
+          cell = xasprintf (_("%s-%s"), num, header);
         }
       else
-        cell = strdup (header);
-
-      if (!cell)
-        xalloc_die ();
+        cell = xstrdup (header);
 
       replace_problematic_chars (cell);
 
@@ -1125,8 +1117,7 @@ get_dev (char const *device, char const *mount_point, char const *file,
   if (print_grand_total && ! force_fsu)
     add_to_grand_total (&block_values, &inode_values);
 
-  size_t col;
-  for (col = 0; col < ncolumns; col++)
+  for (idx_t col = 0; col < ncolumns; col++)
     {
       char buf[LONGEST_HUMAN_READABLE + 2];
       char *cell;
@@ -1214,17 +1205,7 @@ get_dev (char const *device, char const *mount_point, char const *file,
                   }
               }
 
-            if (0 <= pct)
-              {
-                if (asprintf (&cell, "%.0f%%", pct) == -1)
-                  cell = nullptr;
-              }
-            else
-              cell = strdup ("-");
-
-            if (!cell)
-              xalloc_die ();
-
+            cell = pct < 0 ? xstrdup ("-") : xasprintf ("%.0f%%", pct);
             break;
           }
 

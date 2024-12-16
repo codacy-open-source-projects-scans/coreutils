@@ -216,7 +216,7 @@ static int address_base;
 static int address_pad_len;
 
 /* Minimum length when detecting --strings.  */
-static size_t string_min;
+static idx_t string_min;
 
 /* True when in --strings mode.  */
 static bool flag_dump_strings;
@@ -259,10 +259,10 @@ static bool abbreviate_duplicate_blocks = true;
 static struct tspec *spec;
 
 /* The number of format specs.  */
-static size_t n_specs;
+static idx_t n_specs;
 
 /* The allocated length of SPEC.  */
-static size_t n_specs_allocated;
+static idx_t n_specs_allocated;
 
 /* The number of input bytes formatted per output line.  It must be
    a multiple of the least common multiple of the sizes associated with
@@ -1039,7 +1039,7 @@ decode_format_string (char const *s)
       char const *next;
 
       if (n_specs_allocated <= n_specs)
-        spec = X2NREALLOC (spec, &n_specs_allocated);
+        spec = xpalloc (spec, &n_specs_allocated, 1, -1, sizeof *spec);
 
       if (! decode_one_format (s_orig, s, &next, &spec[n_specs]))
         return false;
@@ -1261,7 +1261,7 @@ write_block (uintmax_t current_offset, size_t n_bytes,
   else
     {
       prev_pair_equal = false;
-      for (size_t i = 0; i < n_specs; i++)
+      for (idx_t i = 0; i < n_specs; i++)
         {
           int datum_width = width_bytes[spec[i].size];
           int fields_per_block = bytes_per_block / datum_width;
@@ -1374,7 +1374,7 @@ get_lcm (void)
 {
   int l_c_m = 1;
 
-  for (size_t i = 0; i < n_specs; i++)
+  for (idx_t i = 0; i < n_specs; i++)
     l_c_m = lcm (l_c_m, width_bytes[spec[i].size]);
   return l_c_m;
 }
@@ -1512,14 +1512,14 @@ dump (void)
 static bool
 dump_strings (void)
 {
-  size_t bufsize = MAX (100, string_min);
+  idx_t bufsize = MAX (100, string_min);
   char *buf = xmalloc (bufsize);
   uintmax_t address = n_bytes_to_skip;
   bool ok = true;
 
   while (true)
     {
-      size_t i;
+      idx_t i;
       int c;
 
       /* See if the next 'string_min' chars are all printing chars.  */
@@ -1549,9 +1549,7 @@ dump_strings (void)
       while (!limit_bytes_to_format || address < end_offset)
         {
           if (i == bufsize)
-            {
-              buf = X2REALLOC (buf, &bufsize);
-            }
+            buf = xpalloc (buf, &bufsize, 1, -1, sizeof *buf);
           ok &= read_char (&c);
           address++;
           if (c < 0)
@@ -1623,7 +1621,6 @@ int
 main (int argc, char **argv)
 {
   int n_files;
-  size_t i;
   int l_c_m;
   idx_t desired_width IF_LINT ( = 0);
   bool modern = false;
@@ -1644,7 +1641,7 @@ main (int argc, char **argv)
 
   atexit (close_stdout);
 
-  for (i = 0; i <= MAX_INTEGRAL_TYPE_SIZE; i++)
+  for (idx_t i = 0; i <= MAX_INTEGRAL_TYPE_SIZE; i++)
     integral_type_size[i] = NO_SIZE;
 
   integral_type_size[sizeof (char)] = CHAR;
@@ -1657,7 +1654,7 @@ main (int argc, char **argv)
   integral_type_size[sizeof (unsigned_long_long_int)] = LONG_LONG;
 #endif
 
-  for (i = 0; i <= MAX_FP_TYPE_SIZE; i++)
+  for (idx_t i = 0; i <= MAX_FP_TYPE_SIZE; i++)
     fp_type_size[i] = NO_SIZE;
 
 #if FLOAT16_SUPPORTED
@@ -1752,9 +1749,10 @@ main (int argc, char **argv)
               if (s_err != LONGINT_OK)
                 xstrtol_fatal (s_err, oi, c, long_options, optarg);
 
-              /* The minimum string length may be no larger than SIZE_MAX,
-                 since we may allocate a buffer of this size.  */
-              if (SIZE_MAX < tmp)
+              /* The minimum string length may be no larger than
+                 MIN (IDX_MAX, SIZE_MAX), since we may allocate a
+                 buffer of this size.  */
+              if (MIN (IDX_MAX, SIZE_MAX) < tmp)
                 error (EXIT_FAILURE, 0, _("%s is too large"), quote (optarg));
 
               string_min = tmp;
@@ -2008,14 +2006,14 @@ main (int argc, char **argv)
     }
 
   /* Compute padding necessary to align output block.  */
-  for (i = 0; i < n_specs; i++)
+  for (idx_t i = 0; i < n_specs; i++)
     {
       int fields_per_block = bytes_per_block / width_bytes[spec[i].size];
       int block_width = (spec[i].field_width + 1) * fields_per_block;
       if (width_per_block < block_width)
         width_per_block = block_width;
     }
-  for (i = 0; i < n_specs; i++)
+  for (idx_t i = 0; i < n_specs; i++)
     {
       int fields_per_block = bytes_per_block / width_bytes[spec[i].size];
       int block_width = spec[i].field_width * fields_per_block;
@@ -2024,7 +2022,7 @@ main (int argc, char **argv)
 
 #ifdef DEBUG
   printf ("lcm=%d, width_per_block=%zu\n", l_c_m, width_per_block);
-  for (i = 0; i < n_specs; i++)
+  for (idx_t i = 0; i < n_specs; i++)
     {
       int fields_per_block = bytes_per_block / width_bytes[spec[i].size];
       affirm (bytes_per_block % width_bytes[spec[i].size] == 0);

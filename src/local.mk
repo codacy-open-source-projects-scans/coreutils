@@ -439,12 +439,34 @@ src_b2sum_SOURCES = src/digest.c \
 src_cksum_SOURCES = $(src_b2sum_SOURCES) src/sum.c src/sum.h \
 		    src/cksum.c src/cksum.h src/crctab.c
 src_cksum_CPPFLAGS = -DHASH_ALGO_CKSUM=1 -DHAVE_CONFIG_H $(AM_CPPFLAGS)
+
+if USE_AVX512_CRC32
+noinst_LIBRARIES += src/libcksum_avx512.a
+src_libcksum_avx512_a_SOURCES = src/cksum_avx512.c src/cksum.h
+cksum_avx512_ldadd = src/libcksum_avx512.a
+src_cksum_LDADD += $(cksum_avx512_ldadd)
+src_libcksum_avx512_a_CFLAGS = -mavx512bw -mavx512f -mvpclmulqdq $(AM_CFLAGS)
+endif
+if USE_AVX2_CRC32
+noinst_LIBRARIES += src/libcksum_avx2.a
+src_libcksum_avx2_a_SOURCES = src/cksum_avx2.c src/cksum.h
+cksum_avx2_ldadd = src/libcksum_avx2.a
+src_cksum_LDADD += $(cksum_avx2_ldadd)
+src_libcksum_avx2_a_CFLAGS = -mpclmul -mavx -mavx2 -mvpclmulqdq $(AM_CFLAGS)
+endif
 if USE_PCLMUL_CRC32
 noinst_LIBRARIES += src/libcksum_pclmul.a
 src_libcksum_pclmul_a_SOURCES = src/cksum_pclmul.c src/cksum.h
 cksum_pclmul_ldadd = src/libcksum_pclmul.a
 src_cksum_LDADD += $(cksum_pclmul_ldadd)
 src_libcksum_pclmul_a_CFLAGS = -mavx -mpclmul $(AM_CFLAGS)
+endif
+if USE_VMULL_CRC32
+noinst_LIBRARIES += src/libcksum_vmull.a
+src_libcksum_vmull_a_SOURCES = src/cksum_vmull.c src/cksum.h
+cksum_vmull_ldadd = src/libcksum_vmull.a
+src_cksum_LDADD += $(cksum_vmull_ldadd)
+src_libcksum_vmull_a_CFLAGS = -march=armv8-a+crypto $(AM_CFLAGS)
 endif
 
 src_base64_SOURCES = src/basenc.c
@@ -521,8 +543,8 @@ clean-local:
 	done
 
 
-BUILT_SOURCES += src/dircolors.h
-src/dircolors.h: src/dcgen src/dircolors.hin
+BUILT_SOURCES += $(top_srcdir)/src/dircolors.h
+$(top_srcdir)/src/dircolors.h: src/dcgen src/dircolors.hin
 	$(AM_V_GEN)rm -f $@ $@-t
 	$(AM_V_at)${MKDIR_P} src
 	$(AM_V_at)$(PERL) -w -- $(srcdir)/src/dcgen \
@@ -614,8 +636,8 @@ src/fs-kernel-magic: Makefile src/fs-latest-magic.h
 	  | $(ASSORT) -u						\
 	  > $@-t && mv $@-t $@
 
-BUILT_SOURCES += src/fs-is-local.h
-src/fs-is-local.h: src/stat.c src/extract-magic
+BUILT_SOURCES += $(top_srcdir)/src/fs-is-local.h
+$(top_srcdir)/src/fs-is-local.h: src/stat.c src/extract-magic
 	$(AM_V_GEN)rm -f $@
 	$(AM_V_at)${MKDIR_P} src
 	$(AM_V_at)$(PERL) $(srcdir)/src/extract-magic \
@@ -623,8 +645,8 @@ src/fs-is-local.h: src/stat.c src/extract-magic
 	$(AM_V_at)chmod a-w $@t
 	$(AM_V_at)mv $@t $@
 
-BUILT_SOURCES += src/fs.h
-src/fs.h: src/stat.c src/extract-magic
+BUILT_SOURCES += $(top_srcdir)/src/fs.h
+$(top_srcdir)/src/fs.h: src/stat.c src/extract-magic
 	$(AM_V_GEN)rm -f $@
 	$(AM_V_at)${MKDIR_P} src
 	$(AM_V_at)$(PERL) $(srcdir)/src/extract-magic \

@@ -16,8 +16,21 @@ GNU coreutils NEWS                                    -*- outline -*-
   have exited with a "Function not implemented" error.
   [bug introduced in coreutils-8.28]
 
+  nproc gives more consistent results on systems with more than 1024 CPUs.
+  Previously it would have ignored the affinity mask on such systems.
+  [bug introduced with nproc in coreutils-8.1]
+
+  printf now diagnoses attempts to treat empty strings as numbers,
+  as per POSIX. For example, "printf '%d' ''" now issues a diagnostic
+  and fails instead of silently succeeding.
+  [This bug was present in "the beginning".]
+
   'shuf' generates more-random output when the output is small.
   [bug introduced in coreutils-8.6]
+
+  `tail --follow=name` no longer waits indefinitely for watched
+  file names that are moved elsewhere within the same file system.
+  [bug introduced in coreutils-8.24]
 
   'tail -c 4096 /dev/zero' no longer loops forever.
   [This bug was present in "the beginning".]
@@ -39,6 +52,9 @@ GNU coreutils NEWS                                    -*- outline -*-
 
 ** New Features
 
+  cksum -a now supports the "crc32b" option, which calculates the CRC
+  of the input as defined by ITU V.42, as used by gzip for example.
+
   ls now supports the --sort=name option,
   to explicitly select the default operation of sorting by file name.
 
@@ -46,7 +62,16 @@ GNU coreutils NEWS                                    -*- outline -*-
   %<i>$ format, where '<i>' is an integer referencing a particular argument,
   thus allowing repetition or reordering of printf arguments.
 
+  test supports the POSIX:2024 specified '<' and '>' operators with strings,
+  to compare the string locale collating order.
+
+  timeout now supports the POSIX:2024 specified -f, and -p short options,
+  corresponding to --foreground, and --preserve-status respectively.
+
 ** Improvements
+
+  cksum -a crc, makes use of AVX2, AVX512, and ARMv8 SIMD extensions
+  for time reductions of up to 40%, 60%, and 80% respectively.
 
   'head -c NUM', 'head -n NUM', 'nl -l NUM', 'nproc --ignore NUM',
   'tail -c NUM', 'tail -n NUM', and 'tail --max-unchanged-stats NUM’
@@ -1008,7 +1033,7 @@ GNU coreutils NEWS                                    -*- outline -*-
   env now supports '--list-signal-handling' to indicate non-default
   signal handling before executing a program.
 
-** New commands
+** New programs
 
   basenc is added to complement existing base64,base32 commands,
   and encodes and decodes printable text using various common encodings:
@@ -1528,7 +1553,7 @@ GNU coreutils NEWS                                    -*- outline -*-
   tail -F now works with initially non existent files on a remote file system.
   [bug introduced in coreutils-7.5]
 
-** New commands
+** New programs
 
   base32 is added to complement the existing base64 command,
   and encodes and decodes printable text as per RFC 4648.
