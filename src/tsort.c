@@ -1,5 +1,5 @@
 /* tsort - topological sort.
-   Copyright (C) 1998-2024 Free Software Foundation, Inc.
+   Copyright (C) 1998-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@
 
 #include <config.h>
 
+#include <getopt.h>
 #include <sys/types.h>
 
 #include "system.h"
 #include "assure.h"
-#include "long-options.h"
 #include "fadvise.h"
 #include "readtokens.h"
 #include "stdio--.h"
@@ -255,7 +255,7 @@ search_item (struct item *root, char const *str)
       p = q;
     }
 
-  /* NOTREACHED */
+  unreachable ();
 }
 
 /* Record the fact that J precedes K.  */
@@ -265,7 +265,7 @@ record_relation (struct item *j, struct item *k)
 {
   struct successor *p;
 
-  if (!STREQ (j->str, k->str))
+  if (!streq (j->str, k->str))
     {
       k->count++;
       p = xmalloc (sizeof *p);
@@ -432,7 +432,7 @@ tsort (char const *file)
   struct item *j = nullptr;
   struct item *k = nullptr;
   token_buffer tokenbuffer;
-  bool is_stdin = STREQ (file, "-");
+  bool is_stdin = streq (file, "-");
 
   /* Initialize the head of the tree holding the strings we're sorting.  */
   struct item *root = new_item (nullptr);
@@ -538,9 +538,32 @@ main (int argc, char **argv)
 
   atexit (close_stdout);
 
-  parse_gnu_standard_options_only (argc, argv, PROGRAM_NAME, PACKAGE_NAME,
-                                   Version, true, usage, AUTHORS,
-                                   (char const *) nullptr);
+  while (true)
+    {
+      static struct option const long_options[] =
+        {
+          {GETOPT_HELP_OPTION_DECL},
+          {GETOPT_VERSION_OPTION_DECL},
+          {nullptr, 0, nullptr, 0}
+        };
+      int c = getopt_long (argc, argv, "w", long_options, nullptr);
+
+      if (c == -1)
+        break;
+
+      switch (c)
+        {
+        case 'w':
+          break;
+
+        case_GETOPT_HELP_CHAR;
+
+        case_GETOPT_VERSION_CHAR (PROGRAM_NAME, AUTHORS);
+
+        default:
+          usage (EXIT_FAILURE);
+        }
+    }
 
   if (1 < argc - optind)
     {

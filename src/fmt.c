@@ -1,5 +1,5 @@
 /* GNU fmt -- simple text formatter.
-   Copyright (C) 1994-2024 Free Software Foundation, Inc.
+   Copyright (C) 1994-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -334,7 +334,7 @@ main (int argc, char **argv)
   prefix = "";
   prefix_length = prefix_lead_space = prefix_full_length = 0;
 
-  if (argc > 1 && argv[1][0] == '-' && ISDIGIT (argv[1][1]))
+  if (argc > 1 && argv[1][0] == '-' && c_isdigit (argv[1][1]))
     {
       /* Old option syntax; a dash followed by one or more digits.  */
       max_width_option = argv[1] + 1;
@@ -351,7 +351,7 @@ main (int argc, char **argv)
     switch (optchar)
       {
       default:
-        if (ISDIGIT (optchar))
+        if (c_isdigit (optchar))
           error (0, 0, _("invalid option -- %c; -WIDTH is recognized\
  only when it is the first\noption; use -w N instead"),
                  optchar);
@@ -424,7 +424,7 @@ main (int argc, char **argv)
       for (; optind < argc; optind++)
         {
           char *file = argv[optind];
-          if (STREQ (file, "-"))
+          if (streq (file, "-"))
             {
               ok &= fmt (stdin, file);
               have_read_stdin = true;
@@ -493,12 +493,18 @@ fmt (FILE *f, char const *file)
     }
 
   int err = ferror (f) ? 0 : -1;
+  /* err < 0 means success.  */
   if (f == stdin)
     clearerr (f);
   else if (fclose (f) != 0 && err < 0)
     err = errno;
   if (0 <= err)
-    error (0, err, err ? "%s" : _("read error"), quotef (file));
+    {
+      if (f == stdin)
+        error (0, err, _("read error"));
+      else
+        error (0, err, _("error reading %s"), quoteaf (file));
+    }
   return err < 0;
 }
 
@@ -804,7 +810,10 @@ flush_paragraph (void)
 
   if (word_limit == word)
     {
-      fwrite (parabuf, sizeof *parabuf, wptr - parabuf, stdout);
+      size_t to_write = wptr - parabuf;
+      if (fwrite (parabuf, 1, to_write, stdout) != to_write)
+        write_error ();
+
       wptr = parabuf;
       return;
     }
@@ -909,7 +918,7 @@ fmt_paragraph (void)
   word_limit->length = saved_length;
 }
 
-/* Work around <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109628>.  */
+/* Work around <https://gcc.gnu.org/PR109628>.  */
 #if __GNUC__ == 13
 # pragma GCC diagnostic ignored "-Wanalyzer-use-of-uninitialized-value"
 #endif
@@ -1004,6 +1013,9 @@ put_line (WORD *w, int indent)
   put_word (w);
   last_line_length = out_column;
   putchar ('\n');
+
+  if (ferror (stdout))
+    write_error ();
 }
 
 /* Output to stdout the word W.  */

@@ -6,10 +6,9 @@ lib/randperm.c
 lib/randperm.h
 
 Depends-on:
-assert-h
 randint
 stdc_bit_width
-stdint
+stdint-h
 xalloc
 hash
 

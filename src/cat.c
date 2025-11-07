@@ -1,5 +1,5 @@
 /* cat -- concatenate files and print on the standard output.
-   Copyright (C) 1988-2024 Free Software Foundation, Inc.
+   Copyright (C) 1988-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -37,7 +37,6 @@
 #include "ioblksize.h"
 #include "fadvise.h"
 #include "full-write.h"
-#include "safe-read.h"
 #include "xbinary-io.h"
 
 /* The official name of this program (e.g., no 'g' prefix).  */
@@ -161,7 +160,7 @@ simple_cat (char *buf, idx_t bufsize)
     {
       /* Read a block of input.  */
 
-      ptrdiff_t n_read = safe_read (input_desc, buf, bufsize);
+      ssize_t n_read = read (input_desc, buf, bufsize);
       if (n_read < 0)
         {
           error (0, errno, "%s", quotef (infile));
@@ -310,7 +309,7 @@ cat (char *inbuf, idx_t insize, char *outbuf, idx_t outsize,
 
               /* Read more input into INBUF.  */
 
-              ptrdiff_t n_read = safe_read (input_desc, inbuf, insize);
+              ssize_t n_read = read (input_desc, inbuf, insize);
               if (n_read < 0)
                 {
                   error (0, errno, "%s", quotef (infile));
@@ -646,9 +645,18 @@ main (int argc, char **argv)
   idx_t outsize = io_blksize (&stat_buf);
 
   /* Device, I-node number and lazily-acquired flags of the output.  */
-  dev_t out_dev = stat_buf.st_dev;
-  ino_t out_ino = stat_buf.st_ino;
+  struct
+  {
+    dev_t st_dev;
+    ino_t st_ino;
+  } out_id;
   int out_flags = -2;
+  bool have_out_dev = ! (S_TYPEISSHM (&stat_buf) || S_TYPEISTMO (&stat_buf));
+  if (have_out_dev)
+    {
+      out_id.st_dev = stat_buf.st_dev;
+      out_id.st_ino = stat_buf.st_ino;
+   }
 
   /* True if the output is a regular file.  */
   bool out_isreg = S_ISREG (stat_buf.st_mode) != 0;
@@ -671,7 +679,7 @@ main (int argc, char **argv)
       if (argind < argc)
         infile = argv[argind];
 
-      bool reading_stdin = STREQ (infile, "-");
+      bool reading_stdin = streq (infile, "-");
       if (reading_stdin)
         {
           have_read_stdin = true;
@@ -706,22 +714,25 @@ main (int argc, char **argv)
          output device.  It's better to catch this error earlier
          rather than later.  */
 
-      if (stat_buf.st_dev == out_dev && stat_buf.st_ino == out_ino)
+      if (! (S_ISFIFO (stat_buf.st_mode) || S_ISSOCK (stat_buf.st_mode)
+             || S_TYPEISSHM (&stat_buf) || S_TYPEISTMO (&stat_buf))
+          && have_out_dev
+          && SAME_INODE (stat_buf, out_id))
         {
-          if (out_flags < -1)
-            out_flags = fcntl (STDOUT_FILENO, F_GETFL);
-          bool exhausting = 0 <= out_flags && out_flags & O_APPEND;
-          if (!exhausting)
+          off_t in_pos = lseek (input_desc, 0, SEEK_CUR);
+          if (0 <= in_pos)
             {
-              off_t in_pos = lseek (input_desc, 0, SEEK_CUR);
-              if (0 <= in_pos)
-                exhausting = in_pos < lseek (STDOUT_FILENO, 0, SEEK_CUR);
-            }
-          if (exhausting)
-            {
-              error (0, 0, _("%s: input file is output file"), quotef (infile));
-              ok = false;
-              goto contin;
+              if (out_flags < -1)
+                out_flags = fcntl (STDOUT_FILENO, F_GETFL);
+              int whence = (0 <= out_flags && out_flags & O_APPEND
+                            ? SEEK_END : SEEK_CUR);
+              if (in_pos < lseek (STDOUT_FILENO, 0, whence))
+                {
+                  error (0, 0, _("%s: input file is output file"),
+                         quotef (infile));
+                  ok = false;
+                  goto contin;
+                }
             }
         }
 

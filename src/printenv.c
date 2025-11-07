@@ -1,5 +1,5 @@
 /* printenv -- print all or part of environment
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -60,7 +60,7 @@ usage (int status)
   else
     {
       printf (_("\
-Usage: %s [OPTION]... [VARIABLE]...\n\
+Usage: %s [OPTION] [VARIABLE]...\n\
 Print the values of the specified environment VARIABLE(s).\n\
 If no VARIABLE is specified, print name and value pairs for them all.\n\
 \n\

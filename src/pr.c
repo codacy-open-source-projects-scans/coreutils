@@ -1,5 +1,5 @@
 /* pr -- convert text files for printing.
-   Copyright (C) 1988-2024 Free Software Foundation, Inc.
+   Copyright (C) 1988-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -313,6 +313,7 @@
 #include <getopt.h>
 #include <sys/types.h>
 #include "system.h"
+#include "c-ctype.h"
 #include "fadvise.h"
 #include "hard-locale.h"
 #include "mbswidth.h"
@@ -887,7 +888,7 @@ main (int argc, char **argv)
       if (c == -1)
         break;
 
-      if (ISDIGIT (c))
+      if (c_isdigit (c))
         {
           /* Accumulate column-count digits specified via old-style options. */
           if (n_digits + 1 >= n_alloc)
@@ -1175,7 +1176,7 @@ getoptarg (char *arg, char switch_char, char *character, int *number)
       usage (EXIT_FAILURE);
     }
 
-  if (!ISDIGIT (*arg))
+  if (!c_isdigit (*arg))
     *character = *arg++;
   if (*arg)
     {
@@ -1482,7 +1483,7 @@ init_funcs (void)
 static bool
 open_file (char *name, COLUMN *p)
 {
-  if (STREQ (name, "-"))
+  if (streq (name, "-"))
     {
       p->name = _("standard input");
       p->fp = stdin;
@@ -1653,7 +1654,7 @@ init_header (char const *filename, int desc)
   struct tm tm;
 
   /* If parallel files or standard input, use current date. */
-  if (STREQ (filename, "-"))
+  if (streq (filename, "-"))
     desc = -1;
   if (0 <= desc && fstat (desc, &st) == 0)
     t = get_stat_mtime (&st);
@@ -1668,12 +1669,15 @@ init_header (char const *filename, int desc)
   ns = t.tv_nsec;
   if (localtime_rz (localtz, &t.tv_sec, &tm))
     {
-      size_t bufsize
-        = nstrftime (nullptr, SIZE_MAX, date_format, &tm, localtz, ns) + 1;
-      buf = xmalloc (bufsize);
-      nstrftime (buf, bufsize, date_format, &tm, localtz, ns);
+      ptrdiff_t len = nstrftime (nullptr, MIN (PTRDIFF_MAX, SIZE_MAX),
+                                 date_format, &tm, localtz, ns);
+      if (0 <= len)
+        {
+          buf = ximalloc (len + 1);
+          nstrftime (buf, len + 1, date_format, &tm, localtz, ns);
+        }
     }
-  else
+  if (!buf)
     {
       char secbuf[INT_BUFSIZE_BOUND (intmax_t)];
       buf = xmalloc (sizeof secbuf + MAX (10, INT_BUFSIZE_BOUND (int)));
@@ -1884,6 +1888,9 @@ print_page (void)
       putchar ('\f');
       print_a_FF = false;
     }
+
+  if (ferror (stdout))
+    write_error ();
 
   if (last_page_number < ++page_number)
     return false;		/* Stop printing with LAST_PAGE */
@@ -2285,6 +2292,9 @@ print_clump (COLUMN *p, int n, char *clump)
 {
   while (n--)
     (p->char_func) (*clump++);
+
+  if (ferror (stdout))
+    write_error ();
 }
 
 /* Print a character.

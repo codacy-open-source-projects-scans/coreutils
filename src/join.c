@@ -1,5 +1,5 @@
 /* join - join lines of two files on a common field
-   Copyright (C) 1991-2024 Free Software Foundation, Inc.
+   Copyright (C) 1991-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -33,7 +33,6 @@
 #include "stdio--.h"
 #include "xmemcoll.h"
 #include "xstrtol.h"
-#include "argmatch.h"
 
 /* The official name of this program (e.g., no 'g' prefix).  */
 #define PROGRAM_NAME "join"
@@ -384,7 +383,7 @@ keycmp (struct line const *line1, struct line const *line2,
 
   if (diff)
     return diff;
-  return (len1 > len2) - (len1 < len2);
+  return _GL_CMP (len1, len2);
 }
 
 /* Check that successive input lines PREV and CURRENT from input file
@@ -488,7 +487,7 @@ get_line (FILE *fp, struct line **linep, int which)
 static void
 free_spareline (void)
 {
-  for (idx_t i = 0; i < ARRAY_CARDINALITY (spareline); i++)
+  for (idx_t i = 0; i < countof (spareline); i++)
     {
       if (spareline[i])
         {
@@ -1054,7 +1053,7 @@ main (int argc, char **argv)
           break;
 
         case 'e':
-          if (empty_filler && ! STREQ (empty_filler, optarg))
+          if (empty_filler && ! streq (empty_filler, optarg))
             error (EXIT_FAILURE, 0,
                    _("conflicting empty-field replacement strings"));
           empty_filler = optarg;
@@ -1089,7 +1088,7 @@ main (int argc, char **argv)
           break;
 
         case 'o':
-          if (STREQ (optarg, "auto"))
+          if (streq (optarg, "auto"))
             autoformat = true;
           else
             {
@@ -1107,7 +1106,7 @@ main (int argc, char **argv)
                 newtab = mcel_ch ('\n', 1);
                 /* output_separator does not matter.  */
               }
-            else if (STREQ (optarg, "\\0"))
+            else if (streq (optarg, "\\0"))
               {
                 newtab = mcel_ch ('\0', 1);
                 output_separator = "";
@@ -1188,10 +1187,10 @@ main (int argc, char **argv)
   if (join_field_2 < 0)
     join_field_2 = 0;
 
-  fp1 = STREQ (g_names[0], "-") ? stdin : fopen (g_names[0], "r");
+  fp1 = streq (g_names[0], "-") ? stdin : fopen (g_names[0], "r");
   if (!fp1)
     error (EXIT_FAILURE, errno, "%s", quotef (g_names[0]));
-  fp2 = STREQ (g_names[1], "-") ? stdin : fopen (g_names[1], "r");
+  fp2 = streq (g_names[1], "-") ? stdin : fopen (g_names[1], "r");
   if (!fp2)
     error (EXIT_FAILURE, errno, "%s", quotef (g_names[1]));
   if (fp1 == fp2)

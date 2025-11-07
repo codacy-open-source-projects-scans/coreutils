@@ -1,7 +1,7 @@
 #!/bin/sh
 # exercise 'sort -h' in locales where thousands separator is blank
 
-# Copyright (C) 2016-2024 Free Software Foundation, Inc.
+# Copyright (C) 2016-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,6 +24,9 @@ TEST_LOCALE='sv_SE'
 lg="$(LC_ALL="$TEST_LOCALE" locale thousands_sep)"
 test "$lg" ||
   skip_ 'The Swedish locale with blank thousands separator is unavailable.'
+
+test $(printf '%s' "$lg" | wc -c) = 1 ||
+  skip_ 'Multi-byte thousands separators are not supported'
 
 tee exp1 exp3 > in << _EOF_
 1       1k      1 M     4${lg}003   1M

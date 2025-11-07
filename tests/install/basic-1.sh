@@ -1,7 +1,7 @@
 #!/bin/sh
 # Basic tests for "install".
 
-# Copyright (C) 1998-2024 Free Software Foundation, Inc.
+# Copyright (C) 1998-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -147,5 +147,12 @@ EOF
 returns_ 1 ginstall . . 2>err || fail=1
 printf '%s\n' "ginstall: omitting directory '.'" >exp || framework_failure_
 compare exp err || fail=1
+
+# Ensure correct diagnostic for failing to create dir
+mkdir -m 111 sub-ro || framework_failure_
+if ! mkdir sub-ro/d; then
+  returns_ 1 ginstall -d sub-ro/d 2>err || fail=1
+  grep 'cannot create directory' err || { cat err; fail=1; }
+fi
 
 Exit $fail

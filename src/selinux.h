@@ -1,5 +1,5 @@
 /* selinux - core functions for maintaining SELinux labeling
-   Copyright (C) 2012-2024 Free Software Foundation, Inc.
+   Copyright (C) 2012-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -41,13 +41,13 @@ defaultcon (struct selabel_handle *selabel_handle,
 # else
 
 static inline bool
-restorecon (struct selabel_handle *selabel_handle,
-            char const *path, bool recurse)
+restorecon (MAYBE_UNUSED struct selabel_handle *selabel_handle,
+            MAYBE_UNUSED char const *path, MAYBE_UNUSED bool recurse)
 { errno = ENOTSUP; return false; }
 
 static inline int
-defaultcon (struct selabel_handle *selabel_handle,
-            char const *path, mode_t mode)
+defaultcon (MAYBE_UNUSED struct selabel_handle *selabel_handle,
+            MAYBE_UNUSED char const *path, MAYBE_UNUSED mode_t mode)
 { errno = ENOTSUP; return -1; }
 
 # endif

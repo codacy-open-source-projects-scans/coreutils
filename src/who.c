@@ -1,5 +1,5 @@
 /* GNU's who.
-   Copyright (C) 1992-2024 Free Software Foundation, Inc.
+   Copyright (C) 1992-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -58,12 +58,6 @@
 # define UT_TYPE_INIT_PROCESS(U) ((U)->ut_type == INIT_PROCESS)
 #else
 # define UT_TYPE_INIT_PROCESS(U) false
-#endif
-
-#ifdef LOGIN_PROCESS
-# define UT_TYPE_LOGIN_PROCESS(U) ((U)->ut_type == LOGIN_PROCESS)
-#else
-# define UT_TYPE_LOGIN_PROCESS(U) false
 #endif
 
 #ifdef DEAD_PROCESS
@@ -211,7 +205,7 @@ idle_string (time_t when, time_t boottime)
 
 /* Return a time string.  */
 static char const *
-time_string (struct gl_utmp const *utmp_ent)
+time_string (STRUCT_UTMP const *utmp_ent)
 {
   static char buf[INT_STRLEN_BOUND (intmax_t) + sizeof "-%m-%d %H:%M"];
   struct tm *tmp = localtime (&utmp_ent->ut_ts.tv_sec);
@@ -318,7 +312,7 @@ is_tty_writable (struct stat const *pstat)
 /* Send properly parsed USER_PROCESS info to print_line.  The most
    recent boot time is BOOTTIME. */
 static void
-print_user (struct gl_utmp const *utmp_ent, time_t boottime)
+print_user (STRUCT_UTMP const *utmp_ent, time_t boottime)
 {
   struct stat stats;
   time_t last_change;
@@ -432,14 +426,14 @@ print_user (struct gl_utmp const *utmp_ent, time_t boottime)
 }
 
 static void
-print_boottime (struct gl_utmp const *utmp_ent)
+print_boottime (STRUCT_UTMP const *utmp_ent)
 {
   print_line ("", ' ', _("system boot"),
               time_string (utmp_ent), "", "", "", "");
 }
 
 static char *
-make_id_equals_comment (struct gl_utmp const *utmp_ent)
+make_id_equals_comment (STRUCT_UTMP const *utmp_ent)
 {
   char const *id = UT_ID (utmp_ent);
   idx_t idlen = strlen (id);
@@ -453,7 +447,7 @@ make_id_equals_comment (struct gl_utmp const *utmp_ent)
 }
 
 static void
-print_deadprocs (struct gl_utmp const *utmp_ent)
+print_deadprocs (STRUCT_UTMP const *utmp_ent)
 {
   static char *exitstr;
   char *comment = make_id_equals_comment (utmp_ent);
@@ -476,7 +470,7 @@ print_deadprocs (struct gl_utmp const *utmp_ent)
 }
 
 static void
-print_login (struct gl_utmp const *utmp_ent)
+print_login (STRUCT_UTMP const *utmp_ent)
 {
   char *comment = make_id_equals_comment (utmp_ent);
   PIDSTR_DECL_AND_INIT (pidstr, utmp_ent);
@@ -489,7 +483,7 @@ print_login (struct gl_utmp const *utmp_ent)
 }
 
 static void
-print_initspawn (struct gl_utmp const *utmp_ent)
+print_initspawn (STRUCT_UTMP const *utmp_ent)
 {
   char *comment = make_id_equals_comment (utmp_ent);
   PIDSTR_DECL_AND_INIT (pidstr, utmp_ent);
@@ -500,7 +494,7 @@ print_initspawn (struct gl_utmp const *utmp_ent)
 }
 
 static void
-print_clockchange (struct gl_utmp const *utmp_ent)
+print_clockchange (STRUCT_UTMP const *utmp_ent)
 {
   /* FIXME: handle NEW_TIME & OLD_TIME both */
   print_line ("", ' ', _("clock change"),
@@ -508,7 +502,7 @@ print_clockchange (struct gl_utmp const *utmp_ent)
 }
 
 static void
-print_runlevel (struct gl_utmp const *utmp_ent)
+print_runlevel (STRUCT_UTMP const *utmp_ent)
 {
   static char *runlevline, *comment;
   unsigned char last = utmp_ent->ut_pid / 256;
@@ -531,7 +525,7 @@ print_runlevel (struct gl_utmp const *utmp_ent)
 /* Print the username of each valid entry and the number of valid entries
    in UTMP_BUF, which should have N elements. */
 static void
-list_entries_who (idx_t n, struct gl_utmp const *utmp_buf)
+list_entries_who (idx_t n, STRUCT_UTMP const *utmp_buf)
 {
   idx_t entries = 0;
   char const *separator = "";
@@ -563,7 +557,7 @@ print_heading (void)
 
 /* Display UTMP_BUF, which should have N entries. */
 static void
-scan_entries (idx_t n, struct gl_utmp const *utmp_buf)
+scan_entries (idx_t n, STRUCT_UTMP const *utmp_buf)
 {
   char *ttyname_b IF_LINT ( = nullptr);
   time_t boottime = TYPE_MINIMUM (time_t);
@@ -583,7 +577,7 @@ scan_entries (idx_t n, struct gl_utmp const *utmp_buf)
   while (n--)
     {
       if (!my_line_only
-          || STREQ (ttyname_b, utmp_buf->ut_line))
+          || str_endswith (utmp_buf->ut_line, ttyname_b))
         {
           if (need_users && IS_USER_PROCESS (utmp_buf))
             print_user (utmp_buf, boottime);
@@ -617,7 +611,7 @@ static void
 who (char const *filename, int options)
 {
   idx_t n_users;
-  struct gl_utmp *utmp_buf;
+  STRUCT_UTMP *utmp_buf;
   if (short_list)
     options |= READ_UTMP_USER_PROCESS;
   if (read_utmp (filename, &n_users, &utmp_buf, options) != 0)
@@ -654,7 +648,7 @@ Print information about users who are currently logged in.\n\
 "), stdout);
       fputs (_("\
       --lookup      attempt to canonicalize hostnames via DNS\n\
-  -m                only hostname and user associated with stdin\n\
+  -m                only hostname and user associated with standard input\n\
   -p, --process     print active processes spawned by init\n\
 "), stdout);
       fputs (_("\

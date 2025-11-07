@@ -1,7 +1,7 @@
 #!/bin/sh
 # Validate cksum --check dynamic operation
 
-# Copyright (C) 2021-2024 Free Software Foundation, Inc.
+# Copyright (C) 2021-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,13 +21,47 @@ print_ver_ cksum shuf
 
 shuf -i 1-10 > input || framework_failure_
 
-for args in '-a sha384' '-a blake2b' '-a blake2b -l 384' '-a sm3'; do
+for args in '-a sha2 -l 384' '-a blake2b' '-a blake2b -l 384' '-a sm3'; do
   cksum $args 'input' >> CHECKSUMS || fail=1
 done
 cksum --strict --check CHECKSUMS || fail=1
 
+# We don't output but do support SHA2-### tagged format.
+# Also ensure we check both formats with and without -a specified.
+cksum -a sha2 -l 384 input > sha384-tag.sum || framework_failure_
+sed 's/^SHA/SHA2-/' sha384-tag.sum > sha2-tag.sum || framework_failure_
+for file in sha384-tag.sum sha2-tag.sum; do
+  for spec in '' '-a sha2'; do
+    cksum --check $spec $file || fail=1
+  done
+done
+
+# Ensure invalid length is handled appropriately
+# coreutils-9.8 had undefined behavior with the following:
+printf '%s\n' 'SHA2-128 (/dev/null) = 38b060a751ac96384cd9327eb1b1e36a' \
+  > sha2-bad-length.sum || framework_failure_
+returns_ 1 cksum --check sha2-bad-length.sum 2>err || fail=1
+echo 'cksum: sha2-bad-length.sum: no properly formatted checksum lines found' \
+  > experr || framework_failure_
+compare experr err || fail=1
+
+# Ensure base64 in untagged format that matches tags is supported
+# From coreutils 9.2 - 9.8 inclusive this was not supported
+echo 'SHA1+++++++++++++++++++++++=  /dev/null' > tag-prefix.sum \
+  || framework_failure_
+returns_ 1 cksum --check -a sha1 tag-prefix.sum 2>err || fail=1
+echo 'cksum: WARNING: 1 computed checksum did NOT match' \
+  > experr || framework_failure_
+compare experr err || fail=1
+
 # Ensure leading whitespace and \ ignored
 sed 's/^/ \\/' CHECKSUMS | cksum --strict -c || fail=1
+
+# Ensure file names with " (=" supported.
+awkward_file='abc (f) = abc'
+touch "$awkward_file" || framework_failure_
+cksum -a sha1 "$awkward_file" > tag-awkward.sum || framework_failure_
+cksum --check tag-awkward.sum || fail=1
 
 # Check common signed checksums format works in non strict mode
 cat >> signed_CHECKSUMS <<\EOF
@@ -74,7 +108,7 @@ grep '1 line is improperly formatted' out || fail=1
 cksum --strict --check CHECKSUMS >out 2>&1 && fail=1
 grep '1 line is improperly formatted' out || fail=1
 echo "invalid line" >> CHECKSUMS
-# plurial checks
+# plurality checks
 cksum --strict --check CHECKSUMS >out 2>&1 && fail=1
 grep '2 lines are improperly formatted' out || fail=1
 

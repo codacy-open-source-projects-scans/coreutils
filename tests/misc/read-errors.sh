@@ -1,7 +1,7 @@
 #!/bin/sh
 # Make sure all of these programs diagnose read errors
 
-# Copyright (C) 2023-2024 Free Software Foundation, Inc.
+# Copyright (C) 2023-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 
 ! cat . >/dev/null 2>&1 || skip_ "Need unreadable directories"
 
-echo "\
+printf '%s' "\
 basenc --base32 .
 basenc -d --base64 .
 cat .
@@ -30,10 +30,14 @@ cksum -a crc .
 cksum -a crc32b .
 cksum -a md5 .
 cksum -a sha1 .
-cksum -a sha224 .
-cksum -a sha256 .
-cksum -a sha384 .
-cksum -a sha512 .
+cksum -a sha2 -l 224 .
+cksum -a sha2 -l 256 .
+cksum -a sha2 -l 384 .
+cksum -a sha2 -l 512 .
+cksum -a sha3 -l 224 .
+cksum -a sha3 -l 256 .
+cksum -a sha3 -l 384 .
+cksum -a sha3 -l 512 .
 cksum -a sm3 .
 cksum -a sysv .
 comm . .

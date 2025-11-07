@@ -1,5 +1,5 @@
 /* chmod -- change permission modes of files
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -170,7 +170,7 @@ describe_change (char const *file, struct change_status const *ch)
       printf (_("%s could not be accessed\n"), quoted_file);
       return;
 
-    default:
+    case CH_FAILED: case CH_NO_CHANGE_REQUESTED: case CH_SUCCEEDED:
       break;
   }
 
@@ -196,7 +196,7 @@ describe_change (char const *file, struct change_status const *ch)
       fmt = _("mode of %s retained as %04lo (%s)\n");
       printf (fmt, quoted_file, m, &perms[1]);
       return;
-    default:
+    case CH_NO_STAT: case CH_NOT_APPLIED: default:
       affirm (false);
     }
   printf (fmt, quoted_file, old_m, &old_perms[1], m, &perms[1]);
@@ -229,7 +229,7 @@ process_file (FTS *fts, FTSENT *ent)
          accessible when control reaches this point.  So, if this is
          the first time we've seen the FTS_NS for this file, tell
          fts_read to stat it "again".  */
-      if (ent->fts_level == 0 && ent->fts_number == 0)
+      if (ent->fts_level == FTS_ROOTLEVEL && ent->fts_number == 0)
         {
           ent->fts_number = 1;
           fts_set (fts, ent, FTS_AGAIN);
@@ -308,7 +308,7 @@ process_file (FTS *fts, FTSENT *ent)
                                  umask_value, change, nullptr);
       bool follow_symlink = !!dereference;
       if (dereference == -1) /* -H with/without -R, -P without -R.  */
-        follow_symlink = ent->fts_level == 0;
+        follow_symlink = ent->fts_level == FTS_ROOTLEVEL;
       if (fchmodat (fts->fts_cwd_fd, file, ch.new_mode,
                     follow_symlink ? 0 : AT_SYMLINK_NOFOLLOW) == 0)
         ch.status = CH_SUCCEEDED;

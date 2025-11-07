@@ -1,5 +1,5 @@
 /* logname -- print user's login name
-   Copyright (C) 1990-2024 Free Software Foundation, Inc.
+   Copyright (C) 1990-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -25,7 +25,7 @@
 /* The official name of this program (e.g., no 'g' prefix).  */
 #define PROGRAM_NAME "logname"
 
-#define AUTHORS proper_name ("FIXME: unknown")
+#define AUTHORS proper_name ("David MacKenzie")
 
 void
 usage (int status)

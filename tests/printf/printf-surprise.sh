@@ -1,7 +1,7 @@
 #!/bin/sh
 # Detect printf(3) failure even when it doesn't set stream error indicator
 
-# Copyright (C) 2007-2024 Free Software Foundation, Inc.
+# Copyright (C) 2007-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -61,7 +61,8 @@ cleanup_() { kill $pid 2>/dev/null && wait $pid; }
 head -c 10 fifo > out & pid=$!
 
 # Trigger large mem allocation failure
-( trap '' PIPE && ulimit -v $vm && env $prog %20000000f 0 2>err-msg > fifo )
+( trap '' PIPE && ulimit -v $(($vm+4000)) &&
+  env $prog %20000000f 0 2>err-msg > fifo )
 exit=$?
 
 # Map this longer, and rarer, diagnostic to the common one.

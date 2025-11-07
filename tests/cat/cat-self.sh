@@ -1,7 +1,7 @@
 #!/bin/sh
 # Check that cat operates correctly when the input is the same as the output.
 
-# Copyright 2014-2024 Free Software Foundation, Inc.
+# Copyright 2014-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -49,5 +49,15 @@ returns_ 1 cat fx fx3 1<>fx3 || fail=1
 returns_ 1 cat - fx4 <fx 1<>fx4 || fail=1
 returns_ 1 cat fx5 >>fx5 || fail=1
 returns_ 1 cat <fx6 >>fx6 || fail=1
+
+# coreutils 9.6 would fail with a plain cat if the tty was in append mode
+# Simulate with a regular file to simplify
+echo foo > file || framework_failure_
+# Set fd 3 at EOF
+exec 3< file && cat <&3 > /dev/null || framework_failure_
+# Set fd 4 in append mode
+exec 4>> file || framework_failure_
+cat <&3 >&4 || fail=1
+exec 3<&- 4>&-
 
 Exit $fail

@@ -32,10 +32,6 @@
 * Date input formats: (coreutils)Date input formats.
 @end direntry
 
-@c FIXME: the following need documentation
-@c * [: (coreutils)[ invocation.                   File/string tests.
-@c * pinky: (coreutils)pinky invocation.           FIXME.
-
 @dircategory Individual utilities
 @direntry
 * arch: (coreutils)arch invocation.             Print machine hardware name.
@@ -148,7 +144,7 @@
 This manual documents version @value{VERSION} of the GNU core
 utilities, including the standard programs for text and file manipulation.
 
-Copyright @copyright{} 1994--2024 Free Software Foundation, Inc.
+Copyright @copyright{} 1994--2025 Free Software Foundation, Inc.
 
 @quotation
 Permission is granted to copy, distribute and/or modify this document
@@ -229,6 +225,7 @@ Common Options
 * Backup options::               Backup options
 * Block size::                   Block size
 * Floating point::               Floating point number representation
+* Hardware Acceleration::        Hardware acceleration configuration
 * Signal specifications::        Specifying signals
 * Disambiguating names and IDs:: chgrp, chown, chroot, id: user and group syntax
 * Random sources::               Sources of random data
@@ -813,6 +810,7 @@ Items applicable to all programs:
 
 * Exit status::                  Indicating program success or failure.
 * Floating point::               Floating point number representation.
+* Hardware Acceleration::        Hardware acceleration configuration
 * Standards conformance::        Conformance to the POSIX standard.
 * Multi-call invocation::        Multi-call program invocation.
 @end menu
@@ -951,7 +949,7 @@ A block size specification can be a positive integer specifying the number
 of bytes per block, or it can be @code{human-readable} or @code{si} to
 select a human-readable format.  Integers may be followed by suffixes
 that are upward compatible with the
-@uref{http://www.bipm.org/en/publications/si-brochure/chapter3.html,
+@uref{https://www.bipm.org/en/measurement-units/si-prefixes,
 SI prefixes}
 for decimal multiples and with the
 @uref{https://physics.nist.gov/cuu/Units/binary.html, ISO/IEC 80000-13
@@ -1083,8 +1081,16 @@ apparent file sizes, whereas the @option{--block-size} option does.
 A @var{signal} may be a signal name like @samp{HUP}, or a signal
 number like @samp{1}, or an exit status of a process terminated by the
 signal.  A signal name can be given in canonical form or prefixed by
-@samp{SIG}@.  The case of the letters is ignored.  The following signal names
-and numbers are supported on all POSIX compliant systems:
+@samp{SIG}@.  The case of the letters is ignored.
+
+@noindent
+The signal @samp{0} pseudo signal is synonymous with the name @samp{EXIT}
+with the GNU @command{kill} command, and @command{bash} at least,
+as @code{trap foo 0} and @code{trap foo EXIT} are equivalent.
+
+@noindent
+The following signal names and numbers are supported
+on all POSIX compliant systems:
 
 @table @samp
 @item HUP
@@ -1164,6 +1170,15 @@ File size limit exceeded.
 POSIX 1003.1-2001 systems that support the XRT extension
 also support at least eight real-time signals called @samp{RTMIN},
 @samp{RTMIN+1}, @dots{}, @samp{RTMAX-1}, @samp{RTMAX}.
+
+@noindent
+All systems conforming to POSIX 1003.1-2024 also support the following
+signals:
+
+@table @samp
+@item WINCH
+Terminal window size changed.
+@end table
 
 @node Disambiguating names and IDs
 @section chown, chgrp, chroot, id: Disambiguating user names and IDs
@@ -1552,7 +1567,7 @@ case-insensitive @code{inf}, @code{infinity}, and @code{NaN}, although
 whether such values are useful depends on the command in question.
 Modern C implementations also accept hexadecimal floating point
 numbers such as @code{-0x.ep-3}, which stands for @minus{}14/16 times
-@math{2^-3}, which equals @minus{}0.109375.  @xref{Parsing of
+@math{2^{-3}}, which equals @minus{}0.109375.  @xref{Parsing of
 Floats,,, libc, The GNU C Library Reference Manual}.
 
 @vindex LC_NUMERIC
@@ -1562,6 +1577,70 @@ accept numbers in either the current or the C locale; for example,
 they treat @samp{3.14} like @samp{3,14} if the current locale uses
 comma as a decimal point.
 
+
+@node Hardware Acceleration
+@section Hardware Acceleration Configuration
+@cindex hardware acceleration
+
+The @command{cksum} and @command{wc} utilities can use non-generic hardware
+acceleration when available, which can significantly speed up processing.  This
+acceleration can be implemented internally within the coreutils themselves,
+delegated to libraries like OpenSSL, or handled by the Linux kernel.
+
+@subsection Build Configuration
+
+By default, the build enables hardware acceleration detection for all supported
+features.  This applies to both the accelerated code used internally within
+coreutils and the accelerated code used in external libraries.
+
+The detection performed internally within coreutils can be overridden at build
+time using various configure variables, which currently include:
+
+@table @samp
+@item gl_cv_crc_pclmul
+@item utils_cv_avx2_intrinsic_exists
+@item utils_cv_avx2_pclmul_intrinsic_exists
+@item utils_cv_avx512_pclmul_intrinsic_exists
+@item utils_cv_pclmul_intrinsic_exists
+@item utils_cv_vmull_intrinsic_exists
+@end table
+
+External library detection is automatic for OpenSSL, so you must use the
+@samp{--with-openssl=no} configure option to disable this if desired.
+Conversely, the Linux kernel cryptographic API is not used automatically and
+must be explicitly enabled with the @samp{--with-linux-crypto} configure
+option.
+
+@subsection Runtime Configuration
+
+The usual method for runtime configuration of hardware detection is through
+environment variables, since you typically want to configure hardware
+interactions quite broadly.  Note that these environment variables are not
+specific to coreutils, but coreutils will honor them when set.
+
+For example, the following environment settings would disable hardware
+acceleration both within coreutils and in libcrypto (if used) on x86_64,
+ARM, and AArch64 platforms:
+
+@example
+export OPENSSL_ia32cap='0x0'
+export OPENSSL_armcap='0x0'
+export GLIBC_TUNABLES='glibc.cpu.hwcaps=-AVX512F,-AVX2,-AVX,-PMULL'
+@end example
+
+The @option{--debug} option is available on all utilities supporting
+hardware acceleration and will report the current acceleration mode in use.
+For example:
+
+@example
+$ wc -l --debug /dev/null >/dev/null
+wc: using avx2 hardware support
+
+$ cksum --debug /dev/null >/dev/null
+cksum: avx512 support not detected
+cksum: avx2 support not detected
+cksum: using pclmul hardware support
+@end example
 
 @node Standards conformance
 @section Standards conformance
@@ -1648,7 +1727,7 @@ in some way.
 standard input if none are given, to standard output.  Synopsis:
 
 @example
-cat [@var{option}] [@var{file}]@dots{}
+cat [@var{option}]@dots{} [@var{file}]@dots{}
 @end example
 
 The program accepts the following options.  Also see @ref{Common options}.
@@ -2067,6 +2146,8 @@ least @var{bytes} consecutive printable characters,
 followed by a zero byte (ASCII NUL).
 Prefixes and suffixes on @var{bytes} are interpreted as for the
 @option{-j} option.
+If combined with the @option{-N} option, truncated strings
+are considered ASCII NUL terminated.
 
 If @var{bytes} is omitted with @option{--strings}, the default is 3.
 
@@ -2354,6 +2435,19 @@ Encode into (or decode from with @option{-d/--decode}) file-and-url-safe
 base64 form (using @samp{_} and @samp{-} instead of @samp{+} and @samp{/}).
 The format conforms to
 @uref{https://datatracker.ietf.org/doc/html/rfc4648#section-5, RFC 4648#5}.
+
+@item --base58
+@opindex --base58
+Encode into (or decode from with @option{-d/--decode}) base58 form.
+The format conforms to
+@uref{https://datatracker.ietf.org/doc/html/draft-msporny-base58-03,
+Base58 draft}.
+This encoding is useful for transcription as the output avoids
+visually similar characters.  It's best suited to smaller amounts of data.
+For example this generates a unique 128 bit ID in 22 bytes:
+@example
+uuidgen | basenc --base16 -di | basenc --base58
+@end example
 
 @item --base32
 @opindex --base32
@@ -2936,6 +3030,13 @@ Count bytes rather than columns, so that tabs, backspaces, and carriage
 returns are each counted as taking up one column, just like other
 characters.
 
+@item -c
+@itemx --characters
+@opindex -c
+@opindex --characters
+Count characters rather than columns, meaning that lines containing
+characters wider than one column will be visually longer.
+
 @item -s
 @itemx --spaces
 @opindex -s
@@ -3201,8 +3302,8 @@ Size multiplier suffixes are the same as with the @option{-c} option.
 @opindex --pid
 When following by name or by descriptor, you may specify the process ID,
 @var{pid}, of one or more (by repeating @option{--pid}) writers of the
-@var{file} arguments.  Then, shortly after all the identified
-processes terminate, tail will also terminate.  This will
+@var{file} arguments.  Then, @command{tail} will exit shortly
+after all the identified processes no longer exist.  This will
 work properly only if the writers and the tailing process are running on
 the same machine.  For example, to save the output of a build in a file
 and to watch the file grow, if you invoke @command{make} and @command{tail}
@@ -3319,7 +3420,7 @@ sections of @var{input}  (standard input if none is given or @var{input}
 is @samp{-}).  Synopsis:
 
 @example
-split [@var{option}] [@var{input} [@var{prefix}]]
+split [@var{option}]@dots{} [@var{input} [@var{prefix}]]
 @end example
 
 By default, @command{split} puts 1000 lines of @var{input} (or whatever is
@@ -3400,13 +3501,17 @@ with names @file{big-aa.xz}, @file{big-ab.xz}, @file{big-ac.xz}, etc.
 
 Split @var{input} to @var{chunks} output files where @var{chunks} may be:
 
+@macro Stdout
+standard output
+@end macro
+
 @example
 @var{n}      generate @var{n} files based on current size of @var{input}
 @var{k}/@var{n}    output only @var{k}th of @var{n} to standard output
 l/@var{n}    generate @var{n} files without splitting lines or records
-l/@var{k}/@var{n}  likewise but output only @var{k}th of @var{n} to stdout
+l/@var{k}/@var{n}  likewise but output only @var{k}th of @var{n} to @Stdout
 r/@var{n}    like @samp{l} but use round robin distribution
-r/@var{k}/@var{n}  likewise but output only @var{k}th of @var{n} to stdout
+r/@var{k}/@var{n}  likewise but output only @var{k}th of @var{n} to @Stdout
 @end example
 
 If the input size is not a multiple of @var{n}, early output files are
@@ -3521,7 +3626,7 @@ $ seq -w 6 10 > k; split -n3 k; head xa?
 10
 @end example
 
-Use the "l/" modifier to suppress that:
+Use the ``l/'' modifier to suppress that:
 
 @example
 $ seq -w 6 10 > k; split -nl/3 k; head xa?
@@ -3537,7 +3642,7 @@ $ seq -w 6 10 > k; split -nl/3 k; head xa?
 10
 @end example
 
-Use the "r/" modifier to distribute lines in a round-robin fashion:
+Use the ``r/'' modifier to distribute lines in a round-robin fashion:
 
 @example
 $ seq -w 6 10 > k; split -nr/3 k; head xa?
@@ -3554,7 +3659,7 @@ $ seq -w 6 10 > k; split -nr/3 k; head xa?
 @end example
 
 You can also extract just the Kth chunk.
-This extracts and prints just the 7th "chunk" of 33:
+This extracts and prints just the 7th ``chunk'' of 33:
 
 @example
 $ seq 100 > k; split -nl/7/33 k
@@ -4108,10 +4213,8 @@ Supported more modern digest algorithms are:
 @example
 @samp{md5}       equivalent to @command{md5sum}
 @samp{sha1}      equivalent to @command{sha1sum}
-@samp{sha224}    equivalent to @command{sha224sum}
-@samp{sha256}    equivalent to @command{sha256sum}
-@samp{sha384}    equivalent to @command{sha384sum}
-@samp{sha512}    equivalent to @command{sha512sum}
+@samp{sha2}      equivalent to @command{sha@{224,256,384,512@}sum}
+@samp{sha3}      only available through @command{cksum}
 @samp{blake2b}   equivalent to @command{b2sum}
 @samp{sm3}       only available through @command{cksum}
 @end example
@@ -4132,20 +4235,22 @@ input digest string as what is output.  I.e., removing or adding any
 
 @item --debug
 @opindex --debug
-Output extra information to stderr, like the checksum implementation being used.
+Output extra information to standard error,
+like the checksum implementation being used.
 
-@macro cksumLengthOption
 @item -l
 @itemx --length
 @opindex -l
 @opindex --length
 @cindex BLAKE2 hash length
-Change (shorten) the default digest length.
-This is specified in bits and thus must be a multiple of 8.
+@cindex SHA-3 hash length
+Specify the digest size used with @option{-a sha2, sha3, or blake2b}.
+For @samp{blake2b} this is optional, with 512 being the default.  If the
+option is given it must be a multiple of 8.  For @samp{sha2} or @samp{sha3} this
+option is required, and the @var{length} must be one of 224, 256, 384, or 512.
+
 This option is ignored when @option{--check} is specified,
 as the length is automatically determined when checking.
-@end macro
-@cksumLengthOption
 
 @item --raw
 @opindex --raw
@@ -4194,13 +4299,17 @@ for reading standard input when standard input is a terminal.
 Read file names and checksum information (not data) from each
 @var{file} (or from standard input if no @var{file} was specified) and report
 whether the checksums match the contents of the named files.
-The input to this mode is usually the output of
-a prior, checksum-generating run of the command.
+The input to this mode is usually the output of a prior,
+checksum-generating run of the command.  However the
+@command{cksum} command does not support @option{--check}
+with the legacy output format from the @samp{sysv}, @samp{bsd},
+@samp{crc} or @samp{crc32b} algorithms.
 
-Three input formats are supported.  Either the default output
-format described above, the @option{--tag} output format,
-or the BSD reversed mode format which is similar to the default mode,
+Three input formats are supported.  Either the ``untagged'' output format,
+the ``tagged'' output format, or the BSD reversed mode format
+which is similar to the ``untagged'' output format
 but doesn't use a character to distinguish binary and text modes.
+@xref{cksum output modes} for details of these formats.
 
 For the @command{cksum} command, the @option{--check} option
 supports auto-detecting the digest algorithm to use,
@@ -4226,8 +4335,6 @@ If any listed file cannot be opened or read, if any valid line has
 a checksum inconsistent with the associated file, or if no valid
 line is found, @command{cksum} exits with nonzero status.  Otherwise,
 it exits successfully.
-The @command{cksum} command does not support @option{--check}
-with the older @samp{sysv}, @samp{bsd}, @samp{crc} or @samp{crc32b} algorithms.
 
 @item --ignore-missing
 @opindex --ignore-missing
@@ -4326,8 +4433,9 @@ against malicious tampering: although finding a file with a given \hash\
 fingerprint is considered infeasible at the moment, it is known how
 to modify certain files, including digital certificates, so that they
 appear valid when signed with an \hash\ digest.  For more secure hashes,
-consider using SHA-2 or @command{b2sum}.
-@xref{sha2 utilities}. @xref{b2sum invocation}.
+consider using @samp{sha2}, @samp{sha3}, or @samp{blake2b},
+available through the @command{cksum} @option{--algorithm} option.
+@xref{cksum invocation}.
 @end macro
 @weakHash{MD5}
 
@@ -4369,7 +4477,19 @@ The program accepts @ref{cksum common options}.  Also see @ref{Common options}.
 In addition @command{b2sum} supports the following options.
 
 @table @samp
-@cksumLengthOption
+
+@item -l
+@itemx --length
+@opindex -l
+@opindex --length
+@cindex BLAKE2 hash length
+Specify the digest size used by the algorithm.  This option is optional.
+By default a 512 bit digest will be used.  If the option is given it
+must be a multiple of 8.
+
+This option is ignored when @option{--check} is specified,
+as the length is automatically determined when checking.
+
 @end table
 
 
@@ -4764,6 +4884,10 @@ output, and when given the @option{-d} option it must decompress
 standard input to standard output.
 
 Terminate with an error if @var{prog} exits with nonzero status.
+
+If @var{prog} cannot be invoked, @command{sort} will write a warning
+message to standard error and continue without compressing temporary
+files.
 
 White space and the backslash character should not appear in
 @var{prog}; they are reserved for future use.
@@ -6245,8 +6369,9 @@ total ordering.  In the context of the call graph above, the function
 @code{parse_options} may be placed anywhere in the list as long as it
 precedes @code{main}.
 
-The only options are @option{--help} and @option{--version}.  @xref{Common
-options}.
+To conform to POSIX.1-2024, @command{tsort} accepts and ignores the
+option @option{-w}.  The only other options are @option{--help} and
+@option{--version}.  @xref{Common options}.
 
 @exitstatus
 
@@ -8076,6 +8201,10 @@ with a security context, but no other alternate access method.
 A file with any other combination of alternate access methods
 is marked with a @samp{+} character.
 
+@command{ls} uses a @samp{?} character to indicate it is unable to determine
+whether alternate access methods apply to the file, which may happen for
+example with some NFS setups with files without read permission.
+
 @item -n
 @itemx --numeric-uid-gid
 @opindex -n
@@ -9035,7 +9164,7 @@ Equivalent to @option{--no-dereference --preserve=links}.
 @item --debug
 @opindex --debug
 @cindex debugging, copying
-Print extra information to stdout, explaining how files are copied.
+Print extra information to standard output, explaining how files are copied.
 This option implies the @option{--verbose} option.
 @end macro
 @optDebugCopy
@@ -9905,7 +10034,8 @@ interpreted as a block count rather than a count of read operations.
 
 @end table
 
-These flags are all GNU extensions to POSIX.
+These flags are all GNU extensions to POSIX, except for @samp{fullblock}
+which was added by POSIX.1-2024.
 They are not supported on all systems, and @samp{dd} rejects
 attempts to use them when they are not supported.  When reading from
 standard input or writing to standard output, the @samp{nofollow} and
@@ -10274,7 +10404,7 @@ The program accepts the following options.  Also see @ref{Common options}.
 @opindex -f
 @opindex --force
 @cindex prompts, omitting
-Do not prompt the user before removing a destination file.
+Do not prompt the user before replacing a destination file.
 @macro mvOptsIfn
 If you specify more than one of the @option{-i}, @option{-f}, @option{-n}
 options, only the final one takes effect.
@@ -11250,7 +11380,7 @@ Print a message for each created directory.  This is most useful with
 specified names.  Synopsis:
 
 @example
-mkfifo [@var{option}] @var{name}@dots{}
+mkfifo [@var{option}]@dots{} @var{name}@dots{}
 @end example
 
 A @dfn{FIFO} is a special file type that permits independent processes
@@ -11435,13 +11565,21 @@ Print a warning if specified along with multiple @var{file}s.
 @opindex -q
 @opindex --silent
 @opindex --quiet
-Suppress most error messages.  On by default.
+Suppress most error messages.
+
+@vindex POSIXLY_CORRECT
+This option is on by default if the @env{POSIXLY_CORRECT} environment
+variable is not set.
 
 @item -v
 @itemx --verbose
 @opindex -v
 @opindex --verbose
 Report error messages.
+
+@vindex POSIXLY_CORRECT
+This option is on by default if the @env{POSIXLY_CORRECT} environment
+variable is set.
 
 @optZero
 
@@ -12464,10 +12602,10 @@ and available space of all listed devices.  If no arguments are specified
 df will try harder to elide file systems insignificant to the total
 available space, by suppressing duplicate remote file systems.
 
-For the grand total line, @command{df} prints @samp{"total"} into the
-@var{source} column, and @samp{"-"} into the @var{target} column.
+For the grand total line, @command{df} prints @samp{total} into the
+@var{source} column, and @samp{-} into the @var{target} column.
 If there is no @var{source} column (see @option{--output}), then
-@command{df} prints @samp{"total"} into the @var{target} column,
+@command{df} prints @samp{total} into the @var{target} column,
 if present.
 
 @item -t @var{fstype}
@@ -14791,7 +14929,7 @@ and print its name.  If given, @var{template} must include at least
 three consecutive @samp{X}s in the last component.  If omitted, the template
 @samp{tmp.XXXXXXXXXX} is used, and option @option{--tmpdir} is
 implied.  The final run of @samp{X}s in the @var{template} will be replaced
-by alpha-numeric characters; thus, on a case-sensitive file system,
+by alphanumeric characters; thus, on a case-sensitive file system,
 and with a @var{template} including a run of @var{n} instances of @samp{X},
 there are @samp{62**@var{n}} potential file names.
 
@@ -14957,13 +15095,19 @@ Exit status:
 @pindex realpath
 @findex realpath
 
-@command{realpath} expands all symbolic links and resolves references to
-@samp{/./}, @samp{/../} and extra @samp{/} characters.  By default,
-all but the last component of the specified files must exist.  Synopsis:
+The @command{realpath} command outputs a file's canonicalized name,
+which is an absolute file name that contains neither unnecessary
+@samp{/} nor components that are @samp{.}, @samp{..}, or a symbolic link.
+
+Synopsis:
 
 @example
 realpath [@var{option}]@dots{} @var{file}@dots{}
 @end example
+
+By default, @command{realpath} succeeds if every file name component
+but the last names an existing directory.  It ignores trailing slashes
+that are not also leading slashes.
 
 The file name canonicalization functionality overlaps with that of the
 @command{readlink} command.  This is the preferred command for
@@ -14974,15 +15118,22 @@ The program accepts the following options.  Also see @ref{Common options}.
 
 @table @samp
 
+@item -E
+@itemx --canonicalize
+@opindex -E
+@opindex --canonicalize
+
+Do not fail merely because the named file does not exist.
+Although this is the default behavior of GNU @code{realpath},
+POSIX does not require this default, so portable applications should
+use an explicit @option{-E}.
+
 @item -e
 @itemx --canonicalize-existing
 @opindex -e
 @opindex --canonicalize-existing
-Ensure that all components of the specified file names exist.
-If any component is missing or unavailable, @command{realpath} will output
-a diagnostic unless the @option{-q} option is specified, and exit with a
-nonzero exit code.  A trailing slash requires that the name resolve to a
-directory.
+Fail if the named file does not exist.
+A trailing slash requires that the name resolve to a directory.
 
 @item -m
 @itemx --canonicalize-missing
@@ -15069,8 +15220,8 @@ By default, @command{realpath} prints the absolute file name of given files
 @example
 @group
 cd /home/user
-realpath /usr/bin/sort /tmp/foo /usr/share/dict/words 1.txt
-@result{} /usr/bin/sort
+realpath /usr/bin/ ///tmp/.//foo /usr/share/dict/words 1.txt
+@result{} /usr/bin
 @result{} /tmp/foo
 @result{} /usr/share/dict/american-english
 @result{} /home/user/1.txt
@@ -15083,8 +15234,8 @@ the given directory:
 @example
 @group
 realpath --relative-to=/usr/bin \
-         /usr/bin/sort /tmp/foo /usr/share/dict/words 1.txt
-@result{} sort
+         /usr/bin/ ///tmp/.//foo /usr/share/dict/words 1.txt
+@result{} .
 @result{} ../../tmp/foo
 @result{} ../share/dict/american-english
 @result{} ../../home/user/1.txt
@@ -15098,8 +15249,8 @@ base directory absolute file names are printed:
 @example
 @group
 realpath --relative-base=/usr \
-         /usr/bin/sort /tmp/foo /usr/share/dict/words 1.txt
-@result{} bin/sort
+         /usr/bin/ ///tmp/.//foo /usr/share/dict/words 1.txt
+@result{} bin
 @result{} /tmp/foo
 @result{} share/dict/american-english
 @result{} /home/user/1.txt
@@ -15114,8 +15265,8 @@ printed as absolute file names:
 @example
 @group
 realpath --relative-to=/usr/bin --relative-base=/usr \
-         /usr/bin/sort /tmp/foo /usr/share/dict/words 1.txt
-@result{} sort
+         /usr/bin/ ///tmp/.//foo /usr/share/dict/words 1.txt
+@result{} .
 @result{} /tmp/foo
 @result{} ../share/dict/american-english
 @result{} /home/user/1.txt
@@ -15306,7 +15457,7 @@ Set odd parity (even if negated).  May be negated.
 @cindex stick parity
 @cindex mark parity
 @cindex space parity
-Use "stick" (mark/space) parity.  If parodd is set, the parity bit is
+Use ``stick'' (mark/space) parity.  If parodd is set, the parity bit is
 always 1; if parodd is not set, the parity bit is always zero.
 Non-POSIX@.  May be negated.
 
@@ -15913,25 +16064,8 @@ Print the terminal speed.
 Set the input and output speeds to @var{n}.  @var{n} can be one of: 0
 50 75 110 134 134.5 150 200 300 600 1200 1800 2400 4800 9600 19200
 38400 @code{exta} @code{extb}.  @code{exta} is the same as 19200;
-@code{extb} is the same as 38400.  Many systems, including GNU/Linux,
-support higher speeds.  The @command{stty} command includes support
-for speeds of
-57600,
-115200,
-230400,
-460800,
-500000,
-576000,
-921600,
-1000000,
-1152000,
-1500000,
-2000000,
-2500000,
-3000000,
-3500000,
-or
-4000000 where the system supports these.
+@code{extb} is the same as 38400.  Many systems, support arbitrary
+or higher speeds.
 0 hangs up the line if @option{-clocal} is set.
 @end table
 
@@ -16008,6 +16142,7 @@ Exit status:
 1 if standard input is a non-terminal file
 2 if given incorrect arguments
 3 if a write error occurs
+4 if the terminal's name cannot be determined
 @end display
 
 
@@ -16248,7 +16383,7 @@ should not rely on its existence on non-POSIX platforms.
 Synopsis:
 
 @example
-@command{who} [@var{option}] [@var{file}] [am i]
+who [@var{option}]@dots{} [@var{file}] [am i]
 @end example
 
 @cindex terminal lines, currently used
@@ -16398,7 +16533,7 @@ should not rely on its existence on non-POSIX platforms.
 Synopsis:
 
 @example
-@command{pinky} [@var{option}] [@var{username}]@dots{}
+pinky [@var{option}]@dots{} [@var{username}]@dots{}
 @end example
 
 The program accepts the following options.  Also see @ref{Common options}.
@@ -16511,6 +16646,7 @@ is not set.  @xref{TZ Variable,, Specifying the Time Zone with
 
 @menu
 * Date format specifiers::         Used in @samp{date '+...'}
+* Calendars::                      Different concepts of year and month.
 * Setting the time::               Changing the system clock.
 * Options for date::               Instead of the current time.
 @detailmenu
@@ -16648,7 +16784,9 @@ It is normally at least two characters, but it may be more.
 @item %d
 day of month (e.g., @samp{01})
 @item %D
-date; same as @samp{%m/%d/%y}
+date; same as @samp{%m/%d/%y}.
+Although commonly used in the US, this format is confusing elsewhere,
+and it is ambiguous for dates in different centuries.
 @item %e
 day of month, space padded; same as @samp{%_d}
 @item %F
@@ -16664,6 +16802,7 @@ year corresponding to the ISO week number, but without the century
 as @samp{%y}, except that if the ISO week number (see
 @samp{%V}) belongs
 to the previous or next year, that year is used instead.
+This format is ambiguous for dates in different centuries.
 @item %G
 year corresponding to the ISO week number.  This has the
 same format and value as @samp{%Y}, except that if the ISO
@@ -16702,9 +16841,11 @@ week number of year, with Monday as first day of week
 (@samp{00}@dots{}@samp{53}).
 Days in a new year preceding the first Monday are in week zero.
 @item %x
-locale's date representation (e.g., @samp{12/31/99})
+locale's date representation (e.g., @samp{12/31/99}).
+This format can be ambiguous for dates in different centuries.
 @item %y
-last two digits of year (@samp{00}@dots{}@samp{99})
+last two digits of year (@samp{00}@dots{}@samp{99}).
+This format is ambiguous for dates in different centuries.
 @item %Y
 year.  This is normally at least four characters, but it may be more.
 Year @samp{0000} precedes year @samp{0001}, and year @samp{-001}
@@ -16826,6 +16967,91 @@ POSIX specifies the behavior of flags and field widths only for
 modifiers), and requires a flag to be present if and only if a field
 width is also present.  Other combinations of flags, field widths and
 modifiers are GNU extensions.
+
+
+@node Calendars
+@subsection Calendars
+
+@cindex calendar
+A calendar is a system that groups some sequences of days into ``months'',
+and some sequences of months into ``years''.
+In most countries, the calendar in use is the Gregorian calendar,
+with months ranging from January (the first month) to December (the 12th month).
+
+@cindex calendars, non-Gregorian
+In some specific countries, other calendars are in effect, and
+GNU @command{date} supports them in its output.
+The calendar depends on the @code{LC_TIME} category of the current locale:
+@itemize
+@item
+In the locale of Thailand (@code{th_TH.UTF-8}),
+the Thai solar calendar is used.
+@item
+In the locale of Iran (@code{fa_IR}),
+the Persian solar Hijri calendar is used.
+@item
+In the locale of Ethiopia (@code{am_ET}),
+the Ethiopian / Ge'ez calendar is used.
+@end itemize
+
+The dates in these calendars look different.
+For example, the day the GNU project was announced:
+@example
+$ LC_ALL=en_US.UTF-8 date +%Y-%m-%d -d 1983-09-27
+1983-09-27
+$ LC_ALL=th_TH.UTF-8 date +%Y-%m-%d -d 1983-09-27
+2526-09-27
+$ LC_ALL=fa_IR date +%Y-%m-%d -d 1983-09-27
+1362-07-05
+$ LC_ALL=am_ET date +%Y-%m-%d -d 1983-09-27
+1976-01-16
+@end example
+
+In these locales, when a non-Gregorian calendar is in use,
+a few date conversion specifiers should not be used,
+because they don't apply in the expected way:
+@itemize
+@item
+@samp{%C} for the century,
+@item
+@samp{%y} for a two-digit year,
+@item
+@samp{%G} and @samp{%g} for a week-based year,
+@item
+@samp{%U}, @samp{%W}, and @samp{%V} for the week in the year,
+@item
+@samp{%j} for the day in the year,
+@item
+and @samp{%D} for the date in U.S.@: formatting convention.
+@end itemize
+
+If you are using one of these locales
+and want to see Gregorian dates nevertheless,
+you can achieve that by
+@enumerate
+@item
+making sure that you use the @code{LANG} environment variable,
+not the @code{LC_ALL} environment variable,
+for specifying your general locale, and
+@item
+setting the @code{LC_TIME} environment variable to a locale
+that uses the Gregorian calendar.
+@end enumerate
+@noindent
+For example:
+@example
+$ unset LC_ALL
+$ LANG=fa_IR LC_TIME=en_US.UTF-8 date +%Y-%m-%d -d 1983-09-27
+1983-09-27
+@end example
+
+For more information on how to set your locale, see the GNU gettext manual at
+@ifinfo
+@ref{Users,,The User's View,gettext}.
+@end ifinfo
+@ifnotinfo
+@uref{https://www.gnu.org/software/gettext/manual/html_node/Users.html}.
+@end ifnotinfo
 
 
 @node Setting the time
@@ -16955,6 +17181,11 @@ This is like the format @code{%Y-%m-%dT%H:%M:%S%:z}.
 @item ns
 Also print nanoseconds.
 This is like the format @code{%Y-%m-%dT%H:%M:%S,%N%:z}.
+
+GNU @command{date} uses a @samp{,} decimal point as preferred by ISO
+8601.  You can override it by expressing the full format with a @samp{.}
+decimal point explicitly, like @code{LC_ALL=C date
++'%Y-%m-%dT%H:%M:%S.%N%:z'}.
 @end table
 
 @macro dateParseNote
@@ -17284,8 +17515,9 @@ which may be less than the number of online processors.
 If this information is not accessible, then print the number of
 processors installed.  If the @env{OMP_NUM_THREADS} or @env{OMP_THREAD_LIMIT}
 environment variables are set, then they will determine the minimum
-and maximum returned value respectively.  The result is guaranteed to be
-greater than zero.  Synopsis:
+and maximum returned value respectively.  Linux cgroup version 2
+CPU quotas may also limit the maximum returned value.
+The result is guaranteed to be greater than zero.  Synopsis:
 
 @example
 nproc [@var{option}]
@@ -17299,8 +17531,8 @@ The program accepts the following options.  Also see @ref{Common options}.
 @opindex --all
 Print the number of installed processors on the system, which may
 be greater than the number online or available to the current process.
-The @env{OMP_NUM_THREADS} or @env{OMP_THREAD_LIMIT} environment variables
-are not honored in this case.
+The @env{OMP_NUM_THREADS} or @env{OMP_THREAD_LIMIT} environment variables,
+or cgroup CPU quotas, are not honored in this case.
 
 @item --ignore=@var{number}
 @opindex --ignore
@@ -17774,8 +18006,7 @@ with systems where this is allowed for non-privileged users.}.
 Synopses:
 
 @example
-chroot @var{option} @var{newroot} [@var{command} [@var{args}]@dots{}]
-chroot @var{option}
+chroot [@var{option}]@dots{} @var{newroot} [@var{command} [@var{args}]@dots{}]
 @end example
 
 Ordinarily, file names are looked up starting at the root of the
@@ -18812,7 +19043,7 @@ the exit status of @var{command} otherwise
 still running after the specified time interval.  Synopsis:
 
 @example
-timeout [@var{option}] @var{duration} @var{command} [@var{arg}]@dots{}
+timeout [@var{option}]@dots{} @var{duration} @var{command} [@var{arg}]@dots{}
 @end example
 
 @var{command} must not be a special built-in utility (@pxref{Special
@@ -18896,6 +19127,11 @@ C locale (@pxref{Floating point}) followed by an optional unit:
 @samp{h} for hours
 @samp{d} for days
 @end display
+@macro hexDuration
+A hexadecimal number can precede a @samp{d} suffix only if the number
+has a @samp{p} style exponent, e.g., @samp{0x1p0d} means one day.
+@end macro
+@hexDuration
 A duration of 0 disables the associated timeout.
 The actual timeout duration is dependent on system conditions,
 which should be especially considered when specifying sub-second timeouts.
@@ -19072,6 +19308,8 @@ non-negative integer argument without a suffix, GNU @command{sleep}
 also accepts two or more arguments, unit suffixes, and floating-point
 numbers in either the current or the C locale.  @xref{Floating point}.
 
+@hexDuration
+
 For instance, the following could be used to @command{sleep} for
 1 second, 234 milli-, 567 micro- and 890 nanoseconds:
 
@@ -19141,7 +19379,7 @@ $ factor --exponents 3000
 
 If the number to be factored is small (less than @math{2^{127}} on
 typical machines), @command{factor} uses a faster algorithm.
-For example, on a circa-2017 Intel Xeon Silver 4116, factoring the
+For example, on a circa-2021 Intel Xeon W-1350, factoring the
 product of the eighth and ninth Mersenne primes (approximately
 @math{2^{92}}) takes about 4 ms of CPU time:
 
@@ -19152,22 +19390,32 @@ $ n=$(echo "$M8 * $M9" | bc)
 $ bash -c "time factor $n"
 4951760154835678088235319297: 2147483647 2305843009213693951
 
-real	0m0.004s
+real	0m0.006s
 user	0m0.004s
-sys	0m0.000s
+sys	0m0.002s
 @end example
 
 For larger numbers, @command{factor} uses a slower algorithm.  On the
 same platform, factoring the eighth Fermat number @math{2^{256} + 1}
-takes about 14 seconds, and the slower algorithm would have taken
-about 750 ms to factor @math{2^{127} - 3} instead of the 50 ms needed by
-the faster algorithm.
+takes about 6400 ms.  However, large primes are identified quickly:
+it takes just 420 ms to factor the Mersenne prime @math{2^{11213} - 1}
+into itself and 1.
 
-Factoring large numbers is, in general, hard.  The Pollard-Brent rho
+Factoring large numbers is, in general, hard.  The Pollard--Brent rho
 algorithm used by @command{factor} is particularly effective for
-numbers with relatively small factors.  If you wish to factor large
-numbers which do not have small factors (for example, numbers which
-are the product of two large primes), other methods are far better.
+numbers with relatively small factors.  Other methods are far better
+for factoring large composite numbers that lack relatively small
+factors, such as numbers that are the product of two large primes.
+
+When testing whether a number is prime, @command{factor} uses the
+Baillie--PSW primality heuristic for speed.  Although Baillie--PSW has
+not been proven to reject all composite numbers, the probability of a
+Baillie--PSW pseudoprime is astronomically small and no such
+pseudoprime has been discovered despite decades of searching by
+mathematicians.  Any such pseudoprime is greater than @math{2^{64}}.
+For more, see: Baillie R, Fiori A, Wagstaff Jr SS.@: Strengthening the
+Baillie--PSW primality test.@: @i{Math Comp}.@: 2021;90:1931--1955.@:
+@uref{https://doi.org/10.1090/mcom/3616}.
 
 @exitstatus
 
@@ -19208,7 +19456,7 @@ Print (to standard error) warning messages about possible erroneous usage.
 @itemx --delimiter=@var{d}
 @opindex -d
 @opindex --delimiter
-Use the character @var{d} as input field separator (default: whitespace).
+Use the character @var{d} as input field separator (default: newline or blank).
 Using non-default delimiter turns off automatic padding.
 
 @item --field=@var{fields}
@@ -19304,6 +19552,23 @@ Specify the output unit size (instead of the default 1).  Use this option when
 the output numbers represent other units (e.g. to represent @samp{4,000,000}
 bytes in blocks of 1kB, use @samp{--to=si --to-unit=1000}).
 Suffixes are handled as with @samp{--from=auto}.
+
+@item --unit-separator=@var{sep}
+@opindex --unit-separator
+Support a separator @var{sep} between the number and unit,
+with @option{--from} or @option{--to} auto-scaled units.
+By default a blank or non-breaking space character is accepted on input,
+and no separator is printed on output.
+When parsing input, the specified unit separator has lower precedence
+than field delimiters.  See the @option{--delimiter} option above.
+
+Examples:
+@example
+Add a space on output: @option{--unit-separator=' '}
+Disable blanks on input: @option{--unit-separator=''}
+Support blanks on input: @option{--delimiter=''}
+Ditto and output non-breaking space: @option{-d '' --unit-separator=$'\u00A0'}
+@end example
 
 @optZeroTerminated
 @newlineFieldSeparator

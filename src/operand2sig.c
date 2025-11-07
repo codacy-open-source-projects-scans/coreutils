@@ -1,5 +1,5 @@
 /* operand2sig.c -- common function for parsing signal specifications
-   Copyright (C) 2008-2024 Free Software Foundation, Inc.
+   Copyright (C) 2008-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 #include <sys/wait.h>
 
 #include "system.h"
+#include "c-ctype.h"
 #include "quote.h"
 #include "sig2str.h"
 #include "operand2sig.h"
@@ -36,7 +37,7 @@ operand2sig (char const *operand)
 {
   int signum;
 
-  if (ISDIGIT (*operand))
+  if (c_isdigit (*operand))
     {
       /* Note we don't put a limit on the maximum value passed,
          because we're checking shell $? values here, and ksh for

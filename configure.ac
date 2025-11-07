@@ -1,7 +1,7 @@
 # -*- autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
-# Copyright (C) 1991-2024 Free Software Foundation, Inc.
+# Copyright (C) 1991-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -190,32 +190,10 @@ if test $gl_gcc_warnings != no; then
 
   # This, $nw, is the list of warnings we disable.
   nw=$ew
-  nw="$nw -Wdeclaration-after-statement" # too useful to forbid
-  nw="$nw -Waggregate-return"       # anachronistic
-  nw="$nw -Wlong-long"              # C90 is anachronistic (lib/gethrxtime.h)
-  nw="$nw -Wc++-compat"             # We don't care about C++ compilers
-  nw="$nw -Wundef"                  # Warns on '#if GNULIB_FOO' etc in gnulib
-  nw="$nw -Wtraditional"            # Warns on #elif which we use often
-  nw="$nw -Wcast-qual"              # Too many warnings for now
-  nw="$nw -Wconversion"             # Too many warnings for now
-  nw="$nw -Wsign-conversion"        # Too many warnings for now
-  nw="$nw -Wtraditional-conversion" # Too many warnings for now
-  nw="$nw -Wunreachable-code"       # Too many warnings for now
-  nw="$nw -Wpadded"                 # Our structs are not padded
-  nw="$nw -Wredundant-decls"        # openat.h declares e.g., mkdirat
-  nw="$nw -Wformat-nonliteral"      # who.c and pinky.c strftime uses
-  nw="$nw -Wnested-externs"         # use of XARGMATCH/verify_function__
-  nw="$nw -Wswitch-enum"            # Too many warnings for now
-  nw="$nw -Wswitch-default"         # Too many warnings for now
-  nw="$nw -Wstack-protector"        # not worth working around
+  nw="$nw -Wstack-protector"        # not worth working around for pre GCC 15
   nw="$nw -Wformat-overflow=2"      # False alarms due to GCC bug 110333
   nw="$nw -Wformat-truncation=2"    # False alarm in ls.c, probably related
-  # things I might fix soon:
-  nw="$nw -Wfloat-equal"            # sort.c, seq.c
-  nw="$nw -Wmissing-format-attribute" # copy.c
-  nw="$nw -Wunsafe-loop-optimizations" # a few src/*.c
   nw="$nw -Winline"                 # system.h's readdir_ignoring_dot_and_dotdot
-  nw="$nw -Wvector-operation-performance" # warns about randperm.c
 
   # Suppress noreturn warnings with single binaries; otherwise
   # GCC complains about the renamed 'main' not being declared noreturn
@@ -226,20 +204,18 @@ if test $gl_gcc_warnings != no; then
 
   # Using -Wstrict-overflow is a pain, but the alternative is worse.
   # For an example, see the code that provoked this report:
-  # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=33498
+  # https://gcc.gnu.org/PR33498
   # Code like that still infloops with gcc-4.6.0 and -O2.  Scary indeed.
 
   gl_MANYWARN_ALL_GCC([ws])
+  AS_VAR_APPEND([ws], [' -Wswitch-enum'])
+  AS_VAR_APPEND([ws], [' -Wtrailing-whitespace'])
   gl_MANYWARN_COMPLEMENT([ws], [$ws], [$nw])
   for w in $ws; do
     gl_WARN_ADD([$w])
   done
   gl_WARN_ADD([-Wno-sign-compare])     # Too many warnings for now
-  gl_WARN_ADD([-Wno-unused-parameter]) # Too many warnings for now
   gl_WARN_ADD([-Wno-format-nonliteral])
-
-  gl_WARN_ADD([-fdiagnostics-show-option])
-  gl_WARN_ADD([-funit-at-a-time])
 
   AC_SUBST([WARN_CFLAGS])
 
@@ -250,7 +226,7 @@ if test $gl_gcc_warnings != no; then
    #if !defined _FORTIFY_SOURCE && defined __OPTIMIZE__ && __OPTIMIZE__
    # define _FORTIFY_SOURCE 2
    #endif
-  ])
+])
   AC_DEFINE([GNULIB_PORTCHECK], [1], [enable some gnulib portability checks])
 
   # We use a slightly smaller set of warning options for lib/.
@@ -258,31 +234,15 @@ if test $gl_gcc_warnings != no; then
   nw=$ew
   nw="$nw -Wduplicated-branches"    # Too many false alarms
   nw="$nw -Wformat-truncation=2"
-  nw="$nw -Wmissing-variable-declarations"
-  nw="$nw -Wstrict-overflow"
-  nw="$nw -Wuninitialized"
   nw="$nw -Wunused-macros"
-  nw="$nw -Wmissing-prototypes"
-  nw="$nw -Wold-style-definition"
-  # FIXME: it may be easy to remove this, since it affects only one file:
-  # the snprintf call at ftoastr.c:132.
-  nw="$nw -Wdouble-promotion"
-
-  # FIXME: remove this line when gcc improves
-  # FP in careadlinkat.c w/gcc 10.0.1 20200205
-  gl_WARN_ADD([-Wno-return-local-addr])
-
-  # FIXME: remove this line when gcc improves
-  # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=88443
-  gl_WARN_ADD([-Wno-stringop-overflow])
 
   gl_MANYWARN_COMPLEMENT([GNULIB_WARN_CFLAGS], [$WARN_CFLAGS], [$nw])
   AC_SUBST([GNULIB_WARN_CFLAGS])
 
   # For gnulib-tests, the set is slightly smaller still.
   nw=
-  nw="$nw -Wstrict-prototypes"
   # It's not worth being this picky about test programs.
+  nw="$nw -Wmissing-variable-declarations"
   nw="$nw -Wsuggest-attribute=cold"
   nw="$nw -Wsuggest-attribute=const"
   nw="$nw -Wsuggest-attribute=format"
@@ -367,8 +327,8 @@ AS_CASE([$LIB_CRYPTO],
     [# Check for dlopen and libcrypto dynamic linking in one program,
      # as there's little point to checking them separately.
      AC_CACHE_CHECK([for dlopen and whether libcrypto is linked dynamically],
-       [utils_cv_dlopen_libcrypto],
-       [utils_cv_dlopen_libcrypto=no
+       [utils_cv_libcrypto_soname],
+       [utils_cv_libcrypto_soname=no
         saved_LIBS=$LIBS
         LIBS="$LIBS $LIB_DL $LIB_CRYPTO"
         AC_LINK_IFELSE(
@@ -386,14 +346,14 @@ AS_CASE([$LIB_CRYPTO],
                               sed -n 's/.*\(libcrypto\.so\.[[.0-9]]*\).*/\1/p'`"
            AS_CASE([$LIBCRYPTO_SONAME],
              [*libcrypto*],
-               [utils_cv_dlopen_libcrypto=yes])])
+               [utils_cv_libcrypto_soname=$LIBCRYPTO_SONAME])])
         LIBS=$saved_LIBS])
-     AS_CASE([$utils_cv_dlopen_libcrypto],
-       [yes],
+     AS_CASE([$utils_cv_libcrypto_soname],
+       [*libcrypto*],
          [AC_DEFINE([DLOPEN_LIBCRYPTO], [1],
                     [Define to 1 if dlopen exists and libcrypto is
                      linked dynamically.])
-          AC_DEFINE_UNQUOTED([LIBCRYPTO_SONAME], ["$LIBCRYPTO_SONAME"],
+          AC_DEFINE_UNQUOTED([LIBCRYPTO_SONAME], ["$utils_cv_libcrypto_soname"],
                              [versioned libcrypto])
          ])])
 
@@ -407,8 +367,8 @@ if test $ac_cv_func_getattrat = yes; then
   AC_SUBST([LIB_NVPAIR])
 fi
 
-# glibc >= 2.28 and linux kernel >= 4.11
-AC_CHECK_FUNCS([statx])
+# glibc >= 2.28 and linux kernel >= 4.11, Android API level 30.
+gl_CHECK_FUNCS_ANDROID([statx], [[#include <sys/stat.h>]])
 
 # SCO-ODT-3.0 is reported to need -los to link programs using initgroups
 AC_CHECK_FUNCS([initgroups])
@@ -569,6 +529,16 @@ CFLAGS=$ac_save_CFLAGS
 LDFLAGS=$ac_save_LDFLAGS
 ac_c_werror_flag=$cu_save_c_werror_flag
 
+# Don't build chcon and runcon if only have gnulib stubs
+# Honor --without-selinux to force disable
+# and --with-selinux to force enable.
+if test "$with_selinux" != no &&
+   { test "$with_selinux" = yes ||
+     test "$ac_cv_header_selinux_selinux_h" = yes; }; then
+  gl_ADD_PROG([optional_bin_progs], [chcon])
+  gl_ADD_PROG([optional_bin_progs], [runcon])
+fi
+
 # Test compiler support for half precision floating point types (for od)
 AC_MSG_CHECKING([IEEE 16 bit floating point])
 AC_CACHE_VAL([utils_cv_ieee_16_bit_supported],[
@@ -727,10 +697,15 @@ AC_LINK_IFELSE(
     main (void)
     {
       __m512i a, b;
+      a = _mm512_set_epi8 (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                           0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                           0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                           0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
       a = _mm512_clmulepi64_epi128 (a, b, 0x00);
       a = _mm512_shuffle_epi8 (a, b);
-      return __builtin_cpu_supports ("avx512bw") &&
-        __builtin_cpu_supports ("avx512f");
+      return (__builtin_cpu_supports ("avx512bw")
+              && __builtin_cpu_supports ("avx512f")
+              && __builtin_cpu_supports ("vpclmulqdq"));
     }
   ]])
   ],[
@@ -777,6 +752,37 @@ AM_CONDITIONAL([USE_AVX2_WC_LINECOUNT],
 
 CFLAGS=$ac_save_CFLAGS
 
+CFLAGS="-mavx512bw -mavx512f $CFLAGS"
+AC_MSG_CHECKING([for avx512 intrinsics])
+AC_CACHE_VAL([utils_cv_avx512_intrinsic_exists],[
+AC_LINK_IFELSE(
+  [AC_LANG_SOURCE([[
+    #include <x86intrin.h>
+
+    int
+    main (void)
+    {
+      __m512i matches = _mm512_setzero_si512 ();
+      long long mask = _mm512_movepi8_mask (matches);
+      int lines = __builtin_popcountll (mask);
+      return (__builtin_cpu_supports ("avx512bw")
+              && __builtin_cpu_supports ("avx512f"));
+    }
+  ]])
+  ],[
+    utils_cv_avx512_intrinsic_exists=yes
+  ],[
+    utils_cv_avx512_intrinsic_exists=no
+  ])])
+AC_MSG_RESULT([$utils_cv_avx512_intrinsic_exists])
+if test $utils_cv_avx512_intrinsic_exists = yes; then
+  AC_DEFINE([USE_AVX512_WC_LINECOUNT], [1],
+            [Counting lines with AVX512 enabled])
+fi
+AM_CONDITIONAL([USE_AVX512_WC_LINECOUNT],
+               [test $utils_cv_avx512_intrinsic_exists = yes])
+
+CFLAGS=$ac_save_CFLAGS
 ############################################################################
 
 dnl Autogenerated by the 'gen-lists-of-programs.sh' auxiliary script.
@@ -880,13 +886,13 @@ AC_SUBST([EXTRA_MANS])          AM_SUBST_NOTMAKE([EXTRA_MANS])
 AC_SUBST([built_programs], [$optional_bin_progs])
 
 AM_CONDITIONAL([CROSS_COMPILING], [test "$cross_compiling" = yes])
-
 ############################################################################
 
 # As long as "grep 'PRI[diouxX]' po/*.pot" reports matches in
 # translatable strings, we must use need-formatstring-macros here.
 AM_GNU_GETTEXT([external], [need-formatstring-macros])
 AM_GNU_GETTEXT_VERSION([0.19.2])
+AM_CONDITIONAL([USE_NLS], [test "$USE_NLS" = yes])
 
 # For a test of uniq: it uses the $LOCALE_FR envvar.
 gt_LOCALE_FR

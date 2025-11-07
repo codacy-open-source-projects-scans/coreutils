@@ -1,5 +1,5 @@
 /* GNU's pinky.
-   Copyright (C) 1992-2024 Free Software Foundation, Inc.
+   Copyright (C) 1992-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -179,7 +179,7 @@ idle_string (time_t when)
 
 /* Return a time string.  */
 static char const *
-time_string (struct gl_utmp const *utmp_ent)
+time_string (STRUCT_UTMP const *utmp_ent)
 {
   static char buf[INT_STRLEN_BOUND (intmax_t) + sizeof "-%m-%d %H:%M"];
   struct tm *tmp = localtime (&utmp_ent->ut_ts.tv_sec);
@@ -196,7 +196,7 @@ time_string (struct gl_utmp const *utmp_ent)
 /* Display a line of information about UTMP_ENT. */
 
 static void
-print_entry (struct gl_utmp const *utmp_ent)
+print_entry (STRUCT_UTMP const *utmp_ent)
 {
   struct stat stats;
   time_t last_change;
@@ -428,7 +428,7 @@ print_heading (void)
 /* Display UTMP_BUF, which should have N entries. */
 
 static void
-scan_entries (idx_t n, struct gl_utmp const *utmp_buf,
+scan_entries (idx_t n, STRUCT_UTMP const *utmp_buf,
               const int argc_names, char *const argv_names[])
 {
   if (hard_locale (LC_TIME))
@@ -452,7 +452,7 @@ scan_entries (idx_t n, struct gl_utmp const *utmp_buf,
           if (argc_names)
             {
               for (int i = 0; i < argc_names; i++)
-                if (STREQ (utmp_buf->ut_user, argv_names[i]))
+                if (streq (utmp_buf->ut_user, argv_names[i]))
                   {
                     print_entry (utmp_buf);
                     break;
@@ -472,7 +472,7 @@ short_pinky (char const *filename,
              const int argc_names, char *const argv_names[])
 {
   idx_t n_users;
-  struct gl_utmp *utmp_buf;
+  STRUCT_UTMP *utmp_buf;
   if (read_utmp (filename, &n_users, &utmp_buf, READ_UTMP_USER_PROCESS) != 0)
     error (EXIT_FAILURE, errno, "%s", quotef (filename));
 

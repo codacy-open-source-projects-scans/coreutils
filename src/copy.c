@@ -1,5 +1,5 @@
 /* copy.c -- core functions for copying files and directories
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -31,24 +31,20 @@
 
 #include "system.h"
 #include "acl.h"
-#include "alignalloc.h"
 #include "assure.h"
 #include "backupfile.h"
-#include "buffer-lcm.h"
 #include "canonicalize.h"
 #include "copy.h"
 #include "cp-hash.h"
-#include "fadvise.h"
 #include "fcntl--.h"
 #include "file-set.h"
 #include "filemode.h"
 #include "filenamecat.h"
 #include "force-link.h"
-#include "full-write.h"
 #include "hash.h"
-#include "hash-triple.h"
+#include "hashcode-file.h"
 #include "ignore-value.h"
-#include "ioblksize.h"
+#include "issymlink.h"
 #include "quote.h"
 #include "renameatu.h"
 #include "root-uid.h"
@@ -109,8 +105,8 @@
 struct dir_list
 {
   struct dir_list *parent;
-  ino_t ino;
-  dev_t dev;
+  ino_t st_ino;
+  dev_t st_dev;
 };
 
 /* Initial size of the cp.dest_info hash table.  */
@@ -132,24 +128,8 @@ static bool owner_failure_ok (struct cp_options const *x);
 static char const *top_level_src_name;
 static char const *top_level_dst_name;
 
-enum copy_debug_val
-  {
-   COPY_DEBUG_UNKNOWN,
-   COPY_DEBUG_NO,
-   COPY_DEBUG_YES,
-   COPY_DEBUG_EXTERNAL,
-   COPY_DEBUG_EXTERNAL_INTERNAL,
-   COPY_DEBUG_AVOIDED,
-   COPY_DEBUG_UNSUPPORTED,
-  };
-
 /* debug info about the last file copy.  */
-static struct copy_debug
-{
-  enum copy_debug_val offload;
-  enum copy_debug_val reflink;
-  enum copy_debug_val sparse_detection;
-} copy_debug;
+static struct copy_debug copy_debug;
 
 static const char*
 copy_debug_string (enum copy_debug_val debug_val)
@@ -160,7 +140,11 @@ copy_debug_string (enum copy_debug_val debug_val)
     case COPY_DEBUG_YES: return "yes";
     case COPY_DEBUG_AVOIDED: return "avoided";
     case COPY_DEBUG_UNSUPPORTED: return "unsupported";
-    default: return "unknown";
+    case COPY_DEBUG_UNKNOWN: return "unknown";
+
+    case COPY_DEBUG_EXTERNAL:
+    case COPY_DEBUG_EXTERNAL_INTERNAL:
+    default: unreachable ();
     }
 }
 
@@ -173,7 +157,11 @@ copy_debug_sparse_string (enum copy_debug_val debug_val)
     case COPY_DEBUG_YES: return "zeros";
     case COPY_DEBUG_EXTERNAL: return "SEEK_HOLE";
     case COPY_DEBUG_EXTERNAL_INTERNAL: return "SEEK_HOLE + zeros";
-    default: return "unknown";
+    case COPY_DEBUG_UNKNOWN: return "unknown";
+
+    case COPY_DEBUG_AVOIDED:
+    case COPY_DEBUG_UNSUPPORTED:
+    default: unreachable ();
     }
 }
 
@@ -224,54 +212,6 @@ follow_fstatat (int dirfd, char const *filename, struct stat *st, int flags)
   return result;
 }
 
-/* Attempt to punch a hole to avoid any permanent
-   speculative preallocation on file systems such as XFS.
-   Return values as per fallocate(2) except ENOSYS etc. are ignored.  */
-
-static int
-punch_hole (int fd, off_t offset, off_t length)
-{
-  int ret = 0;
-/* +0 is to work around older <linux/fs.h> defining HAVE_FALLOCATE to empty.  */
-#if HAVE_FALLOCATE + 0
-# if defined FALLOC_FL_PUNCH_HOLE && defined FALLOC_FL_KEEP_SIZE
-  ret = fallocate (fd, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE,
-                   offset, length);
-  if (ret < 0 && (is_ENOTSUP (errno) || errno == ENOSYS))
-    ret = 0;
-# endif
-#endif
-  return ret;
-}
-
-/* Create a hole at the end of a file,
-   avoiding preallocation if requested.  */
-
-static bool
-create_hole (int fd, char const *name, bool punch_holes, off_t size)
-{
-  off_t file_end = lseek (fd, size, SEEK_CUR);
-
-  if (file_end < 0)
-    {
-      error (0, errno, _("cannot lseek %s"), quoteaf (name));
-      return false;
-    }
-
-  /* Some file systems (like XFS) preallocate when write extending a file.
-     I.e., a previous write() may have preallocated extra space
-     that the seek above will not discard.  A subsequent write() could
-     then make this allocation permanent.  */
-  if (punch_holes && punch_hole (fd, file_end - size, size) < 0)
-    {
-      error (0, errno, _("error deallocating %s"), quoteaf (name));
-      return false;
-    }
-
-  return true;
-}
-
-
 /* Whether an errno value ERR, set by FICLONE or copy_file_range,
    indicates that the copying operation has terminally failed, even
    though it was invoked correctly (so that, e.g, EBADF cannot occur)
@@ -281,202 +221,6 @@ static bool
 is_terminal_error (int err)
 {
   return err == EIO || err == ENOMEM || err == ENOSPC || err == EDQUOT;
-}
-
-/* Similarly, whether ERR indicates that the copying operation is not
-   supported or allowed for this file or process, even though the
-   operation was invoked correctly.  */
-
-static bool
-is_CLONENOTSUP (int err)
-{
-  return err == ENOSYS || err == ENOTTY || is_ENOTSUP (err)
-         || err == EINVAL || err == EBADF
-         || err == EXDEV || err == ETXTBSY
-         || err == EPERM || err == EACCES;
-}
-
-
-/* Copy the regular file open on SRC_FD/SRC_NAME to DST_FD/DST_NAME,
-   honoring the MAKE_HOLES setting and using the BUF_SIZE-byte buffer
-   *ABUF for temporary storage, allocating it lazily if *ABUF is null.
-   Copy no more than MAX_N_READ bytes.
-   Return true upon successful completion;
-   print a diagnostic and return false upon error.
-   Note that for best results, BUF should be "well"-aligned.
-   Set *LAST_WRITE_MADE_HOLE to true if the final operation on
-   DEST_FD introduced a hole.  Set *TOTAL_N_READ to the number of
-   bytes read.  */
-static bool
-sparse_copy (int src_fd, int dest_fd, char **abuf, size_t buf_size,
-             size_t hole_size, bool punch_holes, bool allow_reflink,
-             char const *src_name, char const *dst_name,
-             uintmax_t max_n_read, off_t *total_n_read,
-             bool *last_write_made_hole)
-{
-  *last_write_made_hole = false;
-  *total_n_read = 0;
-
-  if (copy_debug.sparse_detection == COPY_DEBUG_UNKNOWN)
-    copy_debug.sparse_detection = hole_size ? COPY_DEBUG_YES : COPY_DEBUG_NO;
-  else if (hole_size && copy_debug.sparse_detection == COPY_DEBUG_EXTERNAL)
-    copy_debug.sparse_detection = COPY_DEBUG_EXTERNAL_INTERNAL;
-
-  /* If not looking for holes, use copy_file_range if functional,
-     but don't use if reflink disallowed as that may be implicit.  */
-  if (!hole_size && allow_reflink)
-    while (max_n_read)
-      {
-        /* Copy at most COPY_MAX bytes at a time; this is min
-           (SSIZE_MAX, SIZE_MAX) truncated to a value that is
-           surely aligned well.  */
-        ssize_t copy_max = MIN (SSIZE_MAX, SIZE_MAX) >> 30 << 30;
-        ssize_t n_copied = copy_file_range (src_fd, nullptr, dest_fd, nullptr,
-                                            MIN (max_n_read, copy_max), 0);
-        if (n_copied == 0)
-          {
-            /* copy_file_range incorrectly returns 0 when reading from
-               the proc file system on the Linux kernel through at
-               least 5.6.19 (2020), so fall back on 'read' if the
-               input file seems empty.  */
-            if (*total_n_read == 0)
-              break;
-            copy_debug.offload = COPY_DEBUG_YES;
-            return true;
-          }
-        if (n_copied < 0)
-          {
-            copy_debug.offload = COPY_DEBUG_UNSUPPORTED;
-
-            /* Consider operation unsupported only if no data copied.
-               For example, EPERM could occur if copy_file_range not enabled
-               in seccomp filters, so retry with a standard copy.  EPERM can
-               also occur for immutable files, but that would only be in the
-               edge case where the file is made immutable after creating,
-               in which case the (more accurate) error is still shown.  */
-            if (*total_n_read == 0 && is_CLONENOTSUP (errno))
-              break;
-
-            /* ENOENT was seen sometimes across CIFS shares, resulting in
-               no data being copied, but subsequent standard copies succeed.  */
-            if (*total_n_read == 0 && errno == ENOENT)
-              break;
-
-            if (errno == EINTR)
-              n_copied = 0;
-            else
-              {
-                error (0, errno, _("error copying %s to %s"),
-                       quoteaf_n (0, src_name), quoteaf_n (1, dst_name));
-                return false;
-              }
-          }
-        copy_debug.offload = COPY_DEBUG_YES;
-        max_n_read -= n_copied;
-        *total_n_read += n_copied;
-      }
-  else
-    copy_debug.offload = COPY_DEBUG_AVOIDED;
-
-
-  bool make_hole = false;
-  off_t psize = 0;
-
-  while (max_n_read)
-    {
-      if (!*abuf)
-        *abuf = xalignalloc (getpagesize (), buf_size);
-      char *buf = *abuf;
-      ssize_t n_read = read (src_fd, buf, MIN (max_n_read, buf_size));
-      if (n_read < 0)
-        {
-          if (errno == EINTR)
-            continue;
-          error (0, errno, _("error reading %s"), quoteaf (src_name));
-          return false;
-        }
-      if (n_read == 0)
-        break;
-      max_n_read -= n_read;
-      *total_n_read += n_read;
-
-      /* Loop over the input buffer in chunks of hole_size.  */
-      size_t csize = hole_size ? hole_size : buf_size;
-      char *cbuf = buf;
-      char *pbuf = buf;
-
-      while (n_read)
-        {
-          bool prev_hole = make_hole;
-          csize = MIN (csize, n_read);
-
-          if (hole_size && csize)
-            make_hole = is_nul (cbuf, csize);
-
-          bool transition = (make_hole != prev_hole) && psize;
-          bool last_chunk = (n_read == csize && ! make_hole) || ! csize;
-
-          if (transition || last_chunk)
-            {
-              if (! transition)
-                psize += csize;
-
-              if (! prev_hole)
-                {
-                  if (full_write (dest_fd, pbuf, psize) != psize)
-                    {
-                      error (0, errno, _("error writing %s"),
-                             quoteaf (dst_name));
-                      return false;
-                    }
-                }
-              else
-                {
-                  if (! create_hole (dest_fd, dst_name, punch_holes, psize))
-                    return false;
-                }
-
-              pbuf = cbuf;
-              psize = csize;
-
-              if (last_chunk)
-                {
-                  if (! csize)
-                    n_read = 0; /* Finished processing buffer.  */
-
-                  if (transition)
-                    csize = 0;  /* Loop again to deal with last chunk.  */
-                  else
-                    psize = 0;  /* Reset for next read loop.  */
-                }
-            }
-          else  /* Coalesce writes/seeks.  */
-            {
-              if (ckd_add (&psize, psize, csize))
-                {
-                  error (0, 0, _("overflow reading %s"), quoteaf (src_name));
-                  return false;
-                }
-            }
-
-          n_read -= csize;
-          cbuf += csize;
-        }
-
-      *last_write_made_hole = make_hole;
-
-      /* It's tempting to break early here upon a short read from
-         a regular file.  That would save the final read syscall
-         for each file.  Unfortunately that doesn't work for
-         certain files in /proc or /sys with linux kernels.  */
-    }
-
-  /* Ensure a trailing hole is created, so that subsequent
-     calls of sparse_copy() start at the correct offset.  */
-  if (make_hole && ! create_hole (dest_fd, dst_name, punch_holes, psize))
-    return false;
-  else
-    return true;
 }
 
 /* Perform the O(1) btrfs clone operation, if possible.
@@ -494,183 +238,6 @@ clone_file (int dest_fd, int src_fd)
 #endif
 }
 
-/* Write N_BYTES zero bytes to file descriptor FD.  Return true if successful.
-   Upon write failure, set errno and return false.  */
-static bool
-write_zeros (int fd, off_t n_bytes)
-{
-  static char *zeros;
-  static size_t nz = IO_BUFSIZE;
-
-  /* Attempt to use a relatively large calloc'd source buffer for
-     efficiency, but if that allocation fails, resort to a smaller
-     statically allocated one.  */
-  if (zeros == nullptr)
-    {
-      static char fallback[1024];
-      zeros = calloc (nz, 1);
-      if (zeros == nullptr)
-        {
-          zeros = fallback;
-          nz = sizeof fallback;
-        }
-    }
-
-  while (n_bytes)
-    {
-      size_t n = MIN (nz, n_bytes);
-      if ((full_write (fd, zeros, n)) != n)
-        return false;
-      n_bytes -= n;
-    }
-
-  return true;
-}
-
-#ifdef SEEK_HOLE
-/* Perform an efficient extent copy, if possible.  This avoids
-   the overhead of detecting holes in hole-introducing/preserving
-   copy, and thus makes copying sparse files much more efficient.
-   Copy from SRC_FD to DEST_FD, using *ABUF (of size BUF_SIZE) for a buffer.
-   Allocate *ABUF lazily if *ABUF is null.
-   Look for holes of size HOLE_SIZE in the input.
-   The input file is of size SRC_TOTAL_SIZE.
-   Use SPARSE_MODE to determine whether to create holes in the output.
-   SRC_NAME and DST_NAME are the input and output file names.
-   Return true if successful, false (with a diagnostic) otherwise.  */
-
-static bool
-lseek_copy (int src_fd, int dest_fd, char **abuf, size_t buf_size,
-            size_t hole_size, off_t ext_start, off_t src_total_size,
-            enum Sparse_type sparse_mode,
-            bool allow_reflink,
-            char const *src_name, char const *dst_name)
-{
-  off_t last_ext_start = 0;
-  off_t last_ext_len = 0;
-  off_t dest_pos = 0;
-  bool wrote_hole_at_eof = true;
-
-  copy_debug.sparse_detection = COPY_DEBUG_EXTERNAL;
-
-  while (0 <= ext_start)
-    {
-      off_t ext_end = lseek (src_fd, ext_start, SEEK_HOLE);
-      if (ext_end < 0)
-        {
-          if (errno != ENXIO)
-            goto cannot_lseek;
-          ext_end = src_total_size;
-          if (ext_end <= ext_start)
-            {
-              /* The input file grew; get its current size.  */
-              src_total_size = lseek (src_fd, 0, SEEK_END);
-              if (src_total_size < 0)
-                goto cannot_lseek;
-
-              /* If the input file shrank after growing, stop copying.  */
-              if (src_total_size <= ext_start)
-                break;
-
-              ext_end = src_total_size;
-            }
-        }
-      /* If the input file must have grown, increase its measured size.  */
-      if (src_total_size < ext_end)
-        src_total_size = ext_end;
-
-      if (lseek (src_fd, ext_start, SEEK_SET) < 0)
-        goto cannot_lseek;
-
-      wrote_hole_at_eof = false;
-      off_t ext_hole_size = ext_start - last_ext_start - last_ext_len;
-
-      if (ext_hole_size)
-        {
-          if (sparse_mode != SPARSE_NEVER)
-            {
-              if (! create_hole (dest_fd, dst_name,
-                                 sparse_mode == SPARSE_ALWAYS,
-                                 ext_hole_size))
-                return false;
-              wrote_hole_at_eof = true;
-            }
-          else
-            {
-              /* When not inducing holes and when there is a hole between
-                 the end of the previous extent and the beginning of the
-                 current one, write zeros to the destination file.  */
-              if (! write_zeros (dest_fd, ext_hole_size))
-                {
-                  error (0, errno, _("%s: write failed"),
-                         quotef (dst_name));
-                  return false;
-                }
-            }
-        }
-
-      off_t ext_len = ext_end - ext_start;
-      last_ext_start = ext_start;
-      last_ext_len = ext_len;
-
-      /* Copy this extent, looking for further opportunities to not
-         bother to write zeros if --sparse=always, since SEEK_HOLE
-         is conservative and may miss some holes.  */
-      off_t n_read;
-      bool read_hole;
-      if ( ! sparse_copy (src_fd, dest_fd, abuf, buf_size,
-                          sparse_mode != SPARSE_ALWAYS ? 0 : hole_size,
-                          true, allow_reflink, src_name, dst_name,
-                          ext_len, &n_read, &read_hole))
-        return false;
-
-      dest_pos = ext_start + n_read;
-      if (n_read)
-        wrote_hole_at_eof = read_hole;
-      if (n_read < ext_len)
-        {
-          /* The input file shrank.  */
-          src_total_size = dest_pos;
-          break;
-        }
-
-      ext_start = lseek (src_fd, dest_pos, SEEK_DATA);
-      if (ext_start < 0 && errno != ENXIO)
-        goto cannot_lseek;
-    }
-
-  /* When the source file ends with a hole, we have to do a little more work,
-     since the above copied only up to and including the final extent.
-     In order to complete the copy, we may have to insert a hole or write
-     zeros in the destination corresponding to the source file's hole-at-EOF.
-
-     In addition, if the final extent was a block of zeros at EOF and we've
-     just converted them to a hole in the destination, we must call ftruncate
-     here in order to record the proper length in the destination.  */
-  if ((dest_pos < src_total_size || wrote_hole_at_eof)
-      && ! (sparse_mode == SPARSE_NEVER
-            ? write_zeros (dest_fd, src_total_size - dest_pos)
-            : ftruncate (dest_fd, src_total_size) == 0))
-    {
-      error (0, errno, _("failed to extend %s"), quoteaf (dst_name));
-      return false;
-    }
-
-  if (sparse_mode == SPARSE_ALWAYS && dest_pos < src_total_size
-      && punch_hole (dest_fd, dest_pos, src_total_size - dest_pos) < 0)
-    {
-      error (0, errno, _("error deallocating %s"), quoteaf (dst_name));
-      return false;
-    }
-
-  return true;
-
- cannot_lseek:
-  error (0, errno, _("cannot lseek %s"), quoteaf (src_name));
-  return false;
-}
-#endif
-
 /* FIXME: describe */
 /* FIXME: rewrite this to use a hash table so we avoid the quadratic
    performance hit that's probably noticeable only on trees deeper
@@ -682,7 +249,7 @@ is_ancestor (const struct stat *sb, const struct dir_list *ancestors)
 {
   while (ancestors != 0)
     {
-      if (ancestors->ino == sb->st_ino && ancestors->dev == sb->st_dev)
+      if (PSAME_INODE (ancestors, sb))
         return true;
       ancestors = ancestors->parent;
     }
@@ -1091,64 +658,6 @@ set_file_security_ctx (char const *dst_name,
   return true;
 }
 
-#ifndef HAVE_STRUCT_STAT_ST_BLOCKS
-# define HAVE_STRUCT_STAT_ST_BLOCKS 0
-#endif
-
-/* Type of scan being done on the input when looking for sparseness.  */
-enum scantype
-  {
-   /* An error was found when determining scantype.  */
-   ERROR_SCANTYPE,
-
-   /* No fancy scanning; just read and write.  */
-   PLAIN_SCANTYPE,
-
-   /* Read and examine data looking for zero blocks; useful when
-      attempting to create sparse output.  */
-   ZERO_SCANTYPE,
-
-   /* lseek information is available.  */
-   LSEEK_SCANTYPE,
-  };
-
-/* Result of infer_scantype.  */
-union scan_inference
-{
-  /* Used if infer_scantype returns LSEEK_SCANTYPE.  This is the
-     offset of the first data block, or -1 if the file has no data.  */
-  off_t ext_start;
-};
-
-/* Return how to scan a file with descriptor FD and stat buffer SB.
-   *SCAN_INFERENCE is set to a valid value if returning LSEEK_SCANTYPE.  */
-static enum scantype
-infer_scantype (int fd, struct stat const *sb,
-                union scan_inference *scan_inference)
-{
-  scan_inference->ext_start = -1;  /* avoid -Wmaybe-uninitialized */
-
-  /* Only attempt SEEK_HOLE if this heuristic
-     suggests the file is sparse.  */
-  if (! (HAVE_STRUCT_STAT_ST_BLOCKS
-         && S_ISREG (sb->st_mode)
-         && STP_NBLOCKS (sb) < sb->st_size / ST_NBLOCKSIZE))
-    return PLAIN_SCANTYPE;
-
-#ifdef SEEK_HOLE
-  off_t ext_start = lseek (fd, 0, SEEK_DATA);
-  if (0 <= ext_start || errno == ENXIO)
-    {
-      scan_inference->ext_start = ext_start;
-      return LSEEK_SCANTYPE;
-    }
-  else if (errno != EINVAL && !is_ENOTSUP (errno))
-    return ERROR_SCANTYPE;
-#endif
-
-  return ZERO_SCANTYPE;
-}
-
 #if HAVE_FCLONEFILEAT && !USE_XATTR
 # include <sys/acl.h>
 /* Return true if FD has a nontrivial ACL.  */
@@ -1205,7 +714,6 @@ handle_clone_fail (int dst_dirfd, char const *dst_relname,
   return true;
 }
 
-
 /* Copy a regular file from SRC_NAME to DST_NAME aka DST_DIRFD+DST_RELNAME.
    If the source file contains holes, copies holes and blocks of zeros
    in the source file as holes in the destination file.
@@ -1229,14 +737,12 @@ copy_reg (char const *src_name, char const *dst_name,
           mode_t dst_mode, mode_t omitted_permissions, bool *new_dst,
           struct stat *src_sb)
 {
-  char *buf = nullptr;
   int dest_desc;
   int dest_errno;
   int source_desc;
   mode_t extra_permissions;
   struct stat sb;
   struct stat src_open_sb;
-  union scan_inference scan_inference;
   bool return_val = true;
   bool data_copy_required = x->data_copy_required;
   bool preserve_xattr = USE_XATTR & x->preserve_xattr;
@@ -1454,7 +960,7 @@ copy_reg (char const *src_name, char const *dst_name,
 
       /* When trying to copy through a dangling destination symlink,
          the above open fails with EEXIST.  If that happens, and
-         readlinkat shows that it is a symlink, then we
+         issymlinkat shows that it is a symlink, then we
          have a problem: trying to resolve this dangling symlink to
          a directory/destination-entry pair is fundamentally racy,
          so punt.  If x->open_dangling_dest_symlink is set (cp sets
@@ -1464,8 +970,7 @@ copy_reg (char const *src_name, char const *dst_name,
          only when copying, i.e., not in move_mode.  */
       if (dest_desc < 0 && dest_errno == EEXIST && ! x->move_mode)
         {
-          char dummy[1];
-          if (0 <= readlinkat (dst_dirfd, dst_relname, dummy, sizeof dummy))
+          if (issymlinkat (dst_dirfd, dst_relname) == 1)
             {
               if (x->open_dangling_dest_symlink)
                 {
@@ -1539,83 +1044,14 @@ copy_reg (char const *src_name, char const *dst_name,
           != 0))
     extra_permissions = 0;
 
-  if (data_copy_required)
+  if (data_copy_required
+      && (copy_file_data (source_desc, &src_open_sb, 0, src_name,
+                          dest_desc, &sb, 0, dst_name,
+                          COUNT_MAX, x, &copy_debug)
+          < 0))
     {
-      /* Choose a suitable buffer size; it may be adjusted later.  */
-      size_t buf_size = io_blksize (&sb);
-      size_t hole_size = STP_BLKSIZE (&sb);
-
-      /* Deal with sparse files.  */
-      enum scantype scantype = infer_scantype (source_desc, &src_open_sb,
-                                               &scan_inference);
-      if (scantype == ERROR_SCANTYPE)
-        {
-          error (0, errno, _("cannot lseek %s"), quoteaf (src_name));
-          return_val = false;
-          goto close_src_and_dst_desc;
-        }
-      bool make_holes
-        = (S_ISREG (sb.st_mode)
-           && (x->sparse_mode == SPARSE_ALWAYS
-               || (x->sparse_mode == SPARSE_AUTO
-                   && scantype != PLAIN_SCANTYPE)));
-
-      fdadvise (source_desc, 0, 0, FADVISE_SEQUENTIAL);
-
-      /* If not making a sparse file, try to use a more-efficient
-         buffer size.  */
-      if (! make_holes)
-        {
-          /* Compute the least common multiple of the input and output
-             buffer sizes, adjusting for outlandish values.
-             Note we read in multiples of the reported block size
-             to support (unusual) devices that have this constraint.  */
-          size_t blcm_max = MIN (SIZE_MAX, SSIZE_MAX);
-          size_t blcm = buffer_lcm (io_blksize (&src_open_sb), buf_size,
-                                    blcm_max);
-
-          /* Do not bother with a buffer larger than the input file, plus one
-             byte to make sure the file has not grown while reading it.  */
-          if (S_ISREG (src_open_sb.st_mode) && src_open_sb.st_size < buf_size)
-            buf_size = src_open_sb.st_size + 1;
-
-          /* However, stick with a block size that is a positive multiple of
-             blcm, overriding the above adjustments.  Watch out for
-             overflow.  */
-          buf_size += blcm - 1;
-          buf_size -= buf_size % blcm;
-          if (buf_size == 0 || blcm_max < buf_size)
-            buf_size = blcm;
-        }
-
-      off_t n_read;
-      bool wrote_hole_at_eof = false;
-      if (! (
-#ifdef SEEK_HOLE
-             scantype == LSEEK_SCANTYPE
-             ? lseek_copy (source_desc, dest_desc, &buf, buf_size, hole_size,
-                           scan_inference.ext_start, src_open_sb.st_size,
-                           make_holes ? x->sparse_mode : SPARSE_NEVER,
-                           x->reflink_mode != REFLINK_NEVER,
-                           src_name, dst_name)
-             :
-#endif
-               sparse_copy (source_desc, dest_desc, &buf, buf_size,
-                            make_holes ? hole_size : 0,
-                            x->sparse_mode == SPARSE_ALWAYS,
-                            x->reflink_mode != REFLINK_NEVER,
-                            src_name, dst_name, UINTMAX_MAX, &n_read,
-                            &wrote_hole_at_eof)))
-        {
-          return_val = false;
-          goto close_src_and_dst_desc;
-        }
-      else if (wrote_hole_at_eof && ftruncate (dest_desc, n_read) < 0)
-        {
-          error (0, errno, _("failed to extend %s"), quoteaf (dst_name));
-          return_val = false;
-          goto close_src_and_dst_desc;
-        }
+      return_val = false;
+      goto close_src_and_dst_desc;
     }
 
   if (x->preserve_timestamps)
@@ -1715,7 +1151,6 @@ close_src_desc:
   if (x->debug)
     emit_debug (x);
 
-  alignfree (buf);
   return return_val;
 }
 
@@ -2060,8 +1495,8 @@ abandon_move (const struct cp_options *x,
               struct stat const *dst_sb)
 {
   affirm (x->move_mode);
-  return (x->interactive == I_ALWAYS_NO
-          || x->interactive == I_ALWAYS_SKIP
+  return (x->update == UPDATE_NONE
+          || x->update == UPDATE_NONE_FAIL
           || ((x->interactive == I_ASK_USER
                || (x->interactive == I_UNSPECIFIED
                    && x->stdin_tty
@@ -2162,8 +1597,8 @@ source_is_dst_backup (char const *srcbase, struct stat const *src_st,
   size_t dstbaselen = strlen (dstbase);
   size_t suffixlen = strlen (simple_backup_suffix);
   if (! (srcbaselen == dstbaselen + suffixlen
-         && memcmp (srcbase, dstbase, dstbaselen) == 0
-         && STREQ (srcbase + dstbaselen, simple_backup_suffix)))
+         && memeq (srcbase, dstbase, dstbaselen)
+         && streq (srcbase + dstbaselen, simple_backup_suffix)))
     return false;
   char *dst_back = subst_suffix (dst_relname,
                                  dst_relname + strlen (dst_relname),
@@ -2231,7 +1666,7 @@ copy_internal (char const *src_name, char const *dst_name,
   if (rename_errno == 0
       ? !x->last_file
       : rename_errno != EEXIST
-        || (x->interactive != I_ALWAYS_NO && x->interactive != I_ALWAYS_SKIP))
+        || (x->update != UPDATE_NONE && x->update != UPDATE_NONE_FAIL))
     {
       char const *name = rename_errno == 0 ? dst_name : src_name;
       int dirfd = rename_errno == 0 ? dst_dirfd : AT_FDCWD;
@@ -2293,14 +1728,12 @@ copy_internal (char const *src_name, char const *dst_name,
     {
       /* Normally, fill in DST_SB or set NEW_DST so that later code
          can use DST_SB if NEW_DST is false.  However, don't bother
-         doing this when rename_errno == EEXIST and X->interactive is
-         I_ALWAYS_NO or I_ALWAYS_SKIP, something that can happen only
-         with mv in which case x->update must be false which means
-         that even if !NEW_DST the move will be abandoned without
-         looking at DST_SB.  */
+         doing this when rename_errno == EEXIST and not updating,
+         which means that even if !NEW_DST the move will be abandoned
+         without looking at DST_SB.  */
       if (! (rename_errno == EEXIST
-             && (x->interactive == I_ALWAYS_NO
-                 || x->interactive == I_ALWAYS_SKIP)))
+             && (x->update == UPDATE_NONE
+                 || x->update == UPDATE_NONE_FAIL)))
         {
           /* Regular files can be created by writing through symbolic
              links, but other files cannot.  So use stat on the
@@ -2345,7 +1778,7 @@ copy_internal (char const *src_name, char const *dst_name,
           bool return_val = true;
           bool skipped = false;
 
-          if ((x->interactive != I_ALWAYS_NO && x->interactive != I_ALWAYS_SKIP)
+          if ((x->update != UPDATE_NONE && x->update != UPDATE_NONE_FAIL)
               && ! same_file_ok (src_name, &src_sb, dst_dirfd, drelname,
                                  &dst_sb, x, &return_now))
             {
@@ -2354,7 +1787,7 @@ copy_internal (char const *src_name, char const *dst_name,
               return false;
             }
 
-          if (x->update && !S_ISDIR (src_mode))
+          if (x->update == UPDATE_OLDER && !S_ISDIR (src_mode))
             {
               /* When preserving timestamps (but not moving within a file
                  system), don't worry if the destination timestamp is
@@ -2418,27 +1851,27 @@ copy_internal (char const *src_name, char const *dst_name,
                     *rename_succeeded = true;
 
                   skipped = true;
-                  return_val = x->interactive == I_ALWAYS_SKIP;
+                  return_val = x->update == UPDATE_NONE;
                 }
             }
           else
             {
               if (! S_ISDIR (src_mode)
-                  && (x->interactive == I_ALWAYS_NO
-                      || x->interactive == I_ALWAYS_SKIP
+                  && (x->update == UPDATE_NONE
+                      || x->update == UPDATE_NONE_FAIL
                       || (x->interactive == I_ASK_USER
                           && ! overwrite_ok (x, dst_name, dst_dirfd,
                                              dst_relname, &dst_sb))))
                 {
                   skipped = true;
-                  return_val = x->interactive == I_ALWAYS_SKIP;
+                  return_val = x->update == UPDATE_NONE;
                 }
             }
 
 skip:
           if (skipped)
             {
-              if (x->interactive == I_ALWAYS_NO)
+              if (x->update == UPDATE_NONE_FAIL)
                 error (0, 0, _("not replacing %s"), quoteaf (dst_name));
               else if (x->debug)
                 printf (_("skipped %s\n"), quoteaf (dst_name));
@@ -2897,8 +2330,8 @@ skip:
 
       dir = alloca (sizeof *dir);
       dir->parent = ancestors;
-      dir->ino = src_sb.st_ino;
-      dir->dev = src_sb.st_dev;
+      dir->st_ino = src_sb.st_ino;
+      dir->st_dev = src_sb.st_dev;
 
       if (new_dst || !S_ISDIR (dst_sb.st_mode))
         {
@@ -3002,7 +2435,7 @@ skip:
 
           dst_parent = dir_name (dst_relname);
 
-          in_current_dir = ((dst_dirfd == AT_FDCWD && STREQ (".", dst_parent))
+          in_current_dir = ((dst_dirfd == AT_FDCWD && streq (".", dst_parent))
                             /* If either stat call fails, it's ok not to report
                                the failure and say dst_name is in the current
                                directory.  Other things will fail later.  */
@@ -3110,7 +2543,8 @@ skip:
 
       int symlink_err = force_symlinkat (src_link_val, dst_dirfd, dst_relname,
                                          x->unlink_dest_after_failed_open, -1);
-      if (0 < symlink_err && x->update && !new_dst && S_ISLNK (dst_sb.st_mode)
+      if (0 < symlink_err && x->update == UPDATE_OLDER
+          && !new_dst && S_ISLNK (dst_sb.st_mode)
           && dst_sb.st_size == strlen (src_link_val))
         {
           /* See if the destination is already the desired symlink.
@@ -3121,7 +2555,7 @@ skip:
             areadlinkat_with_size (dst_dirfd, dst_relname, dst_sb.st_size);
           if (dest_link_val)
             {
-              if (STREQ (dest_link_val, src_link_val))
+              if (streq (dest_link_val, src_link_val))
                 symlink_err = 0;
               free (dest_link_val);
             }
@@ -3458,9 +2892,11 @@ owner_failure_ok (struct cp_options const *x)
 extern mode_t
 cached_umask (void)
 {
-  static mode_t mask = (mode_t) -1;
-  if (mask == (mode_t) -1)
+  static mode_t mask;
+  static bool cached;
+  if (!cached)
     {
+      cached = true;
       mask = umask (0);
       umask (mask);
     }

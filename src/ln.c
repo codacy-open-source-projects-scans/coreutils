@@ -1,5 +1,5 @@
 /* 'ln' program to create links between files.
-   Copyright (C) 1986-2024 Free Software Foundation, Inc.
+   Copyright (C) 1986-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,7 +28,7 @@
 #include "file-set.h"
 #include "force-link.h"
 #include "hash.h"
-#include "hash-triple.h"
+#include "hashcode-file.h"
 #include "priv-set.h"
 #include "relpath.h"
 #include "same.h"
@@ -369,18 +369,31 @@ do_link (char const *source, int destdir_fd, char const *dest_base,
     }
   else
     {
-      error (0, link_errno,
-             (symbolic_link
-              ? (link_errno != ENAMETOOLONG && *source
-                 ? _("failed to create symbolic link %s")
-                 : _("failed to create symbolic link %s -> %s"))
-              : (link_errno == EMLINK
-                 ? _("failed to create hard link to %.0s%s")
-                 : (link_errno == EDQUOT || link_errno == EEXIST
-                    || link_errno == ENOSPC || link_errno == EROFS)
-                 ? _("failed to create hard link %s")
-                 : _("failed to create hard link %s => %s"))),
-             quoteaf_n (0, dest), quoteaf_n (1, source));
+      char *dest_quoted = quoteaf_n (0, dest);
+      char *source_quoted = quoteaf_n (1, source);
+
+      if (symbolic_link)
+        {
+          if (link_errno != ENAMETOOLONG && *source)
+            error (0, link_errno, _("failed to create symbolic link %s"),
+                   dest_quoted);
+          else
+            error (0, link_errno, _("failed to create symbolic link %s -> %s"),
+                   dest_quoted, source_quoted);
+        }
+      else
+        {
+          if (link_errno == EMLINK)
+            error (0, link_errno, _("failed to create hard link to %s"),
+                   source_quoted);
+          else if (link_errno == EDQUOT || link_errno == EEXIST
+                   || link_errno == ENOSPC || link_errno == EROFS)
+            error (0, link_errno, _("failed to create hard link %s"),
+                   dest_quoted);
+          else
+            error (0, link_errno, _("failed to create hard link %s => %s"),
+                   dest_quoted, source_quoted);
+        }
 
       if (backup_base)
         {
@@ -611,25 +624,13 @@ main (int argc, char **argv)
           int flags = (O_PATHSEARCH | O_DIRECTORY
                        | (dereference_dest_dir_symlinks ? 0 : O_NOFOLLOW));
           destdir_fd = openat_safer (AT_FDCWD, d, flags);
-          int err = errno;
-          if (!O_DIRECTORY && 0 <= destdir_fd)
-            {
-              struct stat st;
-              err = (fstat (destdir_fd, &st) != 0 ? errno
-                     : S_ISDIR (st.st_mode) ? 0 : ENOTDIR);
-              if (err != 0)
-                {
-                  close (destdir_fd);
-                  destdir_fd = -1;
-                }
-            }
           if (0 <= destdir_fd)
             {
               n_files -= !target_directory;
               target_directory = d;
             }
           else if (! (n_files == 2 && !target_directory))
-            error (EXIT_FAILURE, err, _("target %s"), quoteaf (d));
+            error (EXIT_FAILURE, errno, _("target %s"), quoteaf (d));
         }
     }
 

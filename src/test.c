@@ -2,7 +2,7 @@
 
 /* Modified to run with the GNU shell by bfox. */
 
-/* Copyright (C) 1987-2024 Free Software Foundation, Inc.
+/* Copyright (C) 1987-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -40,6 +40,8 @@
 
 #include "system.h"
 #include "assure.h"
+#include "c-ctype.h"
+#include "issymlink.h"
 #include "quote.h"
 #include "stat-time.h"
 #include "strnumcmp.h"
@@ -52,6 +54,17 @@
 
 /* Exit status for syntax errors, etc.  */
 enum { TEST_TRUE, TEST_FALSE, TEST_FAILURE };
+
+/* Binary operators.  */
+enum binop
+  {
+    /* String comparisons, e.g., EQ_STRING_BINOP for = or ==.  */
+    EQ_STRING_BINOP, GT_STRING_BINOP, LT_STRING_BINOP, NE_STRING_BINOP,
+
+    /* Two-letter binary operators, e.g, EF_BINOP for -ef.  */
+    EQ_BINOP, GE_BINOP, GT_BINOP, LE_BINOP, LT_BINOP, NE_BINOP,
+    EF_BINOP, NT_BINOP, OT_BINOP
+  };
 
 #if defined TEST_STANDALONE
 # define test_exit(val) exit (val)
@@ -68,7 +81,7 @@ static int argc;	/* The number of arguments present in ARGV. */
 static char **argv;	/* The argument list. */
 
 static bool unary_operator (void);
-static bool binary_operator (bool);
+static bool binary_operator (bool, enum binop);
 static bool two_arguments (void);
 static bool three_arguments (void);
 static bool posixtest (int);
@@ -143,9 +156,9 @@ find_int (char const *string)
       p += (*p == '-');
     }
 
-  if (ISDIGIT (*p++))
+  if (c_isdigit (*p++))
     {
-      while (ISDIGIT (*p))
+      while (c_isdigit (*p))
         p++;
       while (isspace (to_uchar (*p)))
         p++;
@@ -156,27 +169,38 @@ find_int (char const *string)
   test_syntax_error (_("invalid integer %s"), quote (string));
 }
 
-/* Find the modification time of FILE, and stuff it into *MTIME.
-   Return true if successful.  */
-static bool
-get_mtime (char const *filename, struct timespec *mtime)
+/* Return the modification time of FILENAME.
+   If unsuccessful, return an invalid timestamp that is less
+   than all valid timestamps.  */
+static struct timespec
+get_mtime (char const *filename)
 {
   struct stat finfo;
-  bool ok = (stat (filename, &finfo) == 0);
-  if (ok)
-    *mtime = get_stat_mtime (&finfo);
-  return ok;
+  return (stat (filename, &finfo) < 0
+          ? make_timespec (TYPE_MINIMUM (time_t), -1)
+          : get_stat_mtime (&finfo));
 }
 
-/* Return true if S is one of the test command's binary operators.  */
-static bool
+/* Return the type of S, one of the test command's binary operators.
+   If S is not a binary operator, return -1.  */
+static int
 binop (char const *s)
 {
-  return ((STREQ (s,   "=")) || (STREQ (s,  "!=")) || (STREQ (s, "==")) ||
-          (STREQ (s,   "-nt")) || (STREQ (s, ">")) || (STREQ (s, "<")) ||
-          (STREQ (s, "-ot")) || (STREQ (s, "-ef")) || (STREQ (s, "-eq")) ||
-          (STREQ (s, "-ne")) || (STREQ (s, "-lt")) || (STREQ (s, "-le")) ||
-          (STREQ (s, "-gt")) || (STREQ (s, "-ge")));
+  return (  streq (s, "="  ) ? EQ_STRING_BINOP
+          : streq (s, "==" ) ? EQ_STRING_BINOP /* an alias for = */
+          : streq (s, "!=" ) ? NE_STRING_BINOP
+          : streq (s, ">"  ) ? GT_STRING_BINOP
+          : streq (s, "<"  ) ? LT_STRING_BINOP
+          : streq (s, "-eq") ? EQ_BINOP
+          : streq (s, "-ne") ? NE_BINOP
+          : streq (s, "-lt") ? LT_BINOP
+          : streq (s, "-le") ? LE_BINOP
+          : streq (s, "-gt") ? GT_BINOP
+          : streq (s, "-ge") ? GE_BINOP
+          : streq (s, "-ot") ? OT_BINOP
+          : streq (s, "-nt") ? NT_BINOP
+          : streq (s, "-ef") ? EF_BINOP
+          : -1);
 }
 
 /*
@@ -202,6 +226,7 @@ term (void)
 {
   bool value;
   bool negated = false;
+  int bop;
 
   /* Deal with leading 'not's.  */
   while (pos < argc && argv[pos][0] == '!' && argv[pos][1] == '\0')
@@ -221,7 +246,7 @@ term (void)
       advance (true);
 
       for (nargs = 1;
-           pos + nargs < argc && ! STREQ (argv[pos + nargs], ")");
+           pos + nargs < argc && ! streq (argv[pos + nargs], ")");
            nargs++)
         if (nargs == 4)
           {
@@ -240,10 +265,12 @@ term (void)
     }
 
   /* Are there enough arguments left that this could be dyadic?  */
-  else if (4 <= argc - pos && STREQ (argv[pos], "-l") && binop (argv[pos + 2]))
-    value = binary_operator (true);
-  else if (3 <= argc - pos && binop (argv[pos + 1]))
-    value = binary_operator (false);
+  else if (4 <= argc - pos && streq (argv[pos], "-l")
+           && 0 <= (bop = binop (argv[pos + 2])))
+    value = binary_operator (true, bop);
+  else if (3 <= argc - pos
+           && 0 <= (bop = binop (argv[pos + 1])))
+    value = binary_operator (false, bop);
 
   /* It might be a switch type argument.  */
   else if (argv[pos][0] == '-' && argv[pos][1] && argv[pos][2] == '\0')
@@ -258,131 +285,78 @@ term (void)
 }
 
 static bool
-binary_operator (bool l_is_l)
+binary_operator (bool l_is_l, enum binop bop)
 {
   int op;
-  struct stat stat_buf, stat_spare;
-  /* Is the right integer expression of the form '-l string'? */
-  bool r_is_l;
 
   if (l_is_l)
     advance (false);
   op = pos + 1;
 
-  if ((op < argc - 2) && STREQ (argv[op + 1], "-l"))
-    {
-      r_is_l = true;
-      advance (false);
-    }
-  else
-    r_is_l = false;
+  /* Is the right integer expression of the form '-l string'? */
+  bool r_is_l = op < argc - 2 && streq (argv[op + 1], "-l");
+  if (r_is_l)
+    advance (false);
 
-  if (argv[op][0] == '-')
+  pos += 3;
+
+  switch (bop)
     {
-      /* check for eq, nt, and stuff */
-      if ((((argv[op][1] == 'l' || argv[op][1] == 'g')
-            && (argv[op][2] == 'e' || argv[op][2] == 't'))
-           || (argv[op][1] == 'e' && argv[op][2] == 'q')
-           || (argv[op][1] == 'n' && argv[op][2] == 'e'))
-          && !argv[op][3])
+    case EQ_BINOP: case GE_BINOP: case GT_BINOP:
+    case LE_BINOP: case LT_BINOP: case NE_BINOP:
+      {
+        char lbuf[INT_BUFSIZE_BOUND (uintmax_t)];
+        char rbuf[INT_BUFSIZE_BOUND (uintmax_t)];
+        char const *l = (l_is_l
+                         ? umaxtostr (strlen (argv[op - 1]), lbuf)
+                         : find_int (argv[op - 1]));
+        char const *r = (r_is_l
+                         ? umaxtostr (strlen (argv[op + 2]), rbuf)
+                         : find_int (argv[op + 1]));
+        int cmp = strintcmp (l, r);
+        switch (+bop)
+          {
+          case EQ_BINOP: return cmp == 0;
+          case GE_BINOP: return cmp >= 0;
+          case GT_BINOP: return cmp >  0;
+          case LE_BINOP: return cmp <= 0;
+          case LT_BINOP: return cmp <  0;
+          case NE_BINOP: return cmp != 0;
+          }
+        unreachable ();
+      }
+
+    case NT_BINOP: case OT_BINOP:
+      {
+        if (l_is_l | r_is_l)
+          test_syntax_error (_("%s does not accept -l"),
+                             argv[op]);
+        int cmp = timespec_cmp (get_mtime (argv[op - 1]),
+                                get_mtime (argv[op + 1]));
+        return bop == OT_BINOP ? cmp < 0 : cmp > 0;
+      }
+
+    case EF_BINOP:
+      if (l_is_l | r_is_l)
+        test_syntax_error (_("-ef does not accept -l"));
+      else
         {
-          char lbuf[INT_BUFSIZE_BOUND (uintmax_t)];
-          char rbuf[INT_BUFSIZE_BOUND (uintmax_t)];
-          char const *l = (l_is_l
-                           ? umaxtostr (strlen (argv[op - 1]), lbuf)
-                           : find_int (argv[op - 1]));
-          char const *r = (r_is_l
-                           ? umaxtostr (strlen (argv[op + 2]), rbuf)
-                           : find_int (argv[op + 1]));
-          int cmp = strintcmp (l, r);
-          bool xe_operator = (argv[op][2] == 'e');
-          pos += 3;
-          return (argv[op][1] == 'l' ? cmp < xe_operator
-                  : argv[op][1] == 'g' ? cmp > - xe_operator
-                  : (cmp != 0) == xe_operator);
+          struct stat st[2];
+          return (stat (argv[op - 1], &st[0]) == 0
+                  && stat (argv[op + 1], &st[1]) == 0
+                  && psame_inode (&st[0], &st[1]));
         }
 
-      switch (argv[op][1])
-        {
-        default:
-          break;
+    case EQ_STRING_BINOP:
+    case NE_STRING_BINOP:
+      return streq (argv[op - 1], argv[op + 1]) == (bop == EQ_STRING_BINOP);
 
-        case 'n':
-          if (argv[op][2] == 't' && !argv[op][3])
-            {
-              /* nt - newer than */
-              struct timespec lt, rt;
-              bool le, re;
-              pos += 3;
-              if (l_is_l || r_is_l)
-                test_syntax_error (_("-nt does not accept -l"));
-              le = get_mtime (argv[op - 1], &lt);
-              re = get_mtime (argv[op + 1], &rt);
-              return le && (!re || timespec_cmp (lt, rt) > 0);
-            }
-          break;
-
-        case 'e':
-          if (argv[op][2] == 'f' && !argv[op][3])
-            {
-              /* ef - hard link? */
-              pos += 3;
-              if (l_is_l || r_is_l)
-                test_syntax_error (_("-ef does not accept -l"));
-              return (stat (argv[op - 1], &stat_buf) == 0
-                      && stat (argv[op + 1], &stat_spare) == 0
-                      && stat_buf.st_dev == stat_spare.st_dev
-                      && stat_buf.st_ino == stat_spare.st_ino);
-            }
-          break;
-
-        case 'o':
-          if ('t' == argv[op][2] && '\000' == argv[op][3])
-            {
-              /* ot - older than */
-              struct timespec lt, rt;
-              bool le, re;
-              pos += 3;
-              if (l_is_l || r_is_l)
-                test_syntax_error (_("-ot does not accept -l"));
-              le = get_mtime (argv[op - 1], &lt);
-              re = get_mtime (argv[op + 1], &rt);
-              return re && (!le || timespec_cmp (lt, rt) < 0);
-            }
-          break;
-        }
-
-      /* FIXME: is this dead code? */
-      test_syntax_error (_("%s: unknown binary operator"), quote (argv[op]));
-    }
-
-  if (argv[op][0] == '='
-      && (!argv[op][1] || ((argv[op][1] == '=') && !argv[op][2])))
-    {
-      bool value = STREQ (argv[pos], argv[pos + 2]);
-      pos += 3;
-      return value;
-    }
-
-  if (STREQ (argv[op], "!="))
-    {
-      bool value = !STREQ (argv[pos], argv[pos + 2]);
-      pos += 3;
-      return value;
-    }
-
-  if (STREQ (argv[op], ">"))
-    {
-      bool value = strcoll (argv[pos], argv[pos + 2]) > 0;
-      pos += 3;
-      return value;
-    }
-
-  if (STREQ (argv[op], "<"))
-    {
-      bool value = strcoll (argv[pos], argv[pos + 2]) < 0;
-      pos += 3;
-      return value;
+    case GT_STRING_BINOP:
+    case LT_STRING_BINOP:
+      {
+        int cmp = strcoll (argv[op - 1], argv[op + 1]);
+        return bop == LT_STRING_BINOP ? cmp < 0 : cmp > 0;
+      }
     }
 
   /* Not reached.  */
@@ -494,8 +468,7 @@ unary_operator (void)
 
     case 'h':			/* File is a symbolic link? */
       unary_advance ();
-      return (lstat (argv[pos - 1], &stat_buf) == 0
-              && S_ISLNK (stat_buf.st_mode));
+      return issymlink (argv[pos - 1]) == 1;
 
     case 'u':			/* File is setuid? */
       unary_advance ();
@@ -546,7 +519,7 @@ and (void)
   while (true)
     {
       value &= term ();
-      if (! (pos < argc && STREQ (argv[pos], "-a")))
+      if (! (pos < argc && streq (argv[pos], "-a")))
         return value;
       advance (false);
     }
@@ -565,7 +538,7 @@ or (void)
   while (true)
     {
       value |= and ();
-      if (! (pos < argc && STREQ (argv[pos], "-o")))
+      if (! (pos < argc && streq (argv[pos], "-o")))
         return value;
       advance (false);
     }
@@ -595,7 +568,7 @@ two_arguments (void)
 {
   bool value;
 
-  if (STREQ (argv[pos], "!"))
+  if (streq (argv[pos], "!"))
     {
       advance (false);
       value = ! one_argument ();
@@ -615,22 +588,23 @@ static bool
 three_arguments (void)
 {
   bool value;
+  int bop = binop (argv[pos + 1]);
 
-  if (binop (argv[pos + 1]))
-    value = binary_operator (false);
-  else if (STREQ (argv[pos], "!"))
+  if (0 <= bop)
+    value = binary_operator (false, bop);
+  else if (streq (argv[pos], "!"))
     {
       advance (true);
       value = !two_arguments ();
     }
-  else if (STREQ (argv[pos], "(") && STREQ (argv[pos + 2], ")"))
+  else if (streq (argv[pos], "(") && streq (argv[pos + 2], ")"))
     {
       advance (false);
       value = one_argument ();
       advance (false);
     }
-  else if (STREQ (argv[pos + 1], "-a") || STREQ (argv[pos + 1], "-o")
-           || STREQ (argv[pos + 1], ">") || STREQ (argv[pos + 1], "<"))
+  else if (streq (argv[pos + 1], "-a") || streq (argv[pos + 1], "-o")
+           || streq (argv[pos + 1], ">") || streq (argv[pos + 1], "<"))
     value = expr ();
   else
     test_syntax_error (_("%s: binary operator expected"),
@@ -659,13 +633,13 @@ posixtest (int nargs)
         break;
 
       case 4:
-        if (STREQ (argv[pos], "!"))
+        if (streq (argv[pos], "!"))
           {
             advance (true);
             value = !three_arguments ();
             break;
           }
-        if (STREQ (argv[pos], "(") && STREQ (argv[pos + 3], ")"))
+        if (streq (argv[pos], "(") && streq (argv[pos + 3], ")"))
           {
             advance (false);
             value = two_arguments ();
@@ -841,17 +815,17 @@ main (int margc, char **margv)
          and "test --version" to exit silently with status 0.  */
       if (margc == 2)
         {
-          if (STREQ (margv[1], "--help"))
+          if (streq (margv[1], "--help"))
             usage (EXIT_SUCCESS);
 
-          if (STREQ (margv[1], "--version"))
+          if (streq (margv[1], "--version"))
             {
               version_etc (stdout, PROGRAM_NAME, PACKAGE_NAME, Version, AUTHORS,
                            (char *) nullptr);
               test_main_return (EXIT_SUCCESS);
             }
         }
-      if (margc < 2 || !STREQ (margv[margc - 1], "]"))
+      if (margc < 2 || !streq (margv[margc - 1], "]"))
         test_syntax_error (_("missing %s"), quote ("]"));
 
       --margc;

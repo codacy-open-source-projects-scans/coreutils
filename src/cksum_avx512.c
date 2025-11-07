@@ -1,5 +1,5 @@
 /* cksum -- calculate and print POSIX checksums and sizes of files
-   Copyright (C) 1992-2024 Free Software Foundation, Inc.
+   Copyright (C) 2024-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,19 +16,14 @@
 
 #include <config.h>
 
-#include <stdio.h>
+#include "cksum.h"
+
 #include <sys/types.h>
-#include <stdint.h>
 #include <x86intrin.h>
 #include "system.h"
 
 /* Number of bytes to read at once.  */
 #define BUFLEN (1 << 16)
-
-extern uint_fast32_t const crctab[8][256];
-
-extern bool
-cksum_avx512 (FILE *fp, uint_fast32_t *crc_out, uintmax_t *length_out);
 
 bool
 cksum_avx512 (FILE *fp, uint_fast32_t *crc_out, uintmax_t *length_out)
@@ -80,12 +75,11 @@ cksum_avx512 (FILE *fp, uint_fast32_t *crc_out, uintmax_t *length_out)
 
       __m512i *datap;
 
-      if (length + bytes_read < length)
+      if (ckd_add (&length, length, bytes_read))
         {
           errno = EOVERFLOW;
           return false;
         }
-      length += bytes_read;
 
       datap = (__m512i *)buf;
 

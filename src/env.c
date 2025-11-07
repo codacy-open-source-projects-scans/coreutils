@@ -1,5 +1,5 @@
 /* env - run a program in a modified environment
-   Copyright (C) 1986-2024 Free Software Foundation, Inc.
+   Copyright (C) 1986-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -144,7 +144,8 @@ Set each NAME to VALUE in the environment and run COMMAND.\n\
       --ignore-signal[=SIG]   set handling of SIG signal(s) to do nothing\n\
 "), stdout);
       fputs (_("\
-      --list-signal-handling  list non default signal handling to stderr\n\
+      --list-signal-handling  list non default signal handling to \
+standard error\n\
 "), stdout);
       fputs (_("\
   -v, --debug          print verbose information for each processing step\n\
@@ -830,7 +831,7 @@ main (int argc, char **argv)
         }
     }
 
-  if (optind < argc && STREQ (argv[optind], "-"))
+  if (optind < argc && streq (argv[optind], "-"))
     {
       ignore_environment = true;
       ++optind;

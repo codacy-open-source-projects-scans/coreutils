@@ -1,6 +1,6 @@
 /* shred.c - overwrite files and devices to make it harder to recover data
 
-   Copyright (C) 1999-2024 Free Software Foundation, Inc.
+   Copyright (C) 1999-2025 Free Software Foundation, Inc.
    Copyright (C) 1997, 1998, 1999 Colin Plumb.
 
    This program is free software: you can redistribute it and/or modify
@@ -529,14 +529,12 @@ dopass (int fd, struct stat const *st, char const *qname, off_t *sizep,
 
       /* Okay, we have written "soff" bytes. */
 
-      if (OFF_T_MAX - offset < soff)
+      if (ckd_add (&offset, offset, soff))
         {
           error (0, 0, _("%s: file too large"), qname);
           other_error = true;
           goto free_pattern_mem;
         }
-
-      offset += soff;
 
       bool done = offset == size;
 
@@ -552,7 +550,7 @@ dopass (int fd, struct stat const *st, char const *qname, off_t *sizep,
             = human_readable (offset, offset_buf,
                               human_floor | human_progress_opts, 1, 1);
 
-          if (done || !STREQ (previous_human_offset, human_offset))
+          if (done || !streq (previous_human_offset, human_offset))
             {
               if (! known (size))
                 error (0, 0, _("%s: pass %lu/%lu (%s)...%s"),
@@ -562,7 +560,7 @@ dopass (int fd, struct stat const *st, char const *qname, off_t *sizep,
                   uintmax_t off = offset;
                   int percent = (size == 0
                                  ? 100
-                                 : (off <= TYPE_MAXIMUM (uintmax_t) / 100
+                                 : (off <= UINTMAX_MAX / 100
                                     ? off * 100 / size
                                     : off / (size / 100)));
                   char const *human_size
@@ -1195,7 +1193,7 @@ main (int argc, char **argv)
           break;
 
         case RANDOM_SOURCE_OPTION:
-          if (random_source && !STREQ (random_source, optarg))
+          if (random_source && !streq (random_source, optarg))
             error (EXIT_FAILURE, 0, _("multiple random sources specified"));
           random_source = optarg;
           break;
@@ -1252,7 +1250,7 @@ main (int argc, char **argv)
   for (i = 0; i < n_files; i++)
     {
       char *qname = xstrdup (quotef (file[i]));
-      if (STREQ (file[i], "-"))
+      if (streq (file[i], "-"))
         {
           ok &= wipefd (STDOUT_FILENO, qname, randint_source, &flags);
         }

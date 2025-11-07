@@ -1,7 +1,7 @@
 #!/bin/sh
 # verify that ls -al with acl displays the "+"
 
-# Copyright (C) 2024 Free Software Foundation, Inc.
+# Copyright (C) 2024-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -19,7 +19,7 @@
 . "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
 print_ver_ ls
 
-require_acl_
+require_setfacl_
 
 # Skip this test if ls was built without ACL support:
 grep '^#define USE_ACL 1' $CONFIG_HEADER > /dev/null ||

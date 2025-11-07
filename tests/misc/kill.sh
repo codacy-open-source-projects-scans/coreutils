@@ -1,7 +1,7 @@
 #!/bin/sh
 # Validate kill operation
 
-# Copyright (C) 2015-2024 Free Software Foundation, Inc.
+# Copyright (C) 2015-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -67,5 +67,8 @@ SIG_SEQ=$(env seq -- 0 "$SIG_LAST_NUM") || framework_failure_
 test -n "$SIG_SEQ" || framework_failure_
 env kill -l -- $SIG_SEQ || fail=1
 env kill -t -- $SIG_SEQ || fail=1
+
+# Verify first signal number listed is 0
+test $(env kill -l $(env kill -l | head -n1)) = 0 || fail=1
 
 Exit $fail

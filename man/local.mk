@@ -1,7 +1,7 @@
 # Make coreutils man pages.				-*-Makefile-*-
 # This is included by the top-level Makefile.am.
 
-# Copyright (C) 2002-2024 Free Software Foundation, Inc.
+# Copyright (C) 2002-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -27,7 +27,7 @@ if HAVE_PERL
 if BOLD_MAN_REFS
 help2man_OPTS=--bold-refs
 endif
-run_help2man = $(PERL) -- $(srcdir)/man/help2man $(help2man_OPTS)
+run_help2man = $(PERL) -- $(srcdir)/man/help2man --loose-indent $(help2man_OPTS)
 else
 run_help2man = $(SHELL) $(srcdir)/man/dummy-man
 endif
@@ -54,7 +54,7 @@ mandeps =
 # Depend on this to get version number changes.
 mandeps += .version
 
-# This is required so that changes to e.g., emit_bug_reporting_address
+# This is required so that changes to e.g., emit_ancillary_info
 # provoke regeneration of all the manpages.
 mandeps += $(top_srcdir)/src/system.h
 

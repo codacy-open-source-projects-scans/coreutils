@@ -1,5 +1,5 @@
 /* cp.c  -- file copying (main routines)
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -267,10 +267,10 @@ Use --sparse=never to inhibit creation of sparse files.\n\
       emit_update_parameters_note ();
       fputs (_("\
 \n\
-When --reflink[=always] is specified, perform a lightweight copy, where the\n\
-data blocks are copied only when modified.  If this is not possible the copy\n\
-fails, or if --reflink=auto is specified, fall back to a standard copy.\n\
-Use --reflink=never to ensure a standard copy is performed.\n\
+By default or with --reflink=auto, cp will try a lightweight copy, where the\n\
+data blocks are copied only when modified, falling back to a standard copy\n\
+if this is not possible.  With --reflink[=always] cp will fail if CoW is not\n\
+supported, while --reflink=never ensures a standard copy is performed.\n\
 "), stdout);
       emit_backup_suffix_note ();
       fputs (_("\
@@ -742,7 +742,7 @@ do_copy (int n_files, char **file, char const *target_directory,
               ASSIGN_STRDUPA (arg_base, last_component (arg));
               strip_trailing_slashes (arg_base);
               /* For 'cp -R source/.. dest', don't copy into 'dest/..'. */
-              arg_base += STREQ (arg_base, "..");
+              arg_base += streq (arg_base, "..");
               dst_name = file_name_concat (target_directory, arg_base,
                                            &arg_in_concat);
             }
@@ -802,7 +802,7 @@ do_copy (int n_files, char **file, char const *target_directory,
 
       if (x->unlink_dest_after_failed_open
           && x->backup_type != no_backups
-          && STREQ (source, dest)
+          && streq (source, dest)
           && !new_dst
           && (sb.st_mode != 0 || stat (dest, &sb) == 0) && S_ISREG (sb.st_mode))
         {
@@ -863,7 +863,7 @@ cp_option_init (struct cp_options *x)
   /* Not used.  */
   x->stdin_tty = false;
 
-  x->update = false;
+  x->update = UPDATE_ALL;
   x->verbose = false;
   x->keep_directory_symlink = false;
 
@@ -984,7 +984,6 @@ main (int argc, char **argv)
   char *target_directory = nullptr;
   bool no_target_directory = false;
   char const *scontext = nullptr;
-  bool no_clobber = false;
 
   initialize_main (&argc, &argv);
   set_program_name (argv[0]);
@@ -1076,8 +1075,6 @@ main (int argc, char **argv)
 
         case 'n':
           x.interactive = I_ALWAYS_SKIP;
-          no_clobber = true;
-          x.update = false;
           break;
 
         case 'P':
@@ -1141,34 +1138,10 @@ main (int argc, char **argv)
           break;
 
         case 'u':
-          if (! no_clobber) /* -n > -u */
-            {
-              enum Update_type update_opt = UPDATE_OLDER;
-              if (optarg)
-                update_opt = XARGMATCH ("--update", optarg,
-                                        update_type_string, update_type);
-              if (update_opt == UPDATE_ALL)
-                {
-                  /* Default cp operation.  */
-                  x.update = false;
-                  x.interactive = I_UNSPECIFIED;
-                }
-              else if (update_opt == UPDATE_NONE)
-                {
-                  x.update = false;
-                  x.interactive = I_ALWAYS_SKIP;
-                }
-              else if (update_opt == UPDATE_NONE_FAIL)
-                {
-                  x.update = false;
-                  x.interactive = I_ALWAYS_NO;
-                }
-              else if (update_opt == UPDATE_OLDER)
-                {
-                  x.update = true;
-                  x.interactive = I_UNSPECIFIED;
-                }
-            }
+          x.update = UPDATE_OLDER;
+          if (optarg)
+            x.update = XARGMATCH ("--update", optarg,
+                                  update_type_string, update_type);
           break;
 
         case 'v':
@@ -1232,9 +1205,12 @@ main (int argc, char **argv)
       usage (EXIT_FAILURE);
     }
 
+  if (x.interactive == I_ALWAYS_SKIP)
+    x.update = UPDATE_NONE;
+
   if (make_backups
-      && (x.interactive == I_ALWAYS_SKIP
-          || x.interactive == I_ALWAYS_NO))
+      && (x.update == UPDATE_NONE
+          || x.update == UPDATE_NONE_FAIL))
     {
       error (0, 0,
              _("--backup is mutually exclusive with -n or --update=none-fail"));

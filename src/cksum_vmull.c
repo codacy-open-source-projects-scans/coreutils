@@ -1,5 +1,5 @@
 /* cksum -- calculate and print POSIX checksums and sizes of files
-   Copyright (C) 1992-2024 Free Software Foundation, Inc.
+   Copyright (C) 2024-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -16,19 +16,15 @@
 
 #include <config.h>
 
+#include "cksum.h"
+
 #include <stdio.h>
 #include <sys/types.h>
-#include <stdint.h>
 #include <arm_neon.h>
 #include "system.h"
 
 /* Number of bytes to read at once.  */
 #define BUFLEN (1 << 16)
-
-extern uint_fast32_t const crctab[8][256];
-
-extern bool
-cksum_vmull (FILE *fp, uint_fast32_t *crc_out, uintmax_t *length_out);
 
 static uint64x2_t
 bswap_neon (uint64x2_t in)
@@ -76,12 +72,11 @@ cksum_vmull (FILE *fp, uint_fast32_t *crc_out, uintmax_t *length_out)
       uint64x2_t fold_data;
       uint64x2_t xor_crc;
 
-      if (length + bytes_read < length)
+      if (ckd_add (&length, length, bytes_read))
         {
           errno = EOVERFLOW;
           return false;
         }
-      length += bytes_read;
 
       datap = (uint64x2_t *) buf;
 
@@ -92,7 +87,8 @@ cksum_vmull (FILE *fp, uint_fast32_t *crc_out, uintmax_t *length_out)
           data = bswap_neon (data);
           /* XOR in initial CRC value (for us 0 so no effect), or CRC value
              calculated for previous BUFLEN buffer from fread */
-          xor_crc = vcombine_u64 (vcreate_u64 (0), vcreate_u64 (crc << 32));
+          uint64_t wcrc = crc;
+          xor_crc = vcombine_u64 (vcreate_u64 (0), vcreate_u64 (wcrc << 32));
           crc = 0;
           data = veorq_u64 (data, xor_crc);
           data3 = vld1q_u64 ((uint64_t *) (datap + 1));
@@ -193,7 +189,8 @@ cksum_vmull (FILE *fp, uint_fast32_t *crc_out, uintmax_t *length_out)
         {
           data = vld1q_u64 ((uint64_t *) (datap));
           data = bswap_neon (data);
-          xor_crc = vcombine_u64 (vcreate_u64 (0), vcreate_u64 (crc << 32));
+          uint64_t wcrc = crc;
+          xor_crc = vcombine_u64 (vcreate_u64 (0), vcreate_u64 (wcrc << 32));
           crc = 0;
           data = veorq_u64 (data, xor_crc);
           while (bytes_read >= 32)

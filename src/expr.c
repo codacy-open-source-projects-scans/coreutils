@@ -1,5 +1,5 @@
 /* expr -- evaluate expressions.
-   Copyright (C) 1986-2024 Free Software Foundation, Inc.
+   Copyright (C) 1986-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -35,6 +35,7 @@
 
 #include <gmp.h>
 #include <regex.h>
+#include "c-ctype.h"
 #include "long-options.h"
 #include "mcel.h"
 #include "strnumcmp.h"
@@ -321,7 +322,7 @@ main (int argc, char **argv)
 
   /* The above handles --help and --version.
      Since there is no other invocation of getopt, handle '--' here.  */
-  if (1 < argc && STREQ (argv[1], "--"))
+  if (1 < argc && streq (argv[1], "--"))
     {
       --argc;
       ++argv;
@@ -439,7 +440,7 @@ looks_like_integer (char const *cp)
   cp += (*cp == '-');
 
   do
-    if (! ISDIGIT (*cp))
+    if (! c_isdigit (*cp))
       return false;
   while (*++cp);
 
@@ -521,7 +522,7 @@ nextarg (char const *str)
     return false;
   else
     {
-      bool r = STREQ (*args, str);
+      bool r = streq (*args, str);
       args += r;
       return r;
     }

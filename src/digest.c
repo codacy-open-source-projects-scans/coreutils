@@ -1,5 +1,5 @@
 /* Compute checksums of files or strings.
-   Copyright (C) 1995-2024 Free Software Foundation, Inc.
+   Copyright (C) 1995-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include <getopt.h>
 #include <sys/types.h>
 
+#include "assure.h"
 #include "system.h"
 #include "argmatch.h"
 #include "c-ctype.h"
@@ -53,6 +54,9 @@
 #endif
 #if HASH_ALGO_SHA512 || HASH_ALGO_SHA384 || HASH_ALGO_CKSUM
 # include "sha512.h"
+#endif
+#if HASH_ALGO_CKSUM
+# include "sha3.h"
 #endif
 #if HASH_ALGO_CKSUM
 # include "sm3.h"
@@ -216,10 +220,15 @@ static bool base64_digest = false;
 /* If true, print binary digests, not hex.  */
 static bool raw_digest = false;
 
+/* blake2b and sha3 allow the -l option.  Luckily they both have the same
+   maximum digest size.  */
 #if HASH_ALGO_BLAKE2 || HASH_ALGO_CKSUM
-# define BLAKE2B_MAX_LEN BLAKE2B_OUTBYTES
+# if HASH_ALGO_CKSUM
+static_assert (BLAKE2B_OUTBYTES == SHA3_512_DIGEST_SIZE);
+# endif
+# define DIGEST_MAX_LEN BLAKE2B_OUTBYTES
 static uintmax_t digest_length;
-#endif /* HASH_ALGO_BLAKE2 */
+#endif /* HASH_ALGO_BLAKE2 || HASH_ALGO_CKSUM */
 
 typedef void (*digest_output_fn)(char const *, int, void const *, bool,
                                  bool, unsigned char, bool, uintmax_t);
@@ -245,34 +254,72 @@ static digest_output_fn sum_output_fns[]=
 
 #if HASH_ALGO_CKSUM
 static int
-md5_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
+md5_sum_stream (FILE *stream, void *resstream, MAYBE_UNUSED uintmax_t *length)
 {
   return md5_stream (stream, resstream);
 }
 static int
-sha1_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
+sha1_sum_stream (FILE *stream, void *resstream, MAYBE_UNUSED uintmax_t *length)
 {
   return sha1_stream (stream, resstream);
 }
 static int
-sha224_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
+sha224_sum_stream (FILE *stream, void *resstream,
+                   MAYBE_UNUSED uintmax_t *length)
 {
   return sha224_stream (stream, resstream);
 }
 static int
-sha256_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
+sha256_sum_stream (FILE *stream, void *resstream,
+                   MAYBE_UNUSED uintmax_t *length)
 {
   return sha256_stream (stream, resstream);
 }
 static int
-sha384_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
+sha384_sum_stream (FILE *stream, void *resstream,
+                   MAYBE_UNUSED uintmax_t *length)
 {
   return sha384_stream (stream, resstream);
 }
 static int
-sha512_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
+sha512_sum_stream (FILE *stream, void *resstream,
+                   MAYBE_UNUSED uintmax_t *length)
 {
   return sha512_stream (stream, resstream);
+}
+static int
+sha2_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
+{
+  switch (*length)
+    {
+    case SHA224_DIGEST_SIZE:
+      return sha224_stream (stream, resstream);
+    case SHA256_DIGEST_SIZE:
+      return sha256_stream (stream, resstream);
+    case SHA384_DIGEST_SIZE:
+      return sha384_stream (stream, resstream);
+    case SHA512_DIGEST_SIZE:
+      return sha512_stream (stream, resstream);
+    default:
+      affirm (false);
+    }
+}
+static int
+sha3_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
+{
+  switch (*length)
+    {
+    case SHA3_224_DIGEST_SIZE:
+      return sha3_224_stream (stream, resstream);
+    case SHA3_256_DIGEST_SIZE:
+      return sha3_256_stream (stream, resstream);
+    case SHA3_384_DIGEST_SIZE:
+      return sha3_384_stream (stream, resstream);
+    case SHA3_512_DIGEST_SIZE:
+      return sha3_512_stream (stream, resstream);
+    default:
+      affirm (false);
+    }
 }
 static int
 blake2b_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
@@ -280,7 +327,7 @@ blake2b_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
   return blake2b_stream (stream, resstream, *length);
 }
 static int
-sm3_sum_stream (FILE *stream, void *resstream, uintmax_t *length)
+sm3_sum_stream (FILE *stream, void *resstream, MAYBE_UNUSED uintmax_t *length)
 {
   return sm3_stream (stream, resstream);
 }
@@ -297,35 +344,40 @@ enum Algorithm
   sha256,
   sha384,
   sha512,
+  sha2,
+  sha3,
   blake2b,
   sm3,
 };
 
 static char const *const algorithm_args[] =
 {
-  "bsd", "sysv", "crc", "crc32b", "md5", "sha1", "sha224",
-  "sha256", "sha384", "sha512", "blake2b", "sm3", nullptr
+  "bsd", "sysv", "crc", "crc32b", "md5", "sha1",
+  "sha224", "sha256", "sha384", "sha512", /* Legacy naming */
+  "sha2", "sha3", "blake2b", "sm3", nullptr
 };
 static enum Algorithm const algorithm_types[] =
 {
-  bsd, sysv, crc, crc32b, md5, sha1, sha224,
-  sha256, sha384, sha512, blake2b, sm3,
+  bsd, sysv, crc, crc32b, md5, sha1,
+  sha224, sha256, sha384, sha512,
+  sha2, sha3, blake2b, sm3,
 };
 ARGMATCH_VERIFY (algorithm_args, algorithm_types);
 
 static char const *const algorithm_tags[] =
 {
-  "BSD", "SYSV", "CRC", "CRC32B", "MD5", "SHA1", "SHA224",
-  "SHA256", "SHA384", "SHA512", "BLAKE2b", "SM3", nullptr
+  "BSD", "SYSV", "CRC", "CRC32B", "MD5", "SHA1",
+  "SHA224", "SHA256", "SHA384", "SHA512",
+  "SHA2", "SHA3", "BLAKE2b", "SM3", nullptr
 };
 static int const algorithm_bits[] =
 {
-  16, 16, 32, 32, 128, 160, 224,
-  256, 384, 512, 512, 256, 0
+  16, 16, 32, 32, 128, 160,
+  224, 256, 384, 512,
+  512, 512, 512, 256, 0
 };
 
-static_assert (ARRAY_CARDINALITY (algorithm_bits)
-               == ARRAY_CARDINALITY (algorithm_args));
+static_assert (countof (algorithm_bits) == countof (algorithm_args));
 
 static bool algorithm_specified = false;
 static enum Algorithm cksum_algorithm = crc;
@@ -341,6 +393,8 @@ static sumfn cksumfns[]=
   sha256_sum_stream,
   sha384_sum_stream,
   sha512_sum_stream,
+  sha2_sum_stream,
+  sha3_sum_stream,
   blake2b_sum_stream,
   sm3_sum_stream,
 };
@@ -350,6 +404,8 @@ static digest_output_fn cksum_output_fns[]=
   output_sysv,
   output_crc,
   output_crc,
+  output_file,
+  output_file,
   output_file,
   output_file,
   output_file,
@@ -474,8 +530,9 @@ Print or check %s (%d-bit) checksums.\n\
 "), stdout);
 # if HASH_ALGO_BLAKE2 || HASH_ALGO_CKSUM
         fputs (_("\
-  -l, --length=BITS     digest length in bits; must not exceed the max for\n\
-                          the blake2 algorithm and must be a multiple of 8\n\
+  -l, --length=BITS     digest length in bits; must not exceed the max size\n\
+                          and must be a multiple of 8 for blake2b;\n\
+                          must be 224, 256, 384, or 512 for sha2 or sha3\n\
 "), stdout);
 # endif
 # if HASH_ALGO_CKSUM
@@ -536,10 +593,8 @@ DIGEST determines the digest algorithm and default output format:\n\
   crc32b    (only available through cksum)\n\
   md5       (equivalent to md5sum)\n\
   sha1      (equivalent to sha1sum)\n\
-  sha224    (equivalent to sha224sum)\n\
-  sha256    (equivalent to sha256sum)\n\
-  sha384    (equivalent to sha384sum)\n\
-  sha512    (equivalent to sha512sum)\n\
+  sha2      (equivalent to sha{224,256,384,512}sum)\n\
+  sha3      (only available through cksum)\n\
   blake2b   (equivalent to b2sum)\n\
   sm3       (only available through cksum)\n\
 \n"), stdout);
@@ -789,47 +844,64 @@ split_3 (char *s, size_t s_len,
   /* Check for BSD-style checksum line. */
 
 #if HASH_ALGO_CKSUM
-  if (! algorithm_specified)
+  if (! algorithm_specified || cksum_algorithm == sha2)
     {
       ptrdiff_t algo_tag = algorithm_from_tag (s + i);
-      if (algo_tag >= 0)
+      if (! algorithm_specified)
         {
-          if (algo_tag <= crc32b)
-            return false;  /* We don't support checking these older formats.  */
-          cksum_algorithm = algo_tag;
+          if (algo_tag >= 0)
+            {
+              if (algo_tag <= crc32b)
+                return false;  /* We don't support checking these formats.  */
+              cksum_algorithm = algo_tag;
+            }
+          else
+            return false;      /* We only support tagged format without -a.  */
         }
       else
-        return false;  /* We only support tagged format without -a.  */
+        {
+          if (cksum_algorithm == sha2 && (algo_tag == sha2
+              || algo_tag == sha224 || algo_tag == sha256
+              || algo_tag == sha384 || algo_tag == sha512))
+            cksum_algorithm = algo_tag;
+        }
     }
 #endif
 
+  /* Try to parse BSD or OpenSSL tagged format.  I.e.:
+     openssl: MD5(f)= d41d8cd98f00b204e9800998ecf8427e
+     bsd:     MD5 (f) = d41d8cd98f00b204e9800998ecf8427e  */
+
+  size_t parse_offset = i;
   algo_name_len = strlen (DIGEST_TYPE_STRING);
   if (STREQ_LEN (s + i, DIGEST_TYPE_STRING, algo_name_len))
     {
       i += algo_name_len;
 #if HASH_ALGO_BLAKE2 || HASH_ALGO_CKSUM
-      /* Terminate and match algorithm name.  */
-      char const *algo_name = &s[i - algo_name_len];
-      bool length_specified = s[i] == '-';
-      bool openssl_format = s[i] == '('; /* and no length_specified */
-      s[i++] = '\0';
-      if (!STREQ (algo_name, DIGEST_TYPE_STRING))
-        return false;
-      if (openssl_format)
-        s[--i] = '(';
 
 # if HASH_ALGO_BLAKE2
-      digest_length = BLAKE2B_MAX_LEN * 8;
+      digest_length = DIGEST_MAX_LEN * 8;
 # else
       digest_length = algorithm_bits[cksum_algorithm];
 # endif
-      if (length_specified)
+      if (s[i] == '-')  /* length specified. Not base64 */
         {
+          ++i;
           uintmax_t length;
           char *siend;
-          if (! (xstrtoumax (s + i, &siend, 0, &length, nullptr) == LONGINT_OK
-                 && 0 < length && length <= digest_length
-                 && length % 8 == 0))
+          if (xstrtoumax (s + i, &siend, 0, &length, nullptr) != LONGINT_OK)
+            return false;
+# if HASH_ALGO_CKSUM
+          else if (cksum_algorithm == sha2 || cksum_algorithm == sha3)
+            {
+              if (length != SHA224_DIGEST_SIZE * 8
+                  && length != SHA256_DIGEST_SIZE * 8
+                  && length != SHA384_DIGEST_SIZE * 8
+                  && length != SHA512_DIGEST_SIZE * 8)
+                return false;
+            }
+# endif
+          else if (!(0 < length && length <= digest_length && length % 8 == 0))
             return false;
 
           i = siend - s;
@@ -839,14 +911,18 @@ split_3 (char *s, size_t s_len,
 #endif
       if (s[i] == ' ')
         ++i;
-      if (s[i] == '(')
+      if (s[i] == '(')  /* not base64 */
         {
           ++i;
           *binary = 0;
           return bsd_split_3 (s + i, s_len - i,
                               digest, d_len, file_name, escaped_filename);
         }
-      return false;
+
+      /* Note with --base64 --untagged format, we may have matched a "tag".
+         Even very short digests with: cksum -a blake2b -l24 --untagged --base64
+         So fallback to checking untagged format if issues detecting tags.  */
+      i = parse_offset;
     }
 
   /* Ignore this line if it is too short.
@@ -861,14 +937,66 @@ split_3 (char *s, size_t s_len,
 #if HASH_ALGO_BLAKE2 || HASH_ALGO_CKSUM
   /* Auto determine length.  */
 # if HASH_ALGO_CKSUM
-  if (cksum_algorithm == blake2b) {
+  if (cksum_algorithm == blake2b
+      || cksum_algorithm == sha2 || cksum_algorithm == sha3) {
 # endif
   unsigned char const *hp = *digest;
   digest_hex_bytes = 0;
-  while (c_isxdigit (*hp++))
-    digest_hex_bytes++;
+  for (; c_isxdigit (*hp); ++hp, ++digest_hex_bytes)
+    ;
+# if HASH_ALGO_CKSUM
+  /* Check the number of base64 characters.  This works because the hexadecimal
+     character set is a subset of the base64 character set.
+     Note there is the ambiguity that all characters are hex when they
+     are actually base64 encoded, which could be ambiguous with:
+        cksum -a sha2 -l 384 --base64 --untagged
+        cksum -a sha2 -l 256 --untagged
+     Similarly for sha3 and blake2b.
+     However at this length the chances are exceedingly rare (1 in 480R),
+     and smaller blake2b lengths aren't practical for verification anyway.  */
+  size_t digest_base64_bytes = digest_hex_bytes;
+  size_t trailing_equals = 0;
+  for (; isubase64 (*hp); ++hp, ++digest_base64_bytes)
+    ;
+  for (; *hp == '='; ++hp, ++trailing_equals)
+    ;
+  if ((cksum_algorithm == sha2 || cksum_algorithm == sha3)
+      && digest_hex_bytes / 2 != SHA224_DIGEST_SIZE
+      && digest_hex_bytes / 2 != SHA256_DIGEST_SIZE
+      && digest_hex_bytes / 2 != SHA384_DIGEST_SIZE
+      && digest_hex_bytes / 2 != SHA512_DIGEST_SIZE)
+    {
+      if (digest_base64_bytes + trailing_equals
+          == BASE64_LENGTH (SHA224_DIGEST_SIZE))
+        digest_hex_bytes = SHA224_DIGEST_SIZE * 2;
+      else if (digest_base64_bytes + trailing_equals
+               == BASE64_LENGTH (SHA256_DIGEST_SIZE))
+        digest_hex_bytes = SHA256_DIGEST_SIZE * 2;
+      else if (digest_base64_bytes + trailing_equals
+               == BASE64_LENGTH (SHA384_DIGEST_SIZE))
+        digest_hex_bytes = SHA384_DIGEST_SIZE * 2;
+      else if (digest_base64_bytes + trailing_equals
+               == BASE64_LENGTH (SHA512_DIGEST_SIZE))
+        digest_hex_bytes = SHA512_DIGEST_SIZE * 2;
+      else
+        return false;
+    }
+  else if (cksum_algorithm == blake2b
+           && digest_hex_bytes < digest_base64_bytes)
+    {
+      for (int j = 8; j <= DIGEST_MAX_LEN * 8; j += 8)
+        {
+          if (BASE64_LENGTH (j / 8) == digest_base64_bytes + trailing_equals
+              && j % 3 == trailing_equals)
+            {
+              digest_hex_bytes = j / 4;
+              break;
+            }
+        }
+    }
+# endif
   if (digest_hex_bytes < 2 || digest_hex_bytes % 2
-      || BLAKE2B_MAX_LEN * 2 < digest_hex_bytes)
+      || DIGEST_MAX_LEN * 2 < digest_hex_bytes)
     return false;
   digest_length = digest_hex_bytes * 4;
 # if HASH_ALGO_CKSUM
@@ -975,7 +1103,7 @@ digest_file (char const *filename, int *binary, unsigned char *bin_result,
 {
   FILE *fp;
   int err;
-  bool is_stdin = STREQ (filename, "-");
+  bool is_stdin = streq (filename, "-");
 
   *missing = false;
 
@@ -1009,7 +1137,8 @@ digest_file (char const *filename, int *binary, unsigned char *bin_result,
   fadvise (fp, FADVISE_SEQUENTIAL);
 
 #if HASH_ALGO_CKSUM
-  if (cksum_algorithm == blake2b)
+  if (cksum_algorithm == blake2b
+      || cksum_algorithm == sha2 || cksum_algorithm == sha3)
     *length = digest_length / 8;
   err = DIGEST_STREAM (fp, bin_result, length);
 #elif HASH_ALGO_SUM
@@ -1037,8 +1166,8 @@ digest_file (char const *filename, int *binary, unsigned char *bin_result,
 #if !HASH_ALGO_SUM
 static void
 output_file (char const *file, int binary_file, void const *digest,
-             bool raw, bool tagged, unsigned char delim, MAYBE_UNUSED bool args,
-             MAYBE_UNUSED uintmax_t length)
+             MAYBE_UNUSED bool raw, bool tagged, unsigned char delim,
+             MAYBE_UNUSED bool args, MAYBE_UNUSED uintmax_t length)
 {
 # if HASH_ALGO_CKSUM
   if (raw)
@@ -1058,14 +1187,21 @@ output_file (char const *file, int binary_file, void const *digest,
 
   if (tagged)
     {
+# if HASH_ALGO_CKSUM
+      if (cksum_algorithm == sha2)
+        printf ("SHA%ju", digest_length);
+      else
+# endif
       fputs (DIGEST_TYPE_STRING, stdout);
 # if HASH_ALGO_BLAKE2
-      if (digest_length < BLAKE2B_MAX_LEN * 8)
+      if (digest_length < DIGEST_MAX_LEN * 8)
         printf ("-%ju", digest_length);
 # elif HASH_ALGO_CKSUM
+      if (cksum_algorithm == sha3)
+        printf ("-%ju", digest_length);
       if (cksum_algorithm == blake2b)
         {
-          if (digest_length < BLAKE2B_MAX_LEN * 8)
+          if (digest_length < DIGEST_MAX_LEN * 8)
             printf ("-%ju", digest_length);
         }
 # endif
@@ -1109,7 +1245,7 @@ b64_equal (unsigned char const *b64_digest, unsigned char const *bin_buffer)
   size_t b64_n_bytes = BASE64_LENGTH (digest_length / 8);
   char b64[BASE64_LENGTH (DIGEST_BIN_BYTES) + 1];
   base64_encode ((char const *) bin_buffer, digest_length / 8, b64, sizeof b64);
-  return memcmp (b64_digest, b64, b64_n_bytes + 1) == 0;
+  return memeq (b64_digest, b64, b64_n_bytes + 1);
 }
 #endif
 
@@ -1153,7 +1289,7 @@ digest_check (char const *checkfile_name)
   uintmax_t line_number;
   char *line;
   size_t line_chars_allocated;
-  bool is_stdin = STREQ (checkfile_name, "-");
+  bool is_stdin = streq (checkfile_name, "-");
 
   if (is_stdin)
     {
@@ -1207,7 +1343,7 @@ digest_check (char const *checkfile_name)
 
       size_t d_len;
       if (! (split_3 (line, line_length, &digest, &d_len, &binary, &filename)
-             && ! (is_stdin && STREQ (filename, "-"))))
+             && ! (is_stdin && streq (filename, "-"))))
         {
           ++n_misformatted_lines;
 
@@ -1251,7 +1387,7 @@ digest_check (char const *checkfile_name)
             {
               bool match = false;
 #if HASH_ALGO_CKSUM
-              if (d_len < digest_hex_bytes)
+              if (d_len == BASE64_LENGTH (digest_length / 8))
                 match = b64_equal (digest, bin_buffer);
               else
 #endif
@@ -1398,7 +1534,7 @@ main (int argc, char **argv)
 #endif
 #if HASH_ALGO_BLAKE2 || HASH_ALGO_CKSUM
       case 'l':
-        digest_length = xnumtoumax (optarg, 10, 0, BLAKE2B_MAX_LEN * 8, "",
+        digest_length = xnumtoumax (optarg, 10, 0, UINTMAX_MAX, "",
                                     _("invalid length"), 0,
                                     XTOINT_MAX_QUIET);
         digest_length_str = optarg;
@@ -1474,27 +1610,57 @@ main (int argc, char **argv)
   min_digest_line_length = MIN_DIGEST_LINE_LENGTH;
 #if HASH_ALGO_BLAKE2 || HASH_ALGO_CKSUM
 # if HASH_ALGO_CKSUM
-  if (digest_length && cksum_algorithm != blake2b)
+  if (digest_length && (cksum_algorithm != blake2b
+                        && cksum_algorithm != sha2
+                        && cksum_algorithm != sha3))
     error (EXIT_FAILURE, 0,
-           _("--length is only supported with --algorithm=blake2b"));
-# endif
-  if (digest_length > BLAKE2B_MAX_LEN * 8)
+           _("--length is only supported with --algorithm "
+             "blake2b, sha2, or sha3"));
+  if (cksum_algorithm == sha2 || cksum_algorithm == sha3)
     {
-      error (0, 0, _("invalid length: %s"), quote (digest_length_str));
-      error (EXIT_FAILURE, 0,
-             _("maximum digest length for %s is %d bits"),
-             quote (DIGEST_TYPE_STRING),
-             BLAKE2B_MAX_LEN * 8);
+      /* Do not require --length with --check.  */
+      if (digest_length == 0 && *digest_length_str == '\0' && ! do_check)
+        error (EXIT_FAILURE, 0, _("--algorithm=%s requires specifying "
+                                  "--length 224, 256, 384, or 512"),
+               algorithm_args[cksum_algorithm]);
+      /* If --check and --length are used we verify the digest length.  */
+      if ((! do_check || *digest_length_str != '\0')
+          && digest_length != SHA224_DIGEST_SIZE * 8
+          && digest_length != SHA256_DIGEST_SIZE * 8
+          && digest_length != SHA384_DIGEST_SIZE * 8
+          && digest_length != SHA512_DIGEST_SIZE * 8)
+        {
+          error (0, 0, _("invalid length: %s"), quote (digest_length_str));
+          error (EXIT_FAILURE, 0, _("digest length for %s must be "
+                                    "224, 256, 384, or 512"),
+                 quote (DIGEST_TYPE_STRING));
+        }
     }
-  if (digest_length % 8 != 0)
+  else
     {
-      error (0, 0, _("invalid length: %s"), quote (digest_length_str));
-      error (EXIT_FAILURE, 0, _("length is not a multiple of 8"));
+      /* If the digest length checks for SHA-3 are satisfied, the less strict
+         checks for BLAKE2 will also be.  */
+# else
+    {
+# endif
+      if (digest_length > DIGEST_MAX_LEN * 8)
+        {
+          error (0, 0, _("invalid length: %s"), quote (digest_length_str));
+          error (EXIT_FAILURE, 0,
+                 _("maximum digest length for %s is %d bits"),
+                 quote (DIGEST_TYPE_STRING),
+                 DIGEST_MAX_LEN * 8);
+        }
+      if (digest_length % 8 != 0)
+        {
+          error (0, 0, _("invalid length: %s"), quote (digest_length_str));
+          error (EXIT_FAILURE, 0, _("length is not a multiple of 8"));
+        }
     }
   if (digest_length == 0)
     {
 # if HASH_ALGO_BLAKE2
-      digest_length = BLAKE2B_MAX_LEN * 8;
+      digest_length = DIGEST_MAX_LEN * 8;
 # else
       digest_length = algorithm_bits[cksum_algorithm];
 # endif
@@ -1505,7 +1671,7 @@ main (int argc, char **argv)
 #endif
 
 #if HASH_ALGO_CKSUM
-  switch (cksum_algorithm)
+  switch (+cksum_algorithm)
     {
     case bsd:
     case sysv:
@@ -1515,8 +1681,6 @@ main (int argc, char **argv)
           error (EXIT_FAILURE, 0,
                  _("--check is not supported with "
                    "--algorithm={bsd,sysv,crc,crc32b}"));
-        break;
-    default:
         break;
     }
 

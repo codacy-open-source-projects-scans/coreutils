@@ -1,5 +1,5 @@
 /* set-fields.c -- common functions for parsing field list
-   Copyright (C) 2015-2024 Free Software Foundation, Inc.
+   Copyright (C) 2015-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 #include "system.h"
 #include <ctype.h>
+#include "c-ctype.h"
 #include "quote.h"
 #include "set-fields.h"
 
@@ -60,7 +61,7 @@ static int
 compare_ranges (const void *a, const void *b)
 {
   struct field_range_pair const *ap = a, *bp = b;
-  return (ap->lo > bp->lo) - (ap->lo < bp->lo);
+  return _GL_CMP (ap->lo, bp->lo);
 }
 
 /* Reallocate Range Pair entries, with corresponding
@@ -146,7 +147,7 @@ set_fields (char const *fieldstr, unsigned int options)
   /* Collect and store in RP the range end points. */
 
   /* Special case: '--field=-' means all fields, emulate '--field=1-' . */
-  if ((options & SETFLD_ALLOW_DASH) && STREQ (fieldstr,"-"))
+  if ((options & SETFLD_ALLOW_DASH) && streq (fieldstr,"-"))
     {
       value = 1;
       lhs_specified = true;
@@ -230,7 +231,7 @@ set_fields (char const *fieldstr, unsigned int options)
           lhs_specified = false;
           rhs_specified = false;
         }
-      else if (ISDIGIT (*fieldstr))
+      else if (c_isdigit (*fieldstr))
         {
           /* Record beginning of digit string, in case we have to
              complain about it.  */

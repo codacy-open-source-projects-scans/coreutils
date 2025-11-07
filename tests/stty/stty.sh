@@ -1,7 +1,7 @@
 #!/bin/sh
 # Make sure stty can parse most of its options.
 
-# Copyright (C) 1998-2024 Free Software Foundation, Inc.
+# Copyright (C) 1998-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -51,7 +51,7 @@ returns_ 1 stty -raw -a 2>/dev/null || fail=1
 # Build a list of all boolean options stty accepts on this system.
 # Don't depend on terminal width.  Put each option on its own line,
 # remove all non-boolean ones, then remove any leading hyphens.
-sed_del='/^speed/d;/^rows/d;/^columns/d;/ = /d'
+sed_del='/^[io]*speed/d;/^rows/d;/^columns/d;/ = /d'
 options=$(stty -a | tr -s ';' '\n' | sed "s/^ //;$sed_del;s/-//g")
 
 # Take them one at a time, with and without the leading '-'.
@@ -94,5 +94,15 @@ for W in $(seq 80 90); do
   output_width=$(COLUMNS="$W" stty -a | wc -L)
   test "$output_width" -le "$W" || fail=1
 done
+
+# Ensure we support varied numeric forms
+# with appropriate rounding
+if stty ispeed '9600'; then
+  stty ispeed '  +9600' || fail=1
+  stty ispeed '9600.49' || fail=1
+  stty ispeed '9600.50' || fail=1
+  stty ispeed '9599.51' || fail=1
+  stty ispeed '  9600.' || fail=1
+fi
 
 Exit $fail

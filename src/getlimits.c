@@ -1,5 +1,5 @@
 /* getlimits - print various platform dependent limits.
-   Copyright (C) 2008-2024 Free Software Foundation, Inc.
+   Copyright (C) 2008-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 
 #include "ftoastr.h"
 #include "system.h"
+#include "ioblksize.h"
 #include "long-options.h"
 
 #define PROGRAM_NAME "getlimits"
@@ -43,6 +44,14 @@
 
 #ifndef PID_T_MIN
 # define PID_T_MIN TYPE_MINIMUM (pid_t)
+#endif
+
+#ifndef OFF64_T_MAX
+# define OFF64_T_MAX TYPE_MAXIMUM (off64_t)
+#endif
+
+#ifndef OFF64_T_MIN
+# define OFF64_T_MIN TYPE_MINIMUM (off64_t)
 #endif
 
 /* These are not interesting to print.
@@ -160,6 +169,7 @@ main (int argc, char **argv)
   print_int (GID_T);
   print_int (PID_T);
   print_int (OFF_T);
+  print_int (OFF64_T);
   print_int (INTMAX);
   print_int (UINTMAX);
 
@@ -167,6 +177,9 @@ main (int argc, char **argv)
   print_float (FLT);
   print_float (DBL);
   print_float (LDBL);
+
+  /* Other useful constants */
+  printf ("IO_BUFSIZE=%ju\n", (uintmax_t) IO_BUFSIZE);
 
   return EXIT_SUCCESS;
 }

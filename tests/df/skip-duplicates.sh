@@ -2,7 +2,7 @@
 # Test df's behavior when the mount list contains duplicate entries.
 # This test is skipped on systems that lack LD_PRELOAD support; that's fine.
 
-# Copyright (C) 2012-2024 Free Software Foundation, Inc.
+# Copyright (C) 2012-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -38,7 +38,8 @@ grep '^#define HAVE_GETMNTENT 1' $CONFIG_HEADER > /dev/null \
       || skip_ "getmntent is not used on this system"
 
 # Simulate an mtab file to test various cases.
-cat > k.c <<EOF || framework_failure_
+# Replace gnulib streq and C23 nullptr as that are not available here.
+sed 's/streq/0==str''cmp/; s/nullptr/NU''LL/' > k.c <<EOF || framework_failure_
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,7 +50,34 @@ cat > k.c <<EOF || framework_failure_
 #include <stdarg.h>
 #include <dlfcn.h>
 
-#define STREQ(a, b) (strcmp (a, b) == 0)
+static FILE* (*fopen_func)(const char *, const char *);
+
+FILE* fopen(const char *path, const char *mode)
+{
+
+  /* get reference to original (libc provided) fopen */
+  if (!fopen_func)
+    {
+      fopen_func = (FILE*(*)(const char *, const char *))
+                   dlsym(RTLD_NEXT, "fopen");
+      if (!fopen_func)
+        {
+          fprintf (stderr, "Failed to find fopen()\n");
+          errno = ESRCH;
+          return nullptr;
+        }
+    }
+
+  /* Returning ENOENT here will get read_file_system_list()
+     to fall back to using getmntent() below.  */
+  if (streq (path, "/proc/self/mountinfo"))
+    {
+      errno = ENOENT;
+      return nullptr;
+    }
+
+  return fopen_func(path, mode);
+}
 
 int open(const char *path, int flags, ...)
 {
@@ -68,6 +96,14 @@ int open(const char *path, int flags, ...)
         }
     }
 
+  /* Returning ENOENT here will get read_file_system_list()
+     to fall back to using getmntent() below.  */
+  if (streq (path, "/proc/self/mountinfo"))
+    {
+      errno = ENOENT;
+      return -1;
+    }
+
   va_list ap;
   va_start (ap, flags);
   mode_t mode = (sizeof (mode_t) < sizeof (int)
@@ -75,18 +111,8 @@ int open(const char *path, int flags, ...)
                  : va_arg (ap, mode_t));
   va_end (ap);
 
-  /* Returning ENOENT here will get read_file_system_list()
-     to fall back to using getmntent() below.  */
-  if (STREQ (path, "/proc/self/mountinfo"))
-    {
-      errno = ENOENT;
-      return -1;
-    }
-  else
-    return open_func(path, flags, mode);
+  return open_func(path, flags, mode);
 }
-
-#define STREQ(a, b) (strcmp (a, b) == 0)
 
 struct mntent *getmntent (FILE *fp)
 {
@@ -97,7 +123,7 @@ struct mntent *getmntent (FILE *fp)
   /* Prove that LD_PRELOAD works. */
   if (!done)
     {
-      fclose (fopen ("x", "w"));
+      fclose (fopen_func ("x", "w"));
       ++done;
     }
 
@@ -132,9 +158,9 @@ struct mntent *getmntent (FILE *fp)
         mntents[done-2].mnt_type = "-";
       if (!mntents[done-2].mnt_opts)
         mntents[done-2].mnt_opts = "-";
-      if (STREQ (mntents[done-2].mnt_dir, "/NONROOT"))
+      if (streq (mntents[done-2].mnt_dir, "/NONROOT"))
         mntents[done-2].mnt_dir = nonroot_fs;
-      if (STREQ (mntents[done-2].mnt_dir, "/REMOTE"))
+      if (streq (mntents[done-2].mnt_dir, "/REMOTE"))
         {
           if (!remote_fs || !*remote_fs)
             continue;
@@ -150,7 +176,7 @@ EOF
 
 # Then compile/link it:
 gcc_shared_ k.c k.so \
-  || framework_failure_ 'failed to build shared library'
+  || skip_ 'failed to build mntent shared library'
 
 # Test if LD_PRELOAD works:
 LD_PRELOAD=$LD_PRELOAD:./k.so df

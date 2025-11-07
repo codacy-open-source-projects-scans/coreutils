@@ -1,5 +1,5 @@
 /* wc - print the number of lines, words, and bytes in files
-   Copyright (C) 1985-2024 Free Software Foundation, Inc.
+   Copyright (C) 1985-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,7 +23,6 @@
 #include <stdio.h>
 #include <getopt.h>
 #include <sys/types.h>
-#include <uchar.h>
 
 #include <argmatch.h>
 #include <argv-iter.h>
@@ -34,6 +33,7 @@
 #include <xbinary-io.h>
 
 #include "system.h"
+#include "cpu-supports.h"
 #include "ioblksize.h"
 #include "wc.h"
 
@@ -134,14 +134,29 @@ static enum total_type total_mode = total_auto;
 static bool
 avx2_supported (void)
 {
-  bool avx_enabled = 0 < __builtin_cpu_supports ("avx2");
-
+  bool avx2_enabled = cpu_supports ("avx2");
   if (debug)
-    error (0, 0, (avx_enabled
+    error (0, 0, (avx2_enabled
                   ? _("using avx2 hardware support")
                   : _("avx2 support not detected")));
 
-  return avx_enabled;
+  return avx2_enabled;
+}
+#endif
+
+#ifdef USE_AVX512_WC_LINECOUNT
+static bool
+avx512_supported (void)
+{
+  bool avx512_enabled = (cpu_supports ("avx512f")
+                         && cpu_supports ("avx512bw"));
+
+  if (debug)
+    error (0, 0, (avx512_enabled
+                  ? _("using avx512 hardware support")
+                  : _("avx512 support not detected")));
+
+  return avx512_enabled;
 }
 #endif
 
@@ -191,14 +206,13 @@ the following order: newline, word, character, byte, maximum line length.\n\
   exit (status);
 }
 
-/* Return non zero if a non breaking space.  */
+/* Return non zero if POSIXLY_CORRECT is not set and WC is a non breaking
+   space.  */
 ATTRIBUTE_PURE
 static int
-iswnbspace (wint_t wc)
+maybe_c32isnbspace (char32_t wc)
 {
-  return ! posixly_correct
-         && (wc == 0x00A0 || wc == 0x2007
-             || wc == 0x202F || wc == 0x2060);
+  return ! posixly_correct && c32isnbspace (wc);
 }
 
 /* FILE is the name of the file (or null for standard input)
@@ -247,6 +261,13 @@ write_counts (uintmax_t lines,
 static struct wc_lines
 wc_lines (int fd)
 {
+#ifdef USE_AVX512_WC_LINECOUNT
+  static signed char use_avx512;
+  if (!use_avx512)
+    use_avx512 = avx512_supported () ? 1 : -1;
+  if (0 < use_avx512)
+    return wc_lines_avx512 (fd);
+#endif
 #ifdef USE_AVX2_WC_LINECOUNT
   static signed char use_avx2;
   if (!use_avx2)
@@ -296,10 +317,9 @@ wc_lines (int fd)
 
 /* Count words.  FILE_X is the name of the file (or null for standard
    input) that is open on descriptor FD.  *FSTATUS is its status.
-   CURRENT_POS is the current file offset if known, negative if unknown.
    Return true if successful.  */
 static bool
-wc (int fd, char const *file_x, struct fstatus *fstatus, off_t current_pos)
+wc (int fd, char const *file_x, struct fstatus *fstatus)
 {
   int err = 0;
   char buf[IO_BUFSIZE + 1];
@@ -351,10 +371,10 @@ wc (int fd, char const *file_x, struct fstatus *fstatus, off_t current_pos)
           && 0 <= fstatus->st.st_size)
         {
           off_t end_pos = fstatus->st.st_size;
+          off_t current_pos = lseek (fd, 0, SEEK_CUR);
           if (current_pos < 0)
-            current_pos = lseek (fd, 0, SEEK_CUR);
-
-          if (end_pos % page_size)
+            ;
+          else if (end_pos % page_size)
             {
               /* We only need special handling of /proc and /sys files etc.
                  when they're a multiple of PAGE_SIZE.  In the common case
@@ -526,8 +546,8 @@ wc (int fd, char const *file_x, struct fstatus *fstatus, off_t current_pos)
                           if (width > 0)
                             linepos += width;
                         }
-                      in_word2 = ! iswspace (wide_char)
-                                 && ! iswnbspace (wide_char);
+                      in_word2 = (! c32isspace (wide_char)
+                                  && ! maybe_c32isnbspace (wide_char));
                     }
 
                   /* Count words by counting word starts, i.e., each
@@ -625,11 +645,11 @@ wc (int fd, char const *file_x, struct fstatus *fstatus, off_t current_pos)
 static bool
 wc_file (char const *file, struct fstatus *fstatus)
 {
-  if (! file || STREQ (file, "-"))
+  if (! file || streq (file, "-"))
     {
       have_read_stdin = true;
       xset_binary_mode (STDIN_FILENO, O_BINARY);
-      return wc (STDIN_FILENO, file, fstatus, -1);
+      return wc (STDIN_FILENO, file, fstatus);
     }
   else
     {
@@ -641,7 +661,7 @@ wc_file (char const *file, struct fstatus *fstatus)
         }
       else
         {
-          bool ok = wc (fd, file, fstatus, 0);
+          bool ok = wc (fd, file, fstatus);
           if (close (fd) != 0)
             {
               error (0, errno, "%s", quotef (file));
@@ -672,7 +692,7 @@ get_input_fstatus (idx_t nfiles, char *const *file)
   else
     {
       for (idx_t i = 0; i < nfiles; i++)
-        fstatus[i].failed = (! file[i] || STREQ (file[i], "-")
+        fstatus[i].failed = (! file[i] || streq (file[i], "-")
                              ? fstat (STDIN_FILENO, &fstatus[i].st)
                              : stat (file[i], &fstatus[i].st));
     }
@@ -799,7 +819,7 @@ main (int argc, char **argv)
       wc_isprint[i] = !!isprint (i);
   if (print_words)
     for (int i = 0; i <= UCHAR_MAX; i++)
-      wc_isspace[i] = isspace (i) || iswnbspace (btoc32 (i));
+      wc_isspace[i] = isspace (i) || maybe_c32isnbspace (btoc32 (i));
 
   bool read_tokens = false;
   struct argv_iterator *ai;
@@ -817,7 +837,7 @@ main (int argc, char **argv)
           usage (EXIT_FAILURE);
         }
 
-      if (STREQ (files_from, "-"))
+      if (streq (files_from, "-"))
         stream = stdin;
       else
         {
@@ -873,11 +893,11 @@ main (int argc, char **argv)
   for (int i = 0; (file_name = argv_iter (ai, &ai_err)); i++)
     {
       bool skip_file = false;
-      if (files_from && STREQ (files_from, "-") && STREQ (file_name, "-"))
+      if (files_from && streq (files_from, "-") && streq (file_name, "-"))
         {
           /* Give a better diagnostic in an unusual case:
              printf - | wc --files0-from=- */
-          error (0, 0, _("when reading file names from stdin, "
+          error (0, 0, _("when reading file names from standard input, "
                          "no file name of %s allowed"),
                  quoteaf (file_name));
           skip_file = true;
@@ -923,7 +943,7 @@ main (int argc, char **argv)
     case AI_ERR_MEM:
       xalloc_die ();
 
-    default:
+    case AI_ERR_OK: default:
       unreachable ();
     }
 

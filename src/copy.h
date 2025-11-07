@@ -1,5 +1,5 @@
 /* core functions for copying files and directories
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -63,7 +63,7 @@ enum Update_type
   /* Always update..  */
   UPDATE_ALL,
 
-  /* Update if dest older.  */
+  /* Update if (nondirectory) dest has older mtime.  */
   UPDATE_OLDER,
 
   /* Leave existing files.  */
@@ -76,11 +76,10 @@ enum Update_type
 /* This type is used to help mv (via copy.c) distinguish these cases.  */
 enum Interactive
 {
-  I_ALWAYS_YES = 1,
-  I_ALWAYS_NO,       /* Skip and fail.   */
-  I_ALWAYS_SKIP,     /* Skip and ignore. */
-  I_ASK_USER,
-  I_UNSPECIFIED
+  I_UNSPECIFIED,
+  I_ALWAYS_YES,      /* -f.  */
+  I_ALWAYS_SKIP,     /* -n (Skip and ignore).  */
+  I_ASK_USER,        /* -i.  */
 };
 
 /* How to handle symbolic links.  */
@@ -256,9 +255,8 @@ struct cp_options
      Create destination directories as usual. */
   bool symbolic_link;
 
-  /* If true, do not copy a nondirectory that has an existing destination
-     with the same or newer modification time. */
-  bool update;
+  /* Control if destination files are replaced.  */
+  enum Update_type update;
 
   /* If true, display the names of the files before copying them. */
   bool verbose;
@@ -304,11 +302,43 @@ struct cp_options
   Hash_table *src_info;
 };
 
+enum copy_debug_val
+  {
+   COPY_DEBUG_UNKNOWN,
+   COPY_DEBUG_NO,
+   COPY_DEBUG_YES,
+   COPY_DEBUG_EXTERNAL,
+   COPY_DEBUG_EXTERNAL_INTERNAL,
+   COPY_DEBUG_AVOIDED,
+   COPY_DEBUG_UNSUPPORTED,
+  };
+
+/* debug info about the last file copy.  */
+struct copy_debug
+{
+  enum copy_debug_val offload;
+  enum copy_debug_val reflink;
+  enum copy_debug_val sparse_detection;
+};
+
+/* The type of a large counter.  Although it is always nonnegative,
+   it is signed to help signed overflow checking catch any bugs.  */
+typedef intmax_t count_t;
+# define COUNT_MAX INTMAX_MAX
+
 bool copy (char const *src_name, char const *dst_name,
            int dst_dirfd, char const *dst_relname,
            int nonexistent_dst, const struct cp_options *options,
            bool *copy_into_self, bool *rename_succeeded)
   _GL_ATTRIBUTE_NONNULL ((1, 2, 4, 6, 7));
+
+intmax_t copy_file_data (int ifd, struct stat const *ist, off_t ipos,
+                         char const *iname,
+                         int ofd, struct stat const *ost, off_t opos,
+                         char const *oname,
+                         count_t ibytes, struct cp_options const *x,
+                         struct copy_debug *copy_debug)
+  _GL_ATTRIBUTE_NONNULL ((2, 4, 6, 8, 10, 11));
 
 extern bool set_process_security_ctx (char const *src_name,
                                       char const *dst_name,

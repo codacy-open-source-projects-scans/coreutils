@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # Test "unexpand".
 
-# Copyright (C) 2000-2024 Free Software Foundation, Inc.
+# Copyright (C) 2000-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -75,6 +75,10 @@ my @Tests =
      ['blanks-11', '-t', '3,4', {IN=> "    4\n"}, {OUT=> "\t\t4\n"}],
      ['blanks-12', '-t', '3,4', {IN=> "01  4\n"}, {OUT=> "01\t\t4\n"}],
      ['blanks-13', '-t', '3,4', {IN=> "0   4\n"}, {OUT=> "0\t\t4\n"}],
+
+     # These would overflow a heap buffer from v8.28 - v9.8 inclusive
+     ['blanks-ext1', '-t', '3,+6', {IN=> "\t      "}, {OUT=> "\t\t"}],
+     ['blanks-ext2', '-t', '3,/9', {IN=> "\t      "}, {OUT=> "\t\t"}],
 
      # POSIX says spaces should only follow tabs. Also a single
      # trailing space is not converted to a tab, when before

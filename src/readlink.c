@@ -1,5 +1,5 @@
 /* readlink -- display value of a symbolic link.
-   Copyright (C) 2002-2024 Free Software Foundation, Inc.
+   Copyright (C) 2002-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -78,8 +78,10 @@ usage (int status)
                                 without requirements on components existence\n\
   -n, --no-newline              do not output the trailing delimiter\n\
   -q, --quiet\n\
-  -s, --silent                  suppress most error messages (on by default)\n\
-  -v, --verbose                 report error messages\n\
+  -s, --silent                  suppress most error messages (on by default\n\
+                                if POSIXLY_CORRECT is not set)\n\
+  -v, --verbose                 report error messages (on by default if\n\
+                                POSIXLY_CORRECT is set)\n\
   -z, --zero                    end each output line with NUL, not newline\n\
 "), stdout);
       fputs (HELP_OPTION_DESCRIPTION, stdout);
@@ -151,6 +153,11 @@ main (int argc, char **argv)
         error (0, 0, _("ignoring --no-newline with multiple arguments"));
       no_newline = false;
     }
+
+  /* POSIX requires a diagnostic message written to standard error and a
+     non-zero exit status when given a file that is not a symbolic link.  */
+  if (getenv ("POSIXLY_CORRECT") != nullptr)
+    verbose = true;
 
   for (; optind < argc; ++optind)
     {

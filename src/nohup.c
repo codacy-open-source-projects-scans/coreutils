@@ -1,5 +1,5 @@
 /* nohup -- run a command immune to hangups, with output to a non-tty
-   Copyright (C) 2003-2024 Free Software Foundation, Inc.
+   Copyright (C) 2003-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -73,7 +73,7 @@ To save output to FILE, use '%s COMMAND > FILE'.\n"),
 }
 
 /* GCC 13 gets confused by the dup2 calls
-   <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109839>.  */
+   <https://gcc.gnu.org/PR109839>.  */
 #if 13 <= __GNUC__
 # pragma GCC diagnostic ignored "-Wanalyzer-fd-leak"
 #endif
@@ -141,7 +141,7 @@ main (int argc, char **argv)
       char const *file = "nohup.out";
       int flags = O_CREAT | O_WRONLY | O_APPEND;
       mode_t mode = S_IRUSR | S_IWUSR;
-      mode_t umask_value = umask (~mode);
+      mode_t umask_value = umask (0);
       out_fd = (redirecting_stdout
                 ? fd_reopen (STDOUT_FILENO, file, flags, mode)
                 : open (file, flags, mode));
@@ -191,8 +191,9 @@ main (int argc, char **argv)
       if (!redirecting_stdout)
         error (0, 0,
                _(ignoring_input
-                 ? N_("ignoring input and redirecting stderr to stdout")
-                 : N_("redirecting stderr to stdout")));
+                 ? N_("ignoring input and redirecting standard error "
+                      "to standard output")
+                 : N_("redirecting standard error to standard output")));
 
       if (dup2 (out_fd, STDERR_FILENO) < 0)
         error (exit_internal_failure, errno,

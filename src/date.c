@@ -1,5 +1,5 @@
 /* date - print or set the system date and time
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -31,13 +31,12 @@
 #include "quote.h"
 #include "show-date.h"
 #include "stat-time.h"
+#include "xsetenv.h"
 
 /* The official name of this program (e.g., no 'g' prefix).  */
 #define PROGRAM_NAME "date"
 
 #define AUTHORS proper_name ("David MacKenzie")
-
-static bool show_date_helper (char const *, struct timespec, timezone_t);
 
 enum Time_spec
 {
@@ -143,8 +142,8 @@ With -s, or with [MMDDhhmm[[CC]YY][.ss]], set the date and time.\n\
   -d, --date=STRING          display time described by STRING, not 'now'\n\
 "), stdout);
       fputs (_("\
-      --debug                annotate the parsed date,\n\
-                              and warn about questionable usage to stderr\n\
+      --debug                annotate the parsed date, and\n\
+                              warn about questionable usage to standard error\n\
 "), stdout);
       fputs (_("\
   -f, --file=DATEFILE        like --date; once for each line of DATEFILE\n\
@@ -200,13 +199,13 @@ FORMAT controls the output.  Interpreted sequences are:\n\
       fputs (_("\
   %C   century; like %Y, except omit last two digits (e.g., 20)\n\
   %d   day of month (e.g., 01)\n\
-  %D   date; same as %m/%d/%y\n\
+  %D   date (ambiguous); same as %m/%d/%y\n\
   %e   day of month, space padded; same as %_d\n\
 "), stdout);
       fputs (_("\
   %F   full date; like %+4Y-%m-%d\n\
-  %g   last two digits of year of ISO week number (see %G)\n\
-  %G   year of ISO week number (see %V); normally useful only with %V\n\
+  %g   last two digits of year of ISO week number (ambiguous; 00-99); see %G\n\
+  %G   year of ISO week number; normally useful only with %V\n\
 "), stdout);
       fputs (_("\
   %h   same as %b\n\
@@ -243,9 +242,9 @@ FORMAT controls the output.  Interpreted sequences are:\n\
   %W   week number of year, with Monday as first day of week (00..53)\n\
 "), stdout);
       fputs (_("\
-  %x   locale's date representation (e.g., 12/31/99)\n\
+  %x   locale's date (can be ambiguous; e.g., 12/31/99)\n\
   %X   locale's time representation (e.g., 23:13:48)\n\
-  %y   last two digits of year (00..99)\n\
+  %y   last two digits of year (ambiguous; 00..99)\n\
   %Y   year\n\
 "), stdout);
       fputs (_("\
@@ -330,13 +329,79 @@ adjust_resolution (char const *format)
   return copy;
 }
 
+/* Set the LC_TIME category of the current locale.
+   Return the previous value of the LC_TIME category, as a freshly allocated
+   string or null.  */
+
+static char *
+set_LC_TIME (char const *locale)
+{
+  /* It is not sufficient to do
+       setlocale (LC_TIME, locale);
+     because show_date relies on fprintftime, that uses the Gnulib module
+     'localename-unsafe', that looks at the values of the environment variables
+     (in order to distinguish the default locale from the C locale on platforms
+     like macOS).  */
+  char const *all = getenv ("LC_ALL");
+  if (all != nullptr && *all != '\0')
+    {
+      /* Setting LC_TIME when LC_ALL is set would have no effect.  Therefore we
+         have to unset LC_ALL and sets its value to all locale categories that
+         are relevant for this program.  */
+      xsetenv ("LC_CTYPE", all, 1);          /* definitely needed */
+      xsetenv ("LC_TIME", all, 1);           /* definitely needed */
+      xsetenv ("LC_MESSAGES", all, 1);       /* definitely needed */
+      xsetenv ("LC_NUMERIC", all, 1);        /* possibly needed */
+      /* xsetenv ("LC_COLLATE", all, 1); */  /* not needed */
+      /* xsetenv ("LC_MONETARY", all, 1); */ /* not needed */
+      unsetenv ("LC_ALL");
+    }
+
+  /* Set LC_TIME as an environment variable.  */
+  char const *value = getenv ("LC_TIME");
+  char *ret = (value == nullptr || *value == '\0' ? nullptr : xstrdup (value));
+  if (locale != nullptr)
+    xsetenv ("LC_TIME", locale, 1);
+  else
+    unsetenv ("LC_TIME");
+
+  /* Update the current locale accordingly.  */
+  setlocale (LC_TIME, "");
+
+  return ret;
+}
+
+static bool
+show_date_helper (char const *format, bool use_c_locale,
+                  struct timespec when, timezone_t tz)
+{
+  if (parse_datetime_flags & PARSE_DATETIME_DEBUG)
+    error (0, 0, _("output format: %s"), quote (format));
+
+  bool ok;
+  if (use_c_locale)
+    {
+      char *old_locale_category = set_LC_TIME ("C");
+      ok = show_date (format, when, tz);
+      char *new_locale_category = set_LC_TIME (old_locale_category);
+      free (new_locale_category);
+      free (old_locale_category);
+    }
+  else
+    ok = show_date (format, when, tz);
+
+  putchar ('\n');
+  return ok;
+}
+
 /* Parse each line in INPUT_FILENAME as with --date and display each
    resulting time and date.  If the file cannot be opened, tell why
    then exit.  Issue a diagnostic for any lines that cannot be parsed.
    Return true if successful.  */
 
 static bool
-batch_convert (char const *input_filename, char const *format,
+batch_convert (char const *input_filename,
+               char const *format, bool format_in_c_locale,
                timezone_t tz, char const *tzstring)
 {
   bool ok;
@@ -345,7 +410,7 @@ batch_convert (char const *input_filename, char const *format,
   size_t buflen;
   struct timespec when;
 
-  if (STREQ (input_filename, "-"))
+  if (streq (input_filename, "-"))
     {
       input_filename = _("standard input");
       in_stream = stdin;
@@ -381,8 +446,11 @@ batch_convert (char const *input_filename, char const *format,
         }
       else
         {
-          ok &= show_date_helper (format, when, tz);
+          ok &= show_date_helper (format, format_in_c_locale, when, tz);
         }
+
+      if (ferror (stdout))
+        write_error ();
     }
 
   if (fclose (in_stream) == EOF)
@@ -402,6 +470,7 @@ main (int argc, char **argv)
   struct timespec when;
   bool set_date = false;
   char const *format = nullptr;
+  bool format_in_c_locale = false;
   bool get_resolution = false;
   char *batch_file = nullptr;
   char *reference = nullptr;
@@ -421,8 +490,6 @@ main (int argc, char **argv)
   while ((optc = getopt_long (argc, argv, short_options, long_options, nullptr))
          != -1)
     {
-      char const *new_format = nullptr;
-
       switch (optc)
         {
         case 'd':
@@ -450,7 +517,8 @@ main (int argc, char **argv)
             enum Time_spec i =
               XARGMATCH ("--rfc-3339", optarg,
                          time_spec_string + 2, time_spec + 2);
-            new_format = rfc_3339_format[i];
+            format = rfc_3339_format[i];
+            format_in_c_locale = true;
             break;
           }
         case 'I':
@@ -467,14 +535,16 @@ main (int argc, char **argv)
               (optarg
                ? XARGMATCH ("--iso-8601", optarg, time_spec_string, time_spec)
                : TIME_SPEC_DATE);
-            new_format = iso_8601_format[i];
+            format = iso_8601_format[i];
+            format_in_c_locale = true;
             break;
           }
         case 'r':
           reference = optarg;
           break;
         case 'R':
-          new_format = rfc_email_format;
+          format = rfc_email_format;
+          format_in_c_locale = true;
           break;
         case 's':
           if (set_datestr)
@@ -494,13 +564,6 @@ main (int argc, char **argv)
         case_GETOPT_VERSION_CHAR (PROGRAM_NAME, AUTHORS);
         default:
           usage (EXIT_FAILURE);
-        }
-
-      if (new_format)
-        {
-          if (format)
-            error (EXIT_FAILURE, 0, _("multiple output formats specified"));
-          format = new_format;
         }
     }
 
@@ -578,7 +641,8 @@ main (int argc, char **argv)
   timezone_t tz = tzalloc (tzstring);
 
   if (batch_file != nullptr)
-    ok = batch_convert (batch_file, format_res, tz, tzstring);
+    ok = batch_convert (batch_file, format_res, format_in_c_locale,
+                        tz, tzstring);
   else
     {
       bool valid_date = true;
@@ -643,26 +707,8 @@ main (int argc, char **argv)
             }
         }
 
-      ok &= show_date_helper (format_res, when, tz);
+      ok &= show_date_helper (format_res, format_in_c_locale, when, tz);
     }
 
   main_exit (ok ? EXIT_SUCCESS : EXIT_FAILURE);
-}
-
-static bool
-show_date_helper (char const *format, struct timespec when, timezone_t tz)
-{
-  if (parse_datetime_flags & PARSE_DATETIME_DEBUG)
-    error (0, 0, _("output format: %s"), quote (format));
-
-  if (format == rfc_email_format)
-    setlocale (LC_TIME, "C");
-
-  bool ok = show_date (format, when, tz);
-
-  if (format == rfc_email_format)
-    setlocale (LC_TIME, "");
-
-  putchar ('\n');
-  return ok;
 }

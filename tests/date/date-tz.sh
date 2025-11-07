@@ -1,7 +1,7 @@
 #!/bin/sh
 # Verify TZ processing.
 
-# Copyright (C) 2017-2024 Free Software Foundation, Inc.
+# Copyright (C) 2017-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -21,6 +21,12 @@ print_ver_ date
 
 # coreutils-8.27 would overwrite the heap with large TZ values
 tz_long=$(printf '%2000s' | tr ' ' a)
-date -d "TZ=\"${tz_long}0\" 2017" || fail=1
+date -d "TZ=\"${tz_long}0\" 2017" 2> err
+
+# Gnulib's tzalloc handles arbitrarily long TZ values, but NetBSD's does not.
+case $? in
+  0) ;;
+  *) grep '^date: invalid date' err || fail=1 ;;
+esac
 
 Exit $fail

@@ -1,7 +1,7 @@
 #!/bin/sh
 # make sure that dd doesn't allocate memory unnecessarily
 
-# Copyright (C) 2013-2024 Free Software Foundation, Inc.
+# Copyright (C) 2013-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -43,7 +43,7 @@ check_dd_seek_alloc() {
   timeout 10 dd count=1 if=/dev/zero of=tape&
 
   # Allocate buffer and read from the "tape"
-  (ulimit -v $vm \
+  (ulimit -v $(($vm+4000)) \
      && timeout 10 dd $dd_buf=30M $dd_op=1 count=0 $dd_file=tape)
   local ret=$?
 

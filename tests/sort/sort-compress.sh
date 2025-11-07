@@ -1,7 +1,7 @@
 #!/bin/sh
 # Test use of compression by sort
 
-# Copyright (C) 2007-2024 Free Software Foundation, Inc.
+# Copyright (C) 2007-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -68,5 +68,14 @@ PATH=.:$PATH sort --compress-program=dzip -S 1k in > out || fail=1
 compare exp out || fail=1
 test -f ok || fail=1
 rm -f dzip ok
+
+# Check the behavior of 'sort' when the program specified by --compress-program
+# does not exist.
+cat <<\EOF > exp-err
+sort: could not run compress program 'missing': No such file or directory
+EOF
+sort --compress-program=missing -S 1k in > out 2> err || fail=1
+compare exp out || fail=1
+compare exp-err err || fail=1
 
 Exit $fail

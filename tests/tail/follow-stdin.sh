@@ -1,7 +1,7 @@
 #!/bin/sh
 # Test tail -f -
 
-# Copyright (C) 2009-2024 Free Software Foundation, Inc.
+# Copyright (C) 2009-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -59,9 +59,7 @@ done
 returns_ 1 timeout 10 tail -f - <&- 2>errt || fail=1
 cat <<\EOF >exp || framework_failure_
 tail: cannot fstat 'standard input'
-tail: error reading 'standard input'
 tail: no files remaining
-tail: -
 EOF
 sed 's/\(tail:.*\):.*/\1/' errt > err || framework_failure_
 compare exp err || fail=1

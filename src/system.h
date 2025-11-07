@@ -1,5 +1,5 @@
 /* system-dependent definitions for coreutils
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -68,8 +68,10 @@
 #endif
 
 #include <stdckdint.h>
+#include <stdcountof.h>
 #include <stddef.h>
 #include <string.h>
+#include <uchar.h>
 #include <errno.h>
 
 /* Some systems don't define this; POSIX mentions it but says it is
@@ -143,19 +145,18 @@ enum
 
 #include "timespec.h"
 
-/* ISDIGIT differs from isdigit, as follows:
-   - Its arg may be any int or unsigned int; it need not be an unsigned char
-     or EOF.
-   - It's typically faster.
-   POSIX says that only '0' through '9' are digits.  Prefer ISDIGIT to
-   isdigit unless it's important to use the locale's definition
-   of 'digit' even when the host does not conform to POSIX.  */
-#define ISDIGIT(c) ((unsigned int) (c) - '0' <= 9)
-
 /* Convert a possibly-signed character to an unsigned character.  This is
    a bit safer than casting to unsigned char, since it catches some type
    errors that the cast doesn't.  */
 static inline unsigned char to_uchar (char ch) { return ch; }
+
+/* Return non zero if a non breaking space.  */
+ATTRIBUTE_PURE
+static inline int
+c32isnbspace (char32_t wc)
+{
+  return wc == 0x00A0 || wc == 0x2007 || wc == 0x202F || wc == 0x2060;
+}
 
 #include <locale.h>
 
@@ -183,7 +184,6 @@ select_plural (uintmax_t n)
   return (n <= ULONG_MAX ? n : n % PLURAL_REDUCER + PLURAL_REDUCER);
 }
 
-#define STREQ(a, b) (strcmp (a, b) == 0)
 #define STREQ_LEN(a, b, n) (strncmp (a, b, n) == 0) /* n==-1 means unbounded */
 #define STRPREFIX(a, b) (strncmp (a, b, strlen (b)) == 0)
 
@@ -342,9 +342,7 @@ enum
 #include "closein.h"
 #include "closeout.h"
 
-#define emit_bug_reporting_address unused__emit_bug_reporting_address
 #include "version-etc.h"
-#undef emit_bug_reporting_address
 
 #include "propername.h"
 /* Define away proper_name, since it's not worth the cost of adding ~17KB to
@@ -499,7 +497,7 @@ is_nul (void const *buf, size_t length)
 #endif
 
   if (! length)
-      return true;
+    return true;
 
   /* Check len bytes not aligned on a word.  */
   while (UNLIKELY (length & (sizeof word - 1)))
@@ -526,8 +524,8 @@ is_nul (void const *buf, size_t length)
         break;
    }
 
-   /* Now we know first 16 bytes are NUL, memcmp with self.  */
-   return memcmp (buf, p, length) == 0;
+  /* Now we know first 16 bytes are NUL, memeq with self.  */
+  return memeq (buf, p, length);
 }
 
 /* Set Accum = 10*Accum + Digit_val and return true, where Accum is an
@@ -654,13 +652,13 @@ emit_ancillary_info (char const *program)
   char const *node = program;
   struct infomap const *map_prog = infomap;
 
-  while (map_prog->program && ! STREQ (program, map_prog->program))
+  while (map_prog->program && ! streq (program, map_prog->program))
     map_prog++;
 
   if (map_prog->node)
     node = map_prog->node;
 
-  printf (_("\n%s online help: <%s>\n"), PACKAGE_NAME, PACKAGE_URL);
+  emit_bug_reporting_address ();
 
   /* Don't output this redundant message for English locales.
      Note we still output for 'C' so that it gets included in the man page.  */
@@ -677,7 +675,7 @@ emit_ancillary_info (char const *program)
   /* .htaccess on the coreutils web site maps programs to the appropriate page,
      however we explicitly handle "[" -> "test" here as the "[" is not
      recognized as part of a URL by default in terminals.  */
-  char const *url_program = STREQ (program, "[") ? "test" : program;
+  char const *url_program = streq (program, "[") ? "test" : program;
   printf (_("Full documentation <%s%s>\n"),
           PACKAGE_URL, url_program);
   printf (_("or available locally via: info '(coreutils) %s%s'\n"),
@@ -773,10 +771,6 @@ stzncpy (char *restrict dest, char const *restrict src, size_t len)
   return dest;
 }
 
-#ifndef ARRAY_CARDINALITY
-# define ARRAY_CARDINALITY(Array) (sizeof (Array) / sizeof *(Array))
-#endif
-
 /* Return true if ERR is ENOTSUP or EOPNOTSUPP, otherwise false.
    This wrapper function avoids the redundant 'or'd comparison on
    systems like Linux for which they have the same value.  It also
@@ -805,3 +799,41 @@ is_ENOTSUP (int err)
   quotearg_style (shell_escape_always_quoting_style, arg)
 #define quoteaf_n(n, arg) \
   quotearg_n_style (n, shell_escape_always_quoting_style, arg)
+
+/* Used instead of XARGMATCH() to provide a custom error message.  */
+#ifdef XARGMATCH
+static inline ptrdiff_t
+x_timestyle_match (char const * style, bool allow_posix,
+                   char const *const * timestyle_args,
+                   char const * timestyle_types,
+                   size_t timestyle_types_size,
+                   int fail_status)
+{
+  ptrdiff_t res = argmatch (style, timestyle_args,
+                            (char const *) timestyle_types,
+                            timestyle_types_size);
+  if (res < 0)
+    {
+      /* This whole block used to be a simple use of XARGMATCH.
+         but that didn't print the "posix-"-prefixed variants or
+         the "+"-prefixed format string option upon failure.  */
+      argmatch_invalid ("time style", style, res);
+
+      /* The following is a manual expansion of argmatch_valid,
+         but with the added "+ ..." description and the [posix-]
+         prefixes prepended.  Note that this simplification works
+         only because all four existing time_style_types values
+         are distinct.  */
+      fputs (_("Valid arguments are:\n"), stderr);
+      char const *const *p = timestyle_args;
+      char const *posix_prefix = allow_posix ? "[posix-]" : "";
+      while (*p)
+        fprintf (stderr, "  - %s%s\n", posix_prefix, *p++);
+      fputs (_("  - +FORMAT (e.g., +%H:%M) for a 'date'-style"
+               " format\n"), stderr);
+      usage (fail_status);
+    }
+
+  return res;
+}
+#endif

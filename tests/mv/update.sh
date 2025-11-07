@@ -1,7 +1,7 @@
 #!/bin/sh
 # make sure --update works as advertised
 
-# Copyright (C) 2001-2024 Free Software Foundation, Inc.
+# Copyright (C) 2001-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -37,6 +37,9 @@ for interactive in '' -i; do
     case "$(cat old)" in old) ;; *) fail=1 ;; esac
   done
 done
+
+# This should prompt. coreutils 9.3-9.5 mistakenly did not
+echo n | returns_ 1 mv -vi -u new old >/dev/null 2>&1 || fail=1
 
 # These should accept all options
 for update_option in '--update' '--update=older' '--update=all' \

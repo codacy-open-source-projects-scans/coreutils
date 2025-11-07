@@ -1,7 +1,7 @@
 #!/bin/sh
 # Verify chmod symlink handling options
 
-# Copyright (C) 2024 Free Software Foundation, Inc.
+# Copyright (C) 2024-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -14,7 +14,7 @@
 # GNU General Public License for more details.
 
 # You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 . "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
 print_ver_ chmod
@@ -77,7 +77,7 @@ count_755 0
 
 # Dangling links should not induce an error if not dereferencing
 for noderef in '-h' '-RP' '-P'; do
-  chmod 755 --no-dereference a/dangle 2>err || fail=1
+  chmod 755 --no-dereference $noderef a/dangle 2>err || fail=1
 done
 # Dangling links should induce an error if dereferencing
 for deref in '' '--deref' '-R'; do

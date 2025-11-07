@@ -1,5 +1,5 @@
 /* comm -- compare two sorted files line by line.
-   Copyright (C) 1986-2024 Free Software Foundation, Inc.
+   Copyright (C) 1986-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -285,7 +285,7 @@ compare_files (char **infiles)
       alt[i][0] = 0;
       alt[i][1] = 0;
       alt[i][2] = 0;
-      streams[i] = (STREQ (infiles[i], "-") ? stdin : fopen (infiles[i], "r"));
+      streams[i] = (streq (infiles[i], "-") ? stdin : fopen (infiles[i], "r"));
       if (!streams[i])
         error (EXIT_FAILURE, errno, "%s", quotef (infiles[i]));
 
@@ -318,8 +318,7 @@ compare_files (char **infiles)
               size_t len = MIN (thisline[0]->length, thisline[1]->length) - 1;
               order = memcmp (thisline[0]->buffer, thisline[1]->buffer, len);
               if (order == 0)
-                order = ((thisline[0]->length > thisline[1]->length)
-                         - (thisline[0]->length < thisline[1]->length));
+                order = _GL_CMP (thisline[0]->length, thisline[1]->length);
             }
         }
 
@@ -389,23 +388,20 @@ compare_files (char **infiles)
   if (total_option)
     {
       /* Print the summary, minding the column and line delimiters.  */
-      char buf1[INT_BUFSIZE_BOUND (uintmax_t)];
-      char buf2[INT_BUFSIZE_BOUND (uintmax_t)];
-      char buf3[INT_BUFSIZE_BOUND (uintmax_t)];
       if (col_sep_len == 1)
         { /* Separate to handle NUL char.  */
-          printf ("%s%c%s%c%s%c%s%c",
-                  umaxtostr (total[0], buf1), *col_sep,
-                  umaxtostr (total[1], buf2), *col_sep,
-                  umaxtostr (total[2], buf3), *col_sep,
+          printf ("%ju%c%ju%c%ju%c%s%c",
+                  total[0], *col_sep,
+                  total[1], *col_sep,
+                  total[2], *col_sep,
                   _("total"), delim);
         }
       else
         {
-          printf ("%s%s%s%s%s%s%s%c",
-                  umaxtostr (total[0], buf1), col_sep,
-                  umaxtostr (total[1], buf2), col_sep,
-                  umaxtostr (total[2], buf3), col_sep,
+          printf ("%ju%s%ju%s%ju%s%s%c",
+                  total[0], col_sep,
+                  total[1], col_sep,
+                  total[2], col_sep,
                   _("total"), delim);
         }
     }
@@ -468,7 +464,7 @@ main (int argc, char **argv)
         break;
 
       case OUTPUT_DELIMITER_OPTION:
-        if (col_sep_len && !STREQ (col_sep, optarg))
+        if (col_sep_len && !streq (col_sep, optarg))
           error (EXIT_FAILURE, 0, _("multiple output delimiters specified"));
         col_sep = optarg;
         col_sep_len = *optarg ? strlen (optarg) : 1;

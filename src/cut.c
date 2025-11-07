@@ -1,5 +1,5 @@
 /* cut - remove parts of lines of files
-   Copyright (C) 1997-2024 Free Software Foundation, Inc.
+   Copyright (C) 1997-2025 Free Software Foundation, Inc.
    Copyright (C) 1984 David M. Ihnat
 
    This program is free software: you can redistribute it and/or modify
@@ -441,7 +441,7 @@ cut_file (char const *file, void (*cut_stream) (FILE *))
 {
   FILE *stream;
 
-  if (STREQ (file, "-"))
+  if (streq (file, "-"))
     {
       have_read_stdin = true;
       stream = stdin;
@@ -464,7 +464,7 @@ cut_file (char const *file, void (*cut_stream) (FILE *))
   int err = errno;
   if (!ferror (stream))
     err = 0;
-  if (STREQ (file, "-"))
+  if (streq (file, "-"))
     clearerr (stream);		/* Also clear EOF.  */
   else if (fclose (stream) == EOF)
     err = errno;

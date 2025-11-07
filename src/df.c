@@ -1,5 +1,5 @@
 /* df - summarize free file system space
-   Copyright (C) 1991-2024 Free Software Foundation, Inc.
+   Copyright (C) 1991-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,7 +23,6 @@
 #include <sys/types.h>
 #include <getopt.h>
 #include <c-ctype.h>
-#include <uchar.h>
 
 #include "system.h"
 #include "assure.h"
@@ -442,9 +441,9 @@ decode_output_arg (char const *arg)
 
       /* process S.  */
       display_field_t field = INVALID_FIELD;
-      for (idx_t i = 0; i < ARRAY_CARDINALITY (field_data); i++)
+      for (idx_t i = 0; i < countof (field_data); i++)
         {
-          if (STREQ (field_data[i].arg, s))
+          if (streq (field_data[i].arg, s))
             {
               field = i;
               break;
@@ -487,6 +486,7 @@ decode_output_arg (char const *arg)
           alloc_field (field, N_("Avail"));
           break;
 
+        case INVALID_FIELD:
         default:
           affirm (!"invalid field");
         }
@@ -617,11 +617,8 @@ get_header (void)
         }
       else if (header_mode == POSIX_MODE && columns[col]->field == SIZE_FIELD)
         {
-          char buf[INT_BUFSIZE_BOUND (uintmax_t)];
-          char *num = umaxtostr (output_block_size, buf);
-
           /* TRANSLATORS: this is the "1024-blocks" header in "df -P".  */
-          cell = xasprintf (_("%s-%s"), num, header);
+          cell = xasprintf (_("%ju-%s"), output_block_size, header);
         }
       else
         cell = xstrdup (header);
@@ -646,7 +643,7 @@ selected_fstype (char const *fstype)
   if (fs_select_list == nullptr || fstype == nullptr)
     return true;
   for (fsp = fs_select_list; fsp; fsp = fsp->fs_next)
-    if (STREQ (fstype, fsp->fs_name))
+    if (streq (fstype, fsp->fs_name))
       return true;
   return false;
 }
@@ -662,7 +659,7 @@ excluded_fstype (char const *fstype)
   if (fs_exclude_list == nullptr || fstype == nullptr)
     return false;
   for (fsp = fs_exclude_list; fsp; fsp = fsp->fs_next)
-    if (STREQ (fstype, fsp->fs_name))
+    if (streq (fstype, fsp->fs_name))
       return true;
   return false;
 }
@@ -757,7 +754,7 @@ filter_mount_list (bool devices_only)
                                            < strlen (me->me_mntroot));
               if (! print_grand_total
                   && me->me_remote && seen_dev->me->me_remote
-                  && ! STREQ (seen_dev->me->me_devname, me->me_devname))
+                  && ! streq (seen_dev->me->me_devname, me->me_devname))
                 {
                   /* Don't discard remote entries with different locations,
                      as these are more likely to be explicitly mounted.
@@ -770,12 +767,12 @@ filter_mount_list (bool devices_only)
                        /* let points towards the root of the device win.  */
                        || (target_nearer_root && ! source_below_root)
                        /* let an entry overmounted on a new device win...  */
-                       || (! STREQ (seen_dev->me->me_devname, me->me_devname)
+                       || (! streq (seen_dev->me->me_devname, me->me_devname)
                            /* ... but only when matching an existing mnt point,
                               to avoid problematic replacement when given
                               inaccurate mount lists, seen with some chroot
                               environments for example.  */
-                           && STREQ (me->me_mountdir,
+                           && streq (me->me_mountdir,
                                      seen_dev->me->me_mountdir)))
                 {
                   /* Discard mount entry for existing device.  */
@@ -987,15 +984,15 @@ add_to_grand_total (struct field_values_t *bv, struct field_values_t *iv)
 }
 
 /* Obtain a space listing for the device with absolute file name DEVICE.
-   If MOUNT_POINT is non-null, it is the name of the root of the
-   file system on DEVICE.
+   MOUNT_POINT names the root of the file system on DEVICE.
+   FILE is the name to list; if null, it defaults to "-".
    If STAT_FILE is non-null, it is the name of a file within the file
    system that the user originally asked for; this provides better
    diagnostics, and sometimes it provides better results on networked
    file systems that give different free-space results depending on
    where in the file system you probe.
    If FSTYPE is non-null, it is the type of the file system on DEVICE.
-   If MOUNT_POINT is non-null, then DEVICE may be null -- certain systems may
+   DEVICE may be null -- certain systems may
    not be able to produce statistics in this case.
    ME_DUMMY and ME_REMOTE are the mount entry flags.
    Caller must set PROCESS_ALL to true when iterating over all entries, as
@@ -1019,15 +1016,11 @@ get_dev (char const *device, char const *mount_point, char const *file,
 
   /* Ignore relative MOUNT_POINTs, which are present for example
      in /proc/mounts on Linux with network namespaces.  */
-  if (!force_fsu && mount_point && ! IS_ABSOLUTE_FILE_NAME (mount_point))
+  if (!force_fsu && ! IS_ABSOLUTE_FILE_NAME (mount_point))
     return;
 
-  /* If MOUNT_POINT is null, then the file system is not mounted, and this
-     program reports on the file system that the special file is on.
-     It would be better to report on the unmounted file system,
-     but statfs doesn't do that on most systems.  */
   if (!stat_file)
-    stat_file = mount_point ? mount_point : device;
+    stat_file = mount_point;
 
   struct fs_usage fsu;
   if (force_fsu)
@@ -1064,7 +1057,7 @@ get_dev (char const *device, char const *mount_point, char const *file,
       if (stat (stat_file, &sb) == 0)
         {
           struct mount_entry const * dev_me = me_for_dev (sb.st_dev);
-          if (dev_me && ! STREQ (dev_me->me_devname, device)
+          if (dev_me && ! streq (dev_me->me_devname, device)
               && (! dev_me->me_remote || ! me_remote))
             {
               fstype = "-";
@@ -1173,7 +1166,7 @@ get_dev (char const *device, char const *mount_point, char const *file,
             if (! known_value (v->used) || ! known_value (v->available))
               ;
             else if (!v->negate_used
-                     && v->used <= TYPE_MAXIMUM (uintmax_t) / 100
+                     && v->used <= UINTMAX_MAX / 100
                      && v->used + v->available != 0
                      && (v->used + v->available < v->used)
                      == v->negate_available)
@@ -1226,6 +1219,7 @@ get_dev (char const *device, char const *mount_point, char const *file,
           cell = xstrdup (mount_point);
           break;
 
+        case INVALID_FIELD:
         default:
           affirm (!"unhandled field");
         }
@@ -1250,7 +1244,7 @@ last_device_for_mount (char const *mount)
 
   for (me = mount_list; me; me = me->me_next)
     {
-      if (STREQ (me->me_mountdir, mount))
+      if (streq (me->me_mountdir, mount))
         le = me;
     }
 
@@ -1291,10 +1285,10 @@ get_device (char const *device)
       if (canon_dev && IS_ABSOLUTE_FILE_NAME (canon_dev))
         devname = canon_dev;
 
-      if (STREQ (device, devname))
+      if (streq (device, devname))
         {
           char *last_device = last_device_for_mount (me->me_mountdir);
-          eclipsed_device = last_device && ! STREQ (last_device, devname);
+          eclipsed_device = last_device && ! streq (last_device, devname);
           size_t len = strlen (me->me_mountdir);
 
           if (! eclipsed_device
@@ -1368,7 +1362,7 @@ get_point (char const *point, const struct stat *statp)
 
       for (me = mount_list; me; me = me->me_next)
         {
-          if (!STREQ (me->me_type, "lofs")
+          if (!streq (me->me_type, "lofs")
               && (!best_match || best_match->me_dummy || !me->me_dummy))
             {
               size_t len = strlen (me->me_mountdir);
@@ -1413,7 +1407,7 @@ get_point (char const *point, const struct stat *statp)
           }
 
         if (statp->st_dev == me->me_dev
-            && !STREQ (me->me_type, "lofs")
+            && !streq (me->me_type, "lofs")
             && (!best_match || best_match->me_dummy || !me->me_dummy))
           {
             /* Skip bogus mtab entries.  */
@@ -1740,7 +1734,7 @@ main (int argc, char **argv)
         struct fs_type_list *fs_excl;
         for (fs_excl = fs_exclude_list; fs_excl; fs_excl = fs_excl->fs_next)
           {
-            if (STREQ (fs_incl->fs_name, fs_excl->fs_name))
+            if (streq (fs_incl->fs_name, fs_excl->fs_name))
               {
                 error (0, 0,
                        _("file system type %s both selected and excluded"),

@@ -1,5 +1,5 @@
 /* install - copy files and set attributes
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <selinux/label.h>
+#include <spawn.h>
 #include <sys/wait.h>
 
 #include "system.h"
@@ -147,7 +148,7 @@ have_same_content (int a_fd, int b_fd)
     if (size != full_read (b_fd, b_buff, sizeof b_buff))
       return false;
 
-    if (memcmp (a_buff, b_buff, size) != 0)
+    if (!memeq (a_buff, b_buff, size))
       return false;
   }
 
@@ -227,7 +228,7 @@ need_copy (char const *src_name, char const *dest_name,
           return true;
         }
 
-      scontext_match = STREQ (file_scontext_raw, to_scontext_raw);
+      scontext_match = streq (file_scontext_raw, to_scontext_raw);
 
       freecon (file_scontext_raw);
       freecon (to_scontext_raw);
@@ -290,7 +291,7 @@ cp_option_init (struct cp_options *x)
   x->stdin_tty = false;
 
   x->open_dangling_dest_symlink = false;
-  x->update = false;
+  x->update = UPDATE_ALL;
   x->require_preserve_context = false;  /* Not used by install currently.  */
   x->preserve_security_context = false; /* Whether to copy context from src.  */
   x->set_security_context = nullptr; /* Whether to set sys default context.  */
@@ -490,33 +491,55 @@ change_timestamps (struct stat const *src_sb, char const *dest,
 static bool
 strip (char const *name)
 {
-  int status;
-  bool ok = false;
-  pid_t pid = fork ();
+  posix_spawnattr_t attr;
+  posix_spawnattr_t *attrp = nullptr;
 
-  switch (pid)
+  /* Try to use vfork for systems where it matters.  */
+  if (posix_spawnattr_init (&attr) == 0)
     {
-    case -1:
-      error (0, errno, _("fork system call failed"));
-      break;
-    case 0:			/* Child. */
-      {
-        char const *safe_name = name;
-        if (name && *name == '-')
-          safe_name = file_name_concat (".", name, nullptr);
-        execlp (strip_program, strip_program, safe_name, nullptr);
-        error (EXIT_FAILURE, errno, _("cannot run %s"),
-               quoteaf (strip_program));
-      }
-    default:			/* Parent. */
+      if (posix_spawnattr_setflags (&attr, POSIX_SPAWN_USEVFORK) == 0)
+        attrp = &attr;
+      else
+        posix_spawnattr_destroy (&attr);
+    }
+
+  /* Construct the arguments to 'strip'.  */
+  char *concat_name = nullptr;
+  char const *safe_name = name;
+  if (name && *name == '-')
+    safe_name = concat_name = file_name_concat (".", name, nullptr);
+  char const *const argv[] = { strip_program, safe_name, nullptr };
+
+  /* Run 'strip'.  */
+  pid_t pid;
+  int result = posix_spawnp (&pid, strip_program, nullptr, attrp,
+                             (char * const *) argv, environ);
+
+  bool ok = false;
+  if (result != 0)
+    {
+      error (0, result,
+             streq (strip_program, "strip")
+               ? _("cannot run %s")
+               : _("cannot run strip program %s"),
+             quoteaf (strip_program));
+    }
+  else
+    {
+      /* Wait for 'strip' to complete, and emit a warning message on failure  */
+      int status;
       if (waitpid (pid, &status, 0) < 0)
         error (0, errno, _("waiting for strip"));
       else if (! WIFEXITED (status) || WEXITSTATUS (status))
         error (0, 0, _("strip process terminated abnormally"));
       else
-        ok = true;      /* strip succeeded */
-      break;
+        ok = true;
     }
+
+  free (concat_name);
+  if (attrp)
+    posix_spawnattr_destroy (attrp);
+
   return ok;
 }
 
@@ -535,10 +558,9 @@ get_ids (void)
         {
           uintmax_t tmp;
           if (xstrtoumax (owner_name, nullptr, 0, &tmp, "") != LONGINT_OK
-              || UID_T_MAX < tmp)
+              || ckd_add (&owner_id, tmp, 0))
             error (EXIT_FAILURE, 0, _("invalid user %s"),
                    quoteaf (owner_name));
-          owner_id = tmp;
         }
       else
         owner_id = pw->pw_uid;
@@ -554,10 +576,9 @@ get_ids (void)
         {
           uintmax_t tmp;
           if (xstrtoumax (group_name, nullptr, 0, &tmp, "") != LONGINT_OK
-              || GID_T_MAX < tmp)
+              || ckd_add (&group_id, tmp, 0))
             error (EXIT_FAILURE, 0, _("invalid group %s"),
                    quoteaf (group_name));
-          group_id = tmp;
         }
       else
         group_id = gr->gr_gid;

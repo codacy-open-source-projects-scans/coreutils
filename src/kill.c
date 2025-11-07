@@ -1,5 +1,5 @@
 /* kill -- send a signal to a process
-   Copyright (C) 2002-2024 Free Software Foundation, Inc.
+   Copyright (C) 2002-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 #include <signal.h>
 
 #include "system.h"
+#include "c-ctype.h"
 #include "sig2str.h"
 #include "operand2sig.h"
 #include "quote.h"
@@ -120,7 +121,7 @@ list_signals (bool table, char *const *argv)
         num_width++;
 
       /* Compute the maximum width of a signal name.  */
-      for (signum = 1; signum <= SIGNUM_BOUND; signum++)
+      for (signum = 0; signum <= SIGNUM_BOUND; signum++)
         if (sig2str (signum, signame) == 0)
           {
             idx_t len = strlen (signame);
@@ -142,7 +143,7 @@ list_signals (bool table, char *const *argv)
               }
           }
       else
-        for (signum = 1; signum <= SIGNUM_BOUND; signum++)
+        for (signum = 0; signum <= SIGNUM_BOUND; signum++)
           if (sig2str (signum, signame) == 0)
             print_table_row (num_width, signum, name_width, signame);
     }
@@ -154,7 +155,7 @@ list_signals (bool table, char *const *argv)
             signum = operand2sig (*argv);
             if (signum < 0)
               status = EXIT_FAILURE;
-            else if (ISDIGIT (**argv))
+            else if (c_isdigit (**argv))
               {
                 if (sig2str (signum, signame) == 0)
                   puts (signame);
@@ -165,7 +166,7 @@ list_signals (bool table, char *const *argv)
               printf ("%d\n", signum);
           }
       else
-        for (signum = 1; signum <= SIGNUM_BOUND; signum++)
+        for (signum = 0; signum <= SIGNUM_BOUND; signum++)
           if (sig2str (signum, signame) == 0)
             puts (signame);
     }

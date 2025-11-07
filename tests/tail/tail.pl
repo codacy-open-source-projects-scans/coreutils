@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # Test tail.
 
-# Copyright (C) 2008-2024 Free Software Foundation, Inc.
+# Copyright (C) 2008-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,6 +29,7 @@ my @tv = (
 #
 ['obs-plus-c1', '+2c', 'abcd', 'bcd', 0],
 ['obs-plus-c2', '+8c', 'abcd', '', 0],
+['obs-plus-c3', '+999999999999999999999999999999999999999999c', 'abcd', '', 0],
 ['obs-c3', '-1c', 'abcd', 'd', 0],
 ['obs-c4', '-9c', 'abcd', 'abcd', 0],
 ['obs-c5', '-12c', 'x' . ('y' x 12) . 'z', ('y' x 11) . 'z', 0],

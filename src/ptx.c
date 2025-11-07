@@ -1,5 +1,5 @@
 /* Permuted index for GNU, with keywords in their context.
-   Copyright (C) 1990-2024 Free Software Foundation, Inc.
+   Copyright (C) 1990-2025 Free Software Foundation, Inc.
    François Pinard <pinard@iro.umontreal.ca>, 1988.
 
    This program is free software: you can redistribute it and/or modify
@@ -505,7 +505,7 @@ swallow_file_in_memory (char const *file_name, BLOCK *block)
   /* As special cases, a file name which is null or "-" indicates standard
      input, which is already opened.  In all other cases, open the file from
      its name.  */
-  bool using_stdin = !file_name || !*file_name || STREQ (file_name, "-");
+  bool using_stdin = !file_name || !*file_name || streq (file_name, "-");
   if (using_stdin)
     block->start = fread_file (stdin, 0, &used_length);
   else
@@ -558,7 +558,7 @@ compare_words (const void *void_first, const void *void_second)
         }
     }
 
-  return (first->size > second->size) - (first->size < second->size);
+  return _GL_CMP (first->size, second->size);
 }
 
 /*-----------------------------------------------------------------------.
@@ -576,8 +576,7 @@ compare_occurs (const void *void_first, const void *void_second)
 
   value = compare_words (&first->key, &second->key);
   return (value ? value
-          : ((first->key.start > second->key.start)
-             - (first->key.start < second->key.start)));
+          : _GL_CMP (first->key.start, second->key.start));
 #undef first
 #undef second
 }
@@ -1781,10 +1780,6 @@ main (int argc, char **argv)
 
   atexit (close_stdout);
 
-#if HAVE_SETCHRCLASS
-  setchrclass (nullptr);
-#endif
-
   while (optchar = getopt_long (argc, argv, "AF:GM:ORS:TW:b:i:fg:o:trw:",
                                 long_options, nullptr),
          optchar != EOF)
@@ -1916,7 +1911,7 @@ main (int argc, char **argv)
 
       for (file_index = 0; file_index < number_input_files; file_index++)
         {
-          if (!*argv[optind] || STREQ (argv[optind], "-"))
+          if (!*argv[optind] || streq (argv[optind], "-"))
             input_file_name[file_index] = nullptr;
           else
             input_file_name[file_index] = argv[optind];
@@ -1932,7 +1927,7 @@ main (int argc, char **argv)
       input_file_name = xmalloc (sizeof *input_file_name);
       file_line_count = xmalloc (sizeof *file_line_count);
       text_buffers    = xmalloc (sizeof *text_buffers);
-      if (!*argv[optind] || STREQ (argv[optind], "-"))
+      if (!*argv[optind] || streq (argv[optind], "-"))
         input_file_name[0] = nullptr;
       else
         input_file_name[0] = argv[optind];

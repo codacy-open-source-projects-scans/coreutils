@@ -1,5 +1,5 @@
 /* sort - sort lines of text (with all kinds of options).
-   Copyright (C) 1988-2024 Free Software Foundation, Inc.
+   Copyright (C) 1988-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -29,11 +29,14 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <spawn.h>
 #include "system.h"
 #include "argmatch.h"
 #include "assure.h"
+#include "c-ctype.h"
 #include "fadvise.h"
 #include "filevercmp.h"
+#include "findprog.h"
 #include "flexmember.h"
 #include "hard-locale.h"
 #include "hash.h"
@@ -128,16 +131,16 @@ enum
 
 enum
   {
-    /* The number of times we should try to fork a compression process
-       (we retry if the fork call fails).  We don't _need_ to compress
-       temp files, this is just to reduce file system access, so this number
-       can be small.  Each retry doubles in duration.  */
-    MAX_FORK_TRIES_COMPRESS = 4,
+    /* The number of times we should try to spawn a compression process
+       (we retry if the posix_spawnp call fails with EAGAIN).  We don't _need_
+       to compress temp files, this is just to reduce file system access, so
+       this number can be small.  Each retry doubles in duration.  */
+    MAX_TRIES_COMPRESS = 4,
 
-    /* The number of times we should try to fork a decompression process.
-       If we can't fork a decompression process, we can't sort, so this
+    /* The number of times we should try to spawn a decompression process.
+       If we can't spawn a decompression process, we can't sort, so this
        number should be big.  Each retry doubles in duration.  */
-    MAX_FORK_TRIES_DECOMPRESS = 9
+    MAX_TRIES_DECOMPRESS = 9
   };
 
 enum
@@ -369,31 +372,44 @@ static bool debug;
    number are present, temp files will be used. */
 static unsigned int nmerge = NMERGE_DEFAULT;
 
-/* Output an error to stderr and exit using async-signal-safe routines.
-   This can be used safely from signal handlers,
-   and between fork and exec of multithreaded processes.  */
+/* Whether SIGPIPE had the default disposition at startup.  */
+static bool default_SIGPIPE;
 
-static _Noreturn void
-async_safe_die (int errnum, char const *errstr)
+/* The list of temporary files. */
+struct tempnode
 {
-  ignore_value (write (STDERR_FILENO, errstr, strlen (errstr)));
+  struct tempnode *volatile next;
+  pid_t pid;     /* The subprocess PID; undefined if state == UNCOMPRESSED.  */
+  char state;
+  char name[FLEXIBLE_ARRAY_MEMBER];
+};
+static struct tempnode *volatile temphead;
+static struct tempnode *volatile *temptail = &temphead;
 
-  /* Even if defined HAVE_STRERROR_R, we can't use it,
-     as it may return a translated string etc. and even if not
-     may call malloc which is unsafe.  We might improve this
-     by testing for sys_errlist and using that if available.
-     For now just report the error number.  */
-  if (errnum)
-    {
-      char errbuf[INT_BUFSIZE_BOUND (errnum)];
-      char *p = inttostr (errnum, errbuf);
-      ignore_value (write (STDERR_FILENO, ": errno ", 8));
-      ignore_value (write (STDERR_FILENO, p, strlen (p)));
-    }
+/* Clean up any remaining temporary files.  */
 
-  ignore_value (write (STDERR_FILENO, "\n", 1));
+static void
+cleanup (void)
+{
+  struct tempnode const *node;
 
-  _exit (SORT_FAILURE);
+  for (node = temphead; node; node = node->next)
+    unlink (node->name);
+  temphead = nullptr;
+}
+
+/* Handle interrupts and hangups. */
+
+static void
+sighandler (int sig)
+{
+  if (! SA_NOCLDSTOP)
+    signal (sig, SIG_IGN);
+
+  cleanup ();
+
+  signal (sig, SIG_DFL);
+  raise (sig);
 }
 
 /* Report MESSAGE for FILE, then clean up and exit.
@@ -402,6 +418,11 @@ async_safe_die (int errnum, char const *errstr)
 static void
 sort_die (char const *message, char const *file)
 {
+  /* If we got EPIPE writing to stdout (from a previous fwrite() or fclose()
+     and SIGPIPE was originally SIG_DFL, mimic standard SIGPIPE behavior.  */
+  if (errno == EPIPE && !file && default_SIGPIPE)
+    sighandler (SIGPIPE);
+
   error (SORT_FAILURE, errno, "%s: %s", message,
          quotef (file ? file : _("standard output")));
 }
@@ -476,8 +497,8 @@ Other options:\n\
                               decompress them with PROG -d\n\
 "), stdout);
       fputs (_("\
-      --debug               annotate the part of the line used to sort,\n\
-                              and warn about questionable usage to stderr\n\
+      --debug               annotate the part of the line used to sort, and\n\
+                              warn about questionable usage to standard error\n\
       --files0-from=F       read input from the files specified by\n\
                             NUL-terminated names in file F;\n\
                             If F is - then read names from standard input\n\
@@ -497,9 +518,8 @@ Other options:\n\
   -T, --temporary-directory=DIR  use DIR for temporaries, not $TMPDIR or %s;\n\
                               multiple options specify multiple directories\n\
       --parallel=N          change the number of sorts run concurrently to N\n\
-  -u, --unique              with -c, check for strict ordering;\n\
-                              without -c, output only the first of an equal run\
-\n\
+  -u, --unique              output only the first of lines with equal keys;\n\
+                              with -c, check for strict ordering\n\
 "), DEFAULT_TMPDIR);
       fputs (_("\
   -z, --zero-terminated     line delimiter is NUL, not newline\n\
@@ -657,17 +677,6 @@ cs_leave (struct cs_status const *status)
    the subprocess to finish.  */
 enum { UNCOMPRESSED, UNREAPED, REAPED };
 
-/* The list of temporary files. */
-struct tempnode
-{
-  struct tempnode *volatile next;
-  pid_t pid;     /* The subprocess PID; undefined if state == UNCOMPRESSED.  */
-  char state;
-  char name[FLEXIBLE_ARRAY_MEMBER];
-};
-static struct tempnode *volatile temphead;
-static struct tempnode *volatile *temptail = &temphead;
-
 /* A file to be sorted.  */
 struct sortfile
 {
@@ -806,18 +815,6 @@ reap_all (void)
     reap (-1);
 }
 
-/* Clean up any remaining temporary files.  */
-
-static void
-cleanup (void)
-{
-  struct tempnode const *node;
-
-  for (node = temphead; node; node = node->next)
-    unlink (node->name);
-  temphead = nullptr;
-}
-
 /* Cleanup actions to take when exiting.  */
 
 static void
@@ -954,7 +951,7 @@ stream_open (char const *file, char const *how)
 
   if (*how == 'r')
     {
-      if (STREQ (file, "-"))
+      if (streq (file, "-"))
         {
           have_read_stdin = true;
           fp = stdin;
@@ -1034,23 +1031,115 @@ move_fd (int oldfd, int newfd)
     }
 }
 
-/* Fork a child process for piping to and do common cleanup.  The
-   TRIES parameter specifies how many times to try to fork before
-   giving up.  Return the PID of the child, or -1 (setting errno)
-   on failure. */
+/* Setup ACTION to move OLDFD to NEWFD.  If OLDFD != NEWFD, NEWFD is not
+   close-on-exec.  Returns 0 if successful, or an error number otherwise.  */
 
-static pid_t
-pipe_fork (int pipefds[2], size_t tries)
+static int
+posix_spawn_file_actions_move_fd (posix_spawn_file_actions_t *actions,
+                                  int oldfd, int newfd)
 {
-#if HAVE_WORKING_FORK
+  int result = 0;
+  if (oldfd != newfd)
+    {
+      result = posix_spawn_file_actions_adddup2 (actions, oldfd, newfd);
+      if (result == 0)
+        result = posix_spawn_file_actions_addclose (actions, oldfd);
+    }
+  return result;
+}
+
+/* Look up COMPRESS_PROGRAM in $PATH, and return the resolved program name.
+   Upon error, return nullptr with errno set.  */
+
+static char const *
+get_resolved_compress_program (void)
+{
+  /* Use a cache, to perform the search only once.  */
+  static char const *resolved_compress_program_cache /* = nullptr */;
+
+  if (resolved_compress_program_cache == nullptr)
+    {
+      resolved_compress_program_cache =
+        find_in_given_path (compress_program, getenv ("PATH"), nullptr, false);
+      /* If resolved_compress_program_cache == nullptr, errno is set here.  */
+    }
+
+  return resolved_compress_program_cache;
+}
+
+/* Execute COMPRESS_PROGRAM in a child process.  The child processes pid is
+   stored in PD.  The TRIES parameter specifies how many times to try to create
+   a child process before giving up.  Return 0 on success, or an error number
+   otherwise.  */
+
+static int
+pipe_child (pid_t *pid, int pipefds[2], int tempfd, bool decompress,
+            size_t tries)
+{
+  char const *resolved_compress_program;
   struct tempnode *saved_temphead;
-  int saved_errno;
   double wait_retry = 0.25;
-  pid_t pid;
   struct cs_status cs;
+  int result;
+  posix_spawnattr_t attr;
+  posix_spawn_file_actions_t actions;
+
+  /* Lookup the program before we spawn, so that we consistently
+     handle access issues to COMPRESS_PROGRAM, because on some
+     implementations/emulations of posix_spawn we get only a
+     generic (fatal) error from the child in that case.  */
+  resolved_compress_program = get_resolved_compress_program ();
+  if (resolved_compress_program == nullptr)
+    return errno;
+
+  if ((result = posix_spawnattr_init (&attr)))
+    return result;
+  if ((result = posix_spawnattr_setflags (&attr, POSIX_SPAWN_USEVFORK))
+      || (result = posix_spawn_file_actions_init (&actions)))
+    {
+      posix_spawnattr_destroy (&attr);
+      return result;
+    }
 
   if (pipe2 (pipefds, O_CLOEXEC) < 0)
-    return -1;
+    {
+      int saved_errno = errno;
+      posix_spawnattr_destroy (&attr);
+      posix_spawn_file_actions_destroy (&actions);
+      return saved_errno;
+    }
+
+  if ((result = posix_spawn_file_actions_addclose (&actions, STDIN_FILENO))
+      || (result = posix_spawn_file_actions_addclose (&actions, STDOUT_FILENO))
+      || (decompress
+          ? ((result = posix_spawn_file_actions_addclose (&actions,
+                                                          pipefds[0]))
+             || (result = posix_spawn_file_actions_move_fd (&actions, tempfd,
+                                                            STDIN_FILENO))
+             || (result = posix_spawn_file_actions_move_fd (&actions,
+                                                            pipefds[1],
+                                                            STDOUT_FILENO)))
+          : ((result = posix_spawn_file_actions_addclose (&actions,
+                                                          pipefds[1]))
+             || (result = posix_spawn_file_actions_move_fd (&actions, tempfd,
+                                                            STDOUT_FILENO))
+             || (result = posix_spawn_file_actions_move_fd (&actions,
+                                                            pipefds[0],
+                                                            STDIN_FILENO)))))
+    {
+      close (pipefds[0]);
+      close (pipefds[1]);
+      posix_spawnattr_destroy (&attr);
+      posix_spawn_file_actions_destroy (&actions);
+      return result;
+    }
+
+  char const *const argv[] =
+    {
+      resolved_compress_program,
+      decompress ? "-d" : nullptr,
+      nullptr
+    };
 
   /* At least NMERGE + 1 subprocesses are needed.  More could be created, but
      uncontrolled subprocess generation can hurt performance significantly.
@@ -1070,44 +1159,37 @@ pipe_fork (int pipefds[2], size_t tries)
       saved_temphead = temphead;
       temphead = nullptr;
 
-      pid = fork ();
-      saved_errno = errno;
-      if (pid)
-        temphead = saved_temphead;
+      result = posix_spawnp (pid, resolved_compress_program, &actions, &attr,
+                             (char * const *) argv, environ);
+
+      temphead = saved_temphead;
 
       cs_leave (&cs);
-      errno = saved_errno;
 
-      if (0 <= pid || errno != EAGAIN)
+      if (result != EAGAIN)
         break;
       else
         {
+          /* [v]fork/clone are indicating resource constraints,
+             so back-off for a while and retry.  */
           xnanosleep (wait_retry);
           wait_retry *= 2;
           reap_exited ();
         }
     }
 
-  if (pid < 0)
+  posix_spawnattr_destroy (&attr);
+  posix_spawn_file_actions_destroy (&actions);
+
+  if (result)
     {
-      saved_errno = errno;
       close (pipefds[0]);
       close (pipefds[1]);
-      errno = saved_errno;
-    }
-  else if (pid == 0)
-    {
-      close (STDIN_FILENO);
-      close (STDOUT_FILENO);
     }
   else
     ++nprocs;
 
-  return pid;
-
-#else  /* ! HAVE_WORKING_FORK */
-  return -1;
-#endif
+  return result;
 }
 
 /* Create a temporary file and, if asked for, start a compressor
@@ -1129,9 +1211,18 @@ maybe_create_temp (FILE **pfp, bool survive_fd_exhaustion)
   if (compress_program)
     {
       int pipefds[2];
+      static int last_result = 0;
 
-      node->pid = pipe_fork (pipefds, MAX_FORK_TRIES_COMPRESS);
-      if (0 < node->pid)
+      int result = pipe_child (&node->pid, pipefds, tempfd, false,
+                               MAX_TRIES_COMPRESS);
+
+      if (result)
+        {
+          if (result != last_result)
+            error (0, result, _("could not run compress program %s"),
+                   quoteaf (compress_program));
+        }
+      else
         {
           close (tempfd);
           close (pipefds[0]);
@@ -1139,18 +1230,8 @@ maybe_create_temp (FILE **pfp, bool survive_fd_exhaustion)
 
           register_proc (node);
         }
-      else if (node->pid == 0)
-        {
-          /* Being the child of a multithreaded program before exec,
-             we're restricted to calling async-signal-safe routines here.  */
-          close (pipefds[1]);
-          move_fd (tempfd, STDOUT_FILENO);
-          move_fd (pipefds[0], STDIN_FILENO);
 
-          execlp (compress_program, compress_program, (char *) nullptr);
-
-          async_safe_die (errno, "couldn't execute compress program");
-        }
+      last_result = result;
     }
 
   *pfp = fdopen (tempfd, "w");
@@ -1188,30 +1269,20 @@ open_temp (struct tempnode *temp)
   if (tempfd < 0)
     return nullptr;
 
-  pid_t child = pipe_fork (pipefds, MAX_FORK_TRIES_DECOMPRESS);
+  pid_t child;
+  int result = pipe_child (&child, pipefds, tempfd, true,
+                           MAX_TRIES_DECOMPRESS);
 
-  switch (child)
+  if (result)
     {
-    case -1:
-      if (errno != EMFILE)
-        error (SORT_FAILURE, errno, _("couldn't create process for %s -d"),
+      if (result != EMFILE)
+        error (SORT_FAILURE, result, _("could not run compress program %s -d"),
                quoteaf (compress_program));
       close (tempfd);
       errno = EMFILE;
-      break;
-
-    case 0:
-      /* Being the child of a multithreaded program before exec,
-         we're restricted to calling async-signal-safe routines here.  */
-      close (pipefds[0]);
-      move_fd (tempfd, STDIN_FILENO);
-      move_fd (pipefds[1], STDOUT_FILENO);
-
-      execlp (compress_program, compress_program, "-d", (char *) nullptr);
-
-      async_safe_die (errno, "couldn't execute compress program (with -d)");
-
-    default:
+    }
+  else
+    {
       temp->pid = child;
       register_proc (temp);
       close (tempfd);
@@ -1224,7 +1295,6 @@ open_temp (struct tempnode *temp)
           close (pipefds[0]);
           errno = saved_errno;
         }
-      break;
     }
 
   return fp;
@@ -1389,16 +1459,11 @@ specify_sort_size (int oi, char c, char const *s)
   enum strtol_error e = xstrtoumax (s, &suffix, 10, &n, "EgGkKmMPQRtTYZ");
 
   /* The default unit is KiB.  */
-  if (e == LONGINT_OK && ISDIGIT (suffix[-1]))
-    {
-      if (n <= UINTMAX_MAX / 1024)
-        n *= 1024;
-      else
-        e = LONGINT_OVERFLOW;
-    }
+  if (e == LONGINT_OK && c_isdigit (suffix[-1]) && ckd_mul (&n, n, 1024))
+    e = LONGINT_OVERFLOW;
 
   /* A 'b' suffix means bytes; a '%' suffix means percent of memory.  */
-  if (e == LONGINT_INVALID_SUFFIX_CHAR && ISDIGIT (suffix[-1]) && ! suffix[1])
+  if (e == LONGINT_INVALID_SUFFIX_CHAR && c_isdigit (suffix[-1]) && ! suffix[1])
     switch (suffix[0])
       {
       case 'b':
@@ -1534,7 +1599,7 @@ sort_buffer_size (FILE *const *fps, size_t nfps,
       size_t worst_case;
 
       if ((i < nfps ? fstat (fileno (fps[i]), &st)
-           : STREQ (files[i], "-") ? fstat (STDIN_FILENO, &st)
+           : streq (files[i], "-") ? fstat (STDIN_FILENO, &st)
            : stat (files[i], &st))
           != 0)
         sort_die (_("stat failed"), files[i]);
@@ -1644,7 +1709,11 @@ begfield (struct line const *line, struct keyfield const *key)
       ++ptr;
 
   /* Advance PTR by SCHAR (if possible), but no further than LIM.  */
-  ptr = MIN (lim, ptr + schar);
+  size_t remaining_bytes = lim - ptr;
+  if (schar < remaining_bytes)
+    ptr += schar;
+  else
+    ptr = lim;
 
   return ptr;
 }
@@ -1746,7 +1815,11 @@ limfield (struct line const *line, struct keyfield const *key)
           ++ptr;
 
       /* Advance PTR by ECHAR (if possible), but no further than LIM.  */
-      ptr = MIN (lim, ptr + echar);
+      size_t remaining_bytes = lim - ptr;
+      if (echar < remaining_bytes)
+        ptr += echar;
+      else
+        ptr = lim;
     }
 
   return ptr;
@@ -1921,7 +1994,7 @@ traverse_raw_number (char const **number)
      to be lacking in units.
      FIXME: add support for multibyte thousands_sep and decimal_point.  */
 
-  while (ISDIGIT (ch = *p++))
+  while (c_isdigit (ch = *p++))
     {
       if (max_digit < ch)
         max_digit = ch;
@@ -1942,7 +2015,7 @@ traverse_raw_number (char const **number)
     }
 
   if (ch == decimal_point)
-    while (ISDIGIT (ch = *p++))
+    while (c_isdigit (ch = *p++))
       if (max_digit < ch)
         max_digit = ch;
 
@@ -2287,7 +2360,7 @@ compare_random (char *restrict texta, size_t lena,
             {
               xfrm_diff = memcmp (buf, buf + sizea, MIN (sizea, sizeb));
               if (! xfrm_diff)
-                xfrm_diff = (sizea > sizeb) - (sizea < sizeb);
+                xfrm_diff = _GL_CMP (sizea, sizeb);
             }
         }
     }
@@ -2304,7 +2377,7 @@ compare_random (char *restrict texta, size_t lena,
         {
           xfrm_diff = memcmp (texta, textb, MIN (lena, lenb));
           if (! xfrm_diff)
-            xfrm_diff = (lena > lenb) - (lena < lenb);
+            xfrm_diff = _GL_CMP (lena, lenb);
         }
 
       diff = xfrm_diff;
@@ -2372,7 +2445,11 @@ debug_key (struct line const *line, struct keyfield const *key)
       if (key->sword != SIZE_MAX)
         beg = begfield (line, key);
       if (key->eword != SIZE_MAX)
-        lim = limfield (line, key);
+        {
+          lim = limfield (line, key);
+          /* Treat field ends before field starts as empty fields.  */
+          lim = MAX (beg, lim);
+        }
 
       if ((key->skipsblanks && key->sword == SIZE_MAX)
           || key->month || key_numeric (key))
@@ -2627,8 +2704,7 @@ key_warnings (struct keyfield const *gkey, bool gkey_only)
   if ((basic_numeric_field || general_numeric_field) && ! number_locale_warned)
     {
       error (0, 0,
-             _("%snumbers use %s as a decimal point in this locale"),
-             tab == decimal_point ? "" : _("note "),
+             _("numbers use %s as a decimal point in this locale"),
              quote (((char []) {decimal_point, 0})));
 
     }
@@ -2667,7 +2743,7 @@ key_warnings (struct keyfield const *gkey, bool gkey_only)
 static int
 diff_reversed (int diff, bool reversed)
 {
-  return reversed ? (diff < 0) - (diff > 0) : diff;
+  return reversed ? _GL_CMP (0, diff) : diff;
 }
 
 /* Compare two lines A and B trying every key in sequence until there
@@ -2831,7 +2907,7 @@ keycompare (struct line const *a, struct line const *b)
             diff = memcmp (texta, textb, lenmin);
 
           if (! diff)
-            diff = (lena > lenb) - (lena < lenb);
+            diff = _GL_CMP (lena, lenb);
         }
 
       if (diff)
@@ -2904,7 +2980,7 @@ compare (struct line const *a, struct line const *b)
     {
       diff = memcmp (a->text, b->text, MIN (alen, blen));
       if (!diff)
-        diff = (alen > blen) - (alen < blen);
+        diff = _GL_CMP (alen, blen);
     }
 
   return diff_reversed (diff, reverse);
@@ -2986,10 +3062,8 @@ check (char const *file_name, char checkonly)
                 struct line const *disorder_line = line - 1;
                 uintmax_t disorder_line_number =
                   buffer_linelim (&buf) - disorder_line + line_number;
-                char hr_buf[INT_BUFSIZE_BOUND (disorder_line_number)];
-                fprintf (stderr, _("%s: %s:%s: disorder: "),
-                         program_name, file_name,
-                         umaxtostr (disorder_line_number, hr_buf));
+                fprintf (stderr, _("%s: %s:%ju: disorder: "),
+                         program_name, file_name, disorder_line_number);
                 write_line (disorder_line, stderr, _("standard error"));
               }
 
@@ -3850,11 +3924,11 @@ avoid_trashing_input (struct sortfile *files, size_t ntemps,
 
   for (size_t i = ntemps; i < nfiles; i++)
     {
-      bool is_stdin = STREQ (files[i].name, "-");
+      bool is_stdin = streq (files[i].name, "-");
       bool same;
       struct stat instat;
 
-      if (outfile && STREQ (outfile, files[i].name) && !is_stdin)
+      if (outfile && streq (outfile, files[i].name) && !is_stdin)
         same = true;
       else
         {
@@ -3898,7 +3972,7 @@ check_inputs (char *const *files, size_t nfiles)
 {
   for (size_t i = 0; i < nfiles; i++)
     {
-      if (STREQ (files[i], "-"))
+      if (streq (files[i], "-"))
         continue;
 
       if (euidaccess (files[i], R_OK) != 0)
@@ -4243,20 +4317,6 @@ parse_field_count (char const *string, size_t *val, char const *msgid)
   return suffix;
 }
 
-/* Handle interrupts and hangups. */
-
-static void
-sighandler (int sig)
-{
-  if (! SA_NOCLDSTOP)
-    signal (sig, SIG_IGN);
-
-  cleanup ();
-
-  signal (sig, SIG_DFL);
-  raise (sig);
-}
-
 /* Set the ordering options for KEY specified in S.
    Return the address of the first character in S that
    is not a valid ordering option.
@@ -4390,7 +4450,7 @@ main (int argc, char **argv)
     static int const sig[] =
       {
         /* The usual suspects.  */
-        SIGALRM, SIGHUP, SIGINT, SIGPIPE, SIGQUIT, SIGTERM,
+        SIGALRM, SIGHUP, SIGINT, SIGQUIT, SIGTERM,
 #ifdef SIGPOLL
         SIGPOLL,
 #endif
@@ -4407,7 +4467,7 @@ main (int argc, char **argv)
         SIGXFSZ,
 #endif
       };
-    enum { nsigs = ARRAY_CARDINALITY (sig) };
+    enum { nsigs = countof (sig) };
 
 #if SA_NOCLDSTOP
     struct sigaction act;
@@ -4437,6 +4497,11 @@ main (int argc, char **argv)
 #endif
   }
   signal (SIGCHLD, SIG_DFL); /* Don't inherit CHLD handling from parent.  */
+
+  /* Ignore SIGPIPE so write failures are reported via EPIPE errno.
+     For stdout, sort_die() will reraise SIGPIPE if it was originally SIG_DFL.
+     For compression pipes, sort_die() will exit with SORT_FAILURE.  */
+  default_SIGPIPE = (signal (SIGPIPE, SIG_IGN) == SIG_DFL);
 
   /* The signal mask is known, so it is safe to invoke exit_cleanup.  */
   atexit (exit_cleanup);
@@ -4476,7 +4541,7 @@ main (int argc, char **argv)
           if (optarg[0] == '+')
             {
               bool minus_pos_usage = (optind != argc && argv[optind][0] == '-'
-                                      && ISDIGIT (argv[optind][1]));
+                                      && c_isdigit (argv[optind][1]));
               traditional_usage |= minus_pos_usage && !posixly_correct;
               if (traditional_usage)
                 {
@@ -4558,7 +4623,7 @@ main (int argc, char **argv)
           break;
 
         case COMPRESS_PROGRAM_OPTION:
-          if (compress_program && !STREQ (compress_program, optarg))
+          if (compress_program && !streq (compress_program, optarg))
             error (SORT_FAILURE, 0, _("multiple compress programs specified"));
           compress_program = optarg;
           break;
@@ -4631,13 +4696,13 @@ main (int argc, char **argv)
           break;
 
         case 'o':
-          if (outfile && !STREQ (outfile, optarg))
+          if (outfile && !streq (outfile, optarg))
             error (SORT_FAILURE, 0, _("multiple output files specified"));
           outfile = optarg;
           break;
 
         case RANDOM_SOURCE_OPTION:
-          if (random_source && !STREQ (random_source, optarg))
+          if (random_source && !streq (random_source, optarg))
             error (SORT_FAILURE, 0, _("multiple random sources specified"));
           random_source = optarg;
           break;
@@ -4657,7 +4722,7 @@ main (int argc, char **argv)
               error (SORT_FAILURE, 0, _("empty tab"));
             if (optarg[1])
               {
-                if (STREQ (optarg, "\\0"))
+                if (streq (optarg, "\\0"))
                   newtab = '\0';
                 else
                   {
@@ -4701,7 +4766,7 @@ main (int argc, char **argv)
           if (optarg == argv[optind - 1])
             {
               char const *p;
-              for (p = optarg; ISDIGIT (*p); p++)
+              for (p = optarg; c_isdigit (*p); p++)
                 continue;
               optind -= (*p != '\0');
             }
@@ -4748,8 +4813,9 @@ main (int argc, char **argv)
           nfiles = tok.n_tok;
           for (size_t i = 0; i < nfiles; i++)
             {
-              if (STREQ (files[i], "-"))
-                error (SORT_FAILURE, 0, _("when reading file names from stdin, "
+              if (streq (files[i], "-"))
+                error (SORT_FAILURE, 0, _("when reading file names from "
+                                          "standard input, "
                                           "no file name of %s allowed"),
                        quoteaf (files[i]));
               else if (files[i][0] == '\0')

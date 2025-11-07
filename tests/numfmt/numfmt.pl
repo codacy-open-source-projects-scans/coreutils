@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # Basic tests for "numfmt".
 
-# Copyright (C) 2012-2024 Free Software Foundation, Inc.
+# Copyright (C) 2012-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -41,6 +41,7 @@ my @Tests =
      ['4', '--from=auto 1K',   {OUT => "1000"}],
      ['5', '--from=auto 1Ki',  {OUT => "1024"}],
      ['5.1', '--from=iec-i 1Ki',  {OUT => "1024"}],
+     ['5.2', '--from=iec-i 1',  {OUT => "1"}],
 
      ['6', {IN_PIPE => "1234\n"},            {OUT => "1234"}],
      ['7', '--from=si', {IN_PIPE => "2K\n"}, {OUT => "2000"}],
@@ -162,6 +163,86 @@ my @Tests =
      ['suf-20',
       '--suffix=Foo' . 'x' x 122 . 'y 0',
       {OUT => '0Foo' . 'x' x 122 . 'y'}],
+     ['suf-21', "-d '' --from=si '4  '",         {OUT => "4"}],
+     # Multiple spaces between number and suffix should be rejected
+     ['suf-22', "-d '' --from=auto '2  K'",
+             {ERR => "$prog: invalid suffix in input: '2  K'\n"},
+             {EXIT => 2}],
+     # Trailing spaces should be accepted
+     ['suf-23', "-d '' --from=auto '2 '",  {OUT=>'2'}],
+     ['suf-24', "-d '' --from=auto '2  '", {OUT=>'2'}],
+     ['suf-25', "-d '' --from=auto '2K '", {OUT=>'2000'}],
+
+     ## Unit Separator
+     # Output with space separator
+     ['unit-sep-1', '--to=si --unit-separator=" " 1000',  {OUT=>"1.0 k"}],
+     ['unit-sep-2', '--to=iec --unit-separator=" " 1024', {OUT=>"1.0 K"}],
+     ['unit-sep-3', '--to=iec-i --unit-separator=" " 2048', {OUT=>"2.0 Ki"}],
+
+     # Output with multi-character separator
+     ['unit-sep-4', '--to=si --unit-separator="__" 1000', {OUT=>"1.0__k"}],
+     ['unit-sep-5', '--to=iec --unit-separator="::" 2048', {OUT=>"2.0::K"}],
+
+     # Input with space separator
+     ['unit-sep-6', '-d "" --from=si --unit-sep=" " "1 K"', {OUT=>"1000"}],
+     ['unit-sep-7', '-d "" --from=iec --unit-sep=" " "2 M"', {OUT=>"2097152"}],
+
+     # Input with multi-character separator
+     ['unit-sep-8', '-d "" --from=si --unit-separator="  "',
+      {IN_PIPE=>"1  K\n2  M\n3  G\n"},
+      {OUT=>"1000\n2000000\n3000000000"}],
+     ['unit-sep-9', '--from=iec --unit-separator="'."\xC2\xA0".'"',
+      {IN_PIPE=>"4\xC2\xA0K\n"}, {OUT=>"4096"}],
+     ['unit-sep-10', '--from=iec --unit-separator="::"',
+      {IN_PIPE=>"4::K\n"}, {OUT=>"4096"}],
+
+     # input with empty separator
+     ['unit-sep-11', '-d "" --from=si --unit-separator=""',
+      {IN_PIPE=>"1K\n2M\n3G\n"},
+      {OUT=>"1000\n2000000\n3000000000"}],
+     ['unit-sep-12', '-d "" --from=si --unit-separator="" "1 K"',
+      {ERR=>"$prog: invalid suffix in input: '1 K'\n"},
+      {EXIT=>2}],
+
+     # Combined with suffix
+     ['unit-sep-13', '--to=si --unit-separator=" " --suffix=B 1000',
+      {OUT=>"1.0 kB"}],
+     ['unit-sep-14', '--to=si --unit-separator=" " --suffix=" B" 1000',
+      {OUT=>"1.0 k B"}],
+     ['unit-sep-15', '-d "" --from=si --unit-separator=" " --suffix=B',
+      {IN_PIPE=>"5 KB\n"}, {OUT=>"5000B"}],
+
+     # No separator when there's no unit (power=0)
+     ['unit-sep-16', '--to=si --unit-separator=" " 500', {OUT=>"500"}],
+
+     # Round-trip test
+     ['unit-sep-17', '--from=iec --to=iec --unit-separator="_"',
+      {IN_PIPE=>"1_K\n"}, {OUT=>"1.0_K"}],
+
+     # Currently field delimiters have higher precedence than unit separators.
+     # Even if this is changed in future, the following should hold.
+
+     # The space should act as a field delimiter here
+     ['unit-sep-18', '--from=si --unit-separator=" " "1 K_Field2"',
+      {OUT=>"1 K_Field2"}],
+     # Same as above but with 'i' suffix - should split at space with --from=si
+     ['unit-sep-19', '--from=si --unit-separator=" " "5 Ki_Field2"',
+      {OUT=>"5 Ki_Field2"}],
+     # With --from=auto, Ki followed by invalid char should also split
+     ['unit-sep-20', '--from=auto --unit-separator=" " "5 Ki_Field2"',
+      {OUT=>"5 Ki_Field2"}],
+     # With custom delimiter, space after K should not be treated as delimiter
+     ['unit-sep-21', '-d: --from=si --unit-separator=" " "5 K:Field2"',
+      {OUT=>"5000:Field2"}],
+     # Fail case: space after K with custom delimiter should error
+     ['unit-sep-22-fail', '-d: --from=si --unit-separator=" " "5 K Field2"',
+      {ERR=>"$prog: invalid suffix in input '5 K Field2': 'Field2'\n"},
+      {EXIT=>2}],
+
+     # If Unit separator consumed before delimiter char,
+     # this would change to outputting "5000 2"
+     ['unit-sep-23', '--from=si --field=1 --unit-separator=" " -d " " "5 K 2"',
+      {OUT=>"5 K 2"}],
 
      ## GROUPING
 
@@ -202,6 +283,9 @@ my @Tests =
      ['delim-4', '--delimiter=: --from=auto 40M:60M',  {OUT=>'40000000:60M'}],
      ['delim-5', '-d: --field=2 --from=auto :40M:60M',  {OUT=>':40000000:60M'}],
      ['delim-6', '-d: --field 3 --from=auto 40M:60M', {OUT=>"40M:60M"}],
+     # Ensure we don't hit https://sourceware.org/PR29511
+     ['delim-7', "-d '\xc2' --field=2 --invalid=ignore '1\xc2\xb72K'",
+             {OUT => "1\xc2\xb72K"}],
      ['delim-err-1', '-d,, --to=si 1', {EXIT=>1},
              {ERR => "$prog: the delimiter must be a single character\n"}],
 
@@ -1040,8 +1124,20 @@ my @Locale_Tests =
              {OUT=>"7${lg}000${lg}000"},
              {ENV=>"LC_ALL=$locale"}],
 
-     # Input with locale'd decimal-point
-     ['lcl-stdtod-1', '--from=si 12,2K', {OUT=>"12200"},
+     # Input with locale's grouping
+     ['lcl-strtod-1', '--from=si 1${lg}234K', {OUT=>"1234000"},
+             {ENV=>"LC_ALL=$locale"}],
+
+     # Input with locale's grouping.  Note position not validated.
+     ['lcl-strtod-2', '--from=si 12${lg}34K', {OUT=>"1234000"},
+             {ENV=>"LC_ALL=$locale"}],
+
+     # Input with locale's decimal-point
+     ['lcl-strtod-3', '--from=si 12,2K', {OUT=>"12200"},
+             {ENV=>"LC_ALL=$locale"}],
+
+     # Input with locale's grouping and decimal-point
+     ['lcl-strtod-4', '--from=si 1${lg}23,4K', {OUT=>"123400"},
              {ENV=>"LC_ALL=$locale"}],
 
      ['lcl-dbl-to-human-1', '--to=si 1100', {OUT=>"1,1k"},
@@ -1064,6 +1160,39 @@ my @Locale_Tests =
              {ENV=>"LC_ALL=$locale"}],
      ['lcl-fmt-7', '--format="%0\'\'6f" 1234',{OUT=>"01${lg}234"},
              {ENV=>"LC_ALL=$locale"}],
+
+     # Single blank/NBSP acceptance between number and suffix
+     ['lcl-suf-1', "-d '' --from=auto '2 K'",      {OUT => "2000"},
+             {ENV=>"LC_ALL=$locale"}],
+     ['lcl-suf-2', "-d '' --from=auto '2\tK'",      {OUT => "2000"},
+             {ENV=>"LC_ALL=$locale"}],
+     # NBSP characters: U+00A0, U+2007, U+202F, U+2060
+     ['lcl-suf-3', "--from=auto '2\xc2\xa0K'", {OUT => "2000"},
+             {ENV=>"LC_ALL=$locale"}],
+     ['lcl-suf-4', "--from=auto '2\xe2\x80\x87Ki'", {OUT => "2048"},
+             {ENV=>"LC_ALL=$locale"}],
+     ['lcl-suf-5', "--from=auto '2\xe2\x80\xafK'", {OUT => "2000"},
+             {ENV=>"LC_ALL=$locale"}],
+     ['lcl-suf-6', "--from=auto '2\xe2\x81\xa0Ki'", {OUT => "2048"},
+             {ENV=>"LC_ALL=$locale"}],
+     # multi-byte blank char (em space, \u2003)
+     #   Ensure trailing multi-byte blanks skipped
+     ['lcl-suf-7', "'2\xe2\x80\x83 '", {OUT => "2  "},
+             {ENV=>"LC_ALL=$locale"}],
+     ['lcl-suf-8', "-d '' --from=auto '2Ki\xe2\x80\x83 '", {OUT => "2048"},
+             {ENV=>"LC_ALL=$locale"}],
+     #   Ensure multi-byte blank field separators not corrupted
+     ['lcl-suf-9',  "--field=1 '1\xe2\x80\x832'", {OUT => "1 2"},
+             {ENV=>"LC_ALL=$locale"}],
+     ['lcl-suf-10', "--field=2 '1\xe2\x80\x832'", {OUT => "1 2"},
+             {ENV=>"LC_ALL=$locale"}],
+     #   Ensure multi-byte blank field separators width determined correctly
+     ['lcl-suf-11', "--field=2 '1 \xe2\x80\x832'",
+             {OUT => "1  2"}, {ENV=>"LC_ALL=$locale"}],
+
+     # Support multi-byte delimiter
+     ['lcl-delim-1', "-d '\xc2\xb7' --field=2 --from=auto '1\xc2\xb72K'",
+             {OUT => "1\xc2\xb72000"}, {ENV=>"LC_ALL=$locale"}],
 
   );
 if ($locale ne 'C')

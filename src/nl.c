@@ -1,5 +1,5 @@
 /* nl -- number lines of files
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -389,16 +389,16 @@ check_section (void)
   size_t len = line_buf.length - 1;
 
   if (len < 2 || footer_del_len < 2
-      || memcmp (line_buf.buffer, section_del, 2))
+      || !memeq (line_buf.buffer, section_del, 2))
     return Text;
   if (len == header_del_len
-      && !memcmp (line_buf.buffer, header_del, header_del_len))
+      && memeq (line_buf.buffer, header_del, header_del_len))
     return Header;
   if (len == body_del_len
-      && !memcmp (line_buf.buffer, body_del, body_del_len))
+      && memeq (line_buf.buffer, body_del, body_del_len))
     return Body;
   if (len == footer_del_len
-      && !memcmp (line_buf.buffer, footer_del, footer_del_len))
+      && memeq (line_buf.buffer, footer_del, footer_del_len))
     return Footer;
   return Text;
 }
@@ -425,6 +425,9 @@ process_file (FILE *fp)
           proc_text ();
           break;
         }
+
+      if (ferror (stdout))
+        write_error ();
     }
 }
 
@@ -436,7 +439,7 @@ nl_file (char const *file)
 {
   FILE *stream;
 
-  if (STREQ (file, "-"))
+  if (streq (file, "-"))
     {
       have_read_stdin = true;
       stream = stdin;
@@ -459,7 +462,7 @@ nl_file (char const *file)
   int err = errno;
   if (!ferror (stream))
     err = 0;
-  if (STREQ (file, "-"))
+  if (streq (file, "-"))
     clearerr (stream);		/* Also clear EOF. */
   else if (fclose (stream) != 0 && !err)
     err = errno;
@@ -544,11 +547,11 @@ main (int argc, char **argv)
                                      0, XTOINT_MIN_RANGE);
           break;
         case 'n':
-          if (STREQ (optarg, "ln"))
+          if (streq (optarg, "ln"))
             lineno_format = FORMAT_LEFT;
-          else if (STREQ (optarg, "rn"))
+          else if (streq (optarg, "rn"))
             lineno_format = FORMAT_RIGHT_NOLZ;
-          else if (STREQ (optarg, "rz"))
+          else if (streq (optarg, "rz"))
             lineno_format = FORMAT_RIGHT_LZ;
           else
             {

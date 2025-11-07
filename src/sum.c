@@ -1,5 +1,5 @@
 /* sum -- checksum and count the blocks in a file
-   Copyright (C) 1986-2024 Free Software Foundation, Inc.
+   Copyright (C) 1986-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -184,8 +184,8 @@ cleanup_buffer:
    If ARGS is true, also print the FILE name.  */
 
 void
-output_bsd (char const *file, int binary_file, void const *digest,
-            bool raw, bool tagged, unsigned char delim, bool args,
+output_bsd (char const *file, MAYBE_UNUSED int binary_file, void const *digest,
+            bool raw, MAYBE_UNUSED bool tagged, unsigned char delim, bool args,
             uintmax_t length)
 {
   if (raw)
@@ -209,9 +209,9 @@ output_bsd (char const *file, int binary_file, void const *digest,
    If ARGS is true, also print the FILE name.  */
 
 void
-output_sysv (char const *file, int binary_file, void const *digest,
-             bool raw, bool tagged, unsigned char delim, bool args,
-             uintmax_t length)
+output_sysv (char const *file, MAYBE_UNUSED int binary_file,
+             void const *digest, bool raw, MAYBE_UNUSED bool tagged,
+             unsigned char delim, bool args, uintmax_t length)
 {
   if (raw)
     {

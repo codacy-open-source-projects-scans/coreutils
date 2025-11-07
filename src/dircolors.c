@@ -1,5 +1,5 @@
 /* dircolors - output commands to set the LS_COLOR environment variable
-   Copyright (C) 1996-2024 Free Software Foundation, Inc.
+   Copyright (C) 1996-2025 Free Software Foundation, Inc.
    Copyright (C) 1994, 1995, 1997, 1998, 1999, 2000 H. Peter Anvin
 
    This program is free software: you can redistribute it and/or modify
@@ -67,7 +67,7 @@ static char const *const ls_codes[] =
   "su", "su", "sg", "sg", "st", "ow", "ow", "tw", "tw", "ca", "mh", "cl",
   nullptr
 };
-static_assert (ARRAY_CARDINALITY (slack_codes) == ARRAY_CARDINALITY (ls_codes));
+static_assert (countof (slack_codes) == countof (ls_codes));
 
 /* Whether to output escaped ls color codes for display.  */
 static bool print_ls_colors;
@@ -137,7 +137,7 @@ guess_shell_syntax (void)
 
   shell = last_component (shell);
 
-  if (STREQ (shell, "csh") || STREQ (shell, "tcsh"))
+  if (streq (shell, "csh") || streq (shell, "tcsh"))
     return SHELL_SYNTAX_C;
 
   return SHELL_SYNTAX_BOURNE;
@@ -396,7 +396,7 @@ dc_parse_file (char const *filename)
 {
   bool ok;
 
-  if (! STREQ (filename, "-") && freopen (filename, "r", stdin) == nullptr)
+  if (! streq (filename, "-") && freopen (filename, "r", stdin) == nullptr)
     {
       error (0, errno, "%s", quotef (filename));
       return false;

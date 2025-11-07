@@ -1,5 +1,5 @@
 /* head -- output first part of file(s)
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -32,8 +32,8 @@
 #include "system.h"
 
 #include "assure.h"
+#include "c-ctype.h"
 #include "full-read.h"
-#include "safe-read.h"
 #include "stat-size.h"
 #include "xbinary-io.h"
 #include "xdectoint.h"
@@ -147,17 +147,23 @@ Binary prefixes can be used, too: KiB=K, MiB=M, and so on.\n\
 }
 
 static void
+diagnose_read_failure (char const *filename)
+{
+  error (0, errno, _("error reading %s"), quoteaf (filename));
+}
+
+static void
 diagnose_copy_fd_failure (enum Copy_fd_status err, char const *filename)
 {
   switch (err)
     {
     case COPY_FD_READ_ERROR:
-      error (0, errno, _("error reading %s"), quoteaf (filename));
+      diagnose_read_failure (filename);
       break;
     case COPY_FD_UNEXPECTED_EOF:
       error (0, errno, _("%s: file has shrunk too much"), quotef (filename));
       break;
-    default:
+    case COPY_FD_OK: default:
       affirm (false);
     }
 }
@@ -198,7 +204,7 @@ copy_fd (int src_fd, uintmax_t n_bytes)
   while (0 < n_bytes)
     {
       idx_t n_to_read = MIN (n_bytes, sizeof buf);
-      ptrdiff_t n_read = safe_read (src_fd, buf, n_to_read);
+      ssize_t n_read = read (src_fd, buf, n_to_read);
       if (n_read < 0)
         return COPY_FD_READ_ERROR;
 
@@ -213,6 +219,18 @@ copy_fd (int src_fd, uintmax_t n_bytes)
   return COPY_FD_OK;
 }
 
+/* Report an lseek failure at OFFSET compared to WHENCE, for FILENAME.  */
+static void
+elseek_diagnostic (off_t offset, int whence, char const *filename)
+{
+  intmax_t off = offset;
+  error (0, errno,
+         _(whence == SEEK_SET
+           ? N_("%s: cannot seek to offset %jd")
+           : N_("%s: cannot seek to relative offset %jd")),
+         quotef (filename), off);
+}
+
 /* Call lseek (FD, OFFSET, WHENCE), where file descriptor FD
    corresponds to the file FILENAME.  WHENCE must be SEEK_SET or
    SEEK_CUR.  Return the resulting offset.  Give a diagnostic and
@@ -224,12 +242,7 @@ elseek (int fd, off_t offset, int whence, char const *filename)
   off_t new_offset = lseek (fd, offset, whence);
 
   if (new_offset < 0)
-    error (0, errno,
-           _(whence == SEEK_SET
-             ? N_("%s: cannot seek to offset %jd")
-             : N_("%s: cannot seek to relative offset %jd")),
-           quotef (filename),
-           (intmax_t) offset);
+    elseek_diagnostic (offset, whence, filename);
 
   return new_offset;
 }
@@ -297,7 +310,7 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide,
             {
               if (errno != 0)
                 {
-                  error (0, errno, _("error reading %s"), quoteaf (filename));
+                  diagnose_read_failure (filename);
                   ok = false;
                   break;
                 }
@@ -372,7 +385,7 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide,
             {
               if (errno != 0)
                 {
-                  error (0, errno, _("error reading %s"), quoteaf (filename));
+                  diagnose_read_failure (filename);
                   ok = false;
                   goto free_mem;
                 }
@@ -438,8 +451,8 @@ elide_tail_bytes_pipe (char const *filename, int fd, uintmax_t n_elide,
 }
 
 /* For the file FILENAME with descriptor FD, output all but the last N_ELIDE
-   bytes.  If SIZE is nonnegative, this is a regular file positioned
-   at CURRENT_POS with SIZE bytes.  Return true on success.
+   bytes.  If CURRENT_POS is nonnegative, this is a regular file positioned
+   at CURRENT_POS.  The file's status is ST.  Return true on success.
    Give a diagnostic and return false upon error.  */
 
 /* NOTE: if the input file shrinks by more than N_ELIDE bytes between
@@ -450,7 +463,7 @@ elide_tail_bytes_file (char const *filename, int fd, uintmax_t n_elide,
                        struct stat const *st, off_t current_pos)
 {
   off_t size = st->st_size;
-  if (presume_input_pipe || current_pos < 0 || size <= STP_BLKSIZE (st))
+  if (current_pos < 0 || size <= STP_BLKSIZE (st))
     return elide_tail_bytes_pipe (filename, fd, n_elide, current_pos);
   else
     {
@@ -494,7 +507,7 @@ elide_tail_lines_pipe (char const *filename, int fd, uintmax_t n_elide,
   LBUFFER *first, *last, *tmp;
   size_t total_lines = 0;	/* Total number of newlines in all buffers.  */
   bool ok = true;
-  ptrdiff_t n_read;		/* Size in bytes of most recent read */
+  ssize_t n_read;		/* Size in bytes of most recent read */
 
   first = last = xmalloc (sizeof (LBUFFER));
   first->nbytes = first->nlines = 0;
@@ -506,7 +519,7 @@ elide_tail_lines_pipe (char const *filename, int fd, uintmax_t n_elide,
      n_elide newlines, or until EOF, whichever comes first.  */
   while (true)
     {
-      n_read = safe_read (fd, tmp->buffer, BUFSIZ);
+      n_read = read (fd, tmp->buffer, BUFSIZ);
       if (n_read <= 0)
         break;
 
@@ -568,7 +581,7 @@ elide_tail_lines_pipe (char const *filename, int fd, uintmax_t n_elide,
 
   if (n_read < 0)
     {
-      error (0, errno, _("error reading %s"), quoteaf (filename));
+      diagnose_read_failure (filename);
       ok = false;
       goto free_lbuffers;
     }
@@ -634,7 +647,7 @@ elide_tail_lines_seekable (char const *pretty_filename, int fd,
                            off_t start_pos, off_t size)
 {
   char buffer[BUFSIZ];
-  ptrdiff_t bytes_read;
+  ssize_t bytes_read;
   off_t pos = size;
 
   /* Set 'bytes_read' to the size of the last, probably partial, buffer;
@@ -647,10 +660,10 @@ elide_tail_lines_seekable (char const *pretty_filename, int fd,
   pos -= bytes_read;
   if (elseek (fd, pos, SEEK_SET, pretty_filename) < 0)
     return false;
-  bytes_read = safe_read (fd, buffer, bytes_read);
+  bytes_read = read (fd, buffer, bytes_read);
   if (bytes_read < 0)
     {
-      error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
+      diagnose_read_failure (pretty_filename);
       return false;
     }
 
@@ -716,10 +729,10 @@ elide_tail_lines_seekable (char const *pretty_filename, int fd,
       if (elseek (fd, pos, SEEK_SET, pretty_filename) < 0)
         return false;
 
-      bytes_read = safe_read (fd, buffer, BUFSIZ);
+      bytes_read = read (fd, buffer, BUFSIZ);
       if (bytes_read < 0)
         {
-          error (0, errno, _("error reading %s"), quoteaf (pretty_filename));
+          diagnose_read_failure (pretty_filename);
           return false;
         }
 
@@ -731,16 +744,16 @@ elide_tail_lines_seekable (char const *pretty_filename, int fd,
 }
 
 /* For the file FILENAME with descriptor FD, output all but the last N_ELIDE
-   lines.  If SIZE is nonnegative, this is a regular file positioned
-   at START_POS with SIZE bytes.  Return true on success.
-   Give a diagnostic and return nonzero upon error.  */
+   lines.  If CURRENT_POS is nonnegative, this is a regular file positioned
+   at CURRENT_POS.  The file's status is ST.  Return true on success.
+   Give a diagnostic and return false upon error.  */
 
 static bool
 elide_tail_lines_file (char const *filename, int fd, uintmax_t n_elide,
                        struct stat const *st, off_t current_pos)
 {
   off_t size = st->st_size;
-  if (presume_input_pipe || current_pos < 0 || size <= STP_BLKSIZE (st))
+  if (current_pos < 0 || size <= STP_BLKSIZE (st))
     return elide_tail_lines_pipe (filename, fd, n_elide, current_pos);
   else
     {
@@ -758,23 +771,10 @@ elide_tail_lines_file (char const *filename, int fd, uintmax_t n_elide,
 static bool
 head_bytes (char const *filename, int fd, uintmax_t bytes_to_write)
 {
-  char buffer[BUFSIZ];
-  size_t bytes_to_read = BUFSIZ;
-
-  while (bytes_to_write)
+  if (copy_fd (fd, bytes_to_write) == COPY_FD_READ_ERROR)
     {
-      if (bytes_to_write < bytes_to_read)
-        bytes_to_read = bytes_to_write;
-      ptrdiff_t bytes_read = safe_read (fd, buffer, bytes_to_read);
-      if (bytes_read < 0)
-        {
-          error (0, errno, _("error reading %s"), quoteaf (filename));
-          return false;
-        }
-      if (bytes_read == 0)
-        break;
-      xwrite_stdout (buffer, bytes_read);
-      bytes_to_write -= bytes_read;
+      diagnose_read_failure (filename);
+      return false;
     }
   return true;
 }
@@ -786,12 +786,12 @@ head_lines (char const *filename, int fd, uintmax_t lines_to_write)
 
   while (lines_to_write)
     {
-      ptrdiff_t bytes_read = safe_read (fd, buffer, BUFSIZ);
+      ssize_t bytes_read = read (fd, buffer, BUFSIZ);
       idx_t bytes_to_write = 0;
 
       if (bytes_read < 0)
         {
-          error (0, errno, _("error reading %s"), quoteaf (filename));
+          diagnose_read_failure (filename);
           return false;
         }
       if (bytes_read == 0)
@@ -807,7 +807,7 @@ head_lines (char const *filename, int fd, uintmax_t lines_to_write)
               {
                 struct stat st;
                 if (fstat (fd, &st) != 0 || S_ISREG (st.st_mode))
-                  elseek (fd, -n_bytes_past_EOL, SEEK_CUR, filename);
+                  elseek_diagnostic (-n_bytes_past_EOL, SEEK_CUR, filename);
               }
             break;
           }
@@ -837,7 +837,7 @@ head (char const *filename, int fd, uintmax_t n_units, bool count_lines,
                  quoteaf (filename));
           return false;
         }
-      if (! presume_input_pipe && usable_st_size (&st))
+      if (! presume_input_pipe && S_ISREG (st.st_mode))
         {
           current_pos = elseek (fd, 0, SEEK_CUR, filename);
           if (current_pos < 0)
@@ -860,7 +860,7 @@ head_file (char const *filename, uintmax_t n_units, bool count_lines,
 {
   int fd;
   bool ok;
-  bool is_stdin = STREQ (filename, "-");
+  bool is_stdin = streq (filename, "-");
 
   if (is_stdin)
     {
@@ -944,7 +944,7 @@ main (int argc, char **argv)
 
   line_end = '\n';
 
-  if (1 < argc && argv[1][0] == '-' && ISDIGIT (argv[1][1]))
+  if (1 < argc && argv[1][0] == '-' && c_isdigit (argv[1][1]))
     {
       char *a = argv[1];
       char *n_string = ++a;
@@ -954,7 +954,7 @@ main (int argc, char **argv)
       /* Old option syntax; a dash, one or more digits, and one or
          more option letters.  Move past the number. */
       do ++a;
-      while (ISDIGIT (*a));
+      while (c_isdigit (*a));
 
       /* Pointer to the byte after the last digit.  */
       end_n_string = a;
@@ -1055,7 +1055,7 @@ main (int argc, char **argv)
         case_GETOPT_VERSION_CHAR (PROGRAM_NAME, AUTHORS);
 
         default:
-          if (ISDIGIT (c))
+          if (c_isdigit (c))
             error (0, 0, _("invalid trailing option -- %c"), c);
           usage (EXIT_FAILURE);
         }

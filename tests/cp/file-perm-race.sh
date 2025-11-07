@@ -1,7 +1,7 @@
 #!/bin/sh
 # Make sure cp -p isn't too generous with file permissions.
 
-# Copyright (C) 2006-2024 Free Software Foundation, Inc.
+# Copyright (C) 2006-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -30,7 +30,7 @@ cleanup_() { kill $pid 2>/dev/null && wait $pid; }
 
 # Copy a fifo's contents.  That way, we can examine the
 # destination permissions before they're finalized.
-cp -p --copy-contents fifo fifo-copy & pid=$!
+timeout 60 cp -p --copy-contents fifo fifo-copy & pid=$!
 
 (
   # Now 'cp' is reading the fifo.  Wait for the destination file to

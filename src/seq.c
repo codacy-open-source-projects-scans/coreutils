@@ -1,5 +1,5 @@
 /* seq - print sequence of numbers to standard output.
-   Copyright (C) 1994-2024 Free Software Foundation, Inc.
+   Copyright (C) 1994-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -23,6 +23,7 @@
 #include <sys/types.h>
 
 #include "system.h"
+#include "c-ctype.h"
 #include "cl-strtod.h"
 #include "full-write.h"
 #include "quote.h"
@@ -187,10 +188,10 @@ scan_arg (char const *arg)
           fraction_len = strcspn (decimal_point + 1, "eE");
           if (fraction_len <= INT_MAX)
             ret.precision = fraction_len;
-          ret.width += (fraction_len == 0                      /* #.  -> #   */
+          ret.width += (fraction_len == 0                       /* #.  -> #   */
                         ? -1
-                        : (decimal_point == arg                /* .#  -> 0.# */
-                           || ! ISDIGIT (decimal_point[-1]))); /* -.# -> 0.# */
+                        : (decimal_point == arg                 /* .#  -> 0.# */
+                           || !c_isdigit (decimal_point[-1]))); /* -.# -> 0.# */
         }
       char const *e = strchr (arg, 'e');
       if (! e)
@@ -346,7 +347,7 @@ print_numbers (char const *fmt, struct layout layout,
                   if (x0_strlen < 0)
                     xalloc_die ();
                   x0_str[x0_strlen - layout.suffix_len] = '\0';
-                  print_extra_number = !STREQ (x0_str, x_str);
+                  print_extra_number = !streq (x0_str, x_str);
                   free (x0_str);
                 }
 
@@ -464,7 +465,7 @@ seq_fast (char const *a, char const *b, uintmax_t step)
 
   idx_t p_len = strlen (a);
   idx_t b_len = strlen (b);
-  bool inf = b_len == 3 && memcmp (b, "inf", 4) == 0;
+  bool inf = b_len == 3 && memeq (b, "inf", 4);
 
   /* Allow for at least 31 digits without realloc.
      1 more than p_len is needed for the inf case.  */
@@ -539,7 +540,7 @@ static bool
 all_digits_p (char const *s)
 {
   size_t n = strlen (s);
-  return ISDIGIT (s[0]) && n == strspn (s, "0123456789");
+  return c_isdigit (s[0]) && n == strspn (s, "0123456789");
 }
 
 int
@@ -571,7 +572,7 @@ main (int argc, char **argv)
   while (optind < argc)
     {
       if (argv[optind][0] == '-'
-          && ((optc = argv[optind][1]) == '.' || ISDIGIT (optc)))
+          && ((optc = argv[optind][1]) == '.' || c_isdigit (optc)))
         {
           /* means negative number */
           break;
@@ -627,6 +628,8 @@ main (int argc, char **argv)
       usage (EXIT_FAILURE);
     }
 
+  char const *user_start = n_args == 1 ? "1" : argv[optind];
+
   /* If the following hold:
      - no format string, [FIXME: relax this, eventually]
      - integer start (or no start)
@@ -647,7 +650,7 @@ main (int argc, char **argv)
                          && all_digits_p (argv[optind + 2])))
       && !equal_width && !format_str && strlen (separator) == 1)
     {
-      char const *s1 = n_args == 1 ? "1" : argv[optind];
+      char const *s1 = user_start;
       char const *s2 = argv[optind + (n_args - 1)];
       seq_fast (s1, s2, step.value);
     }
@@ -682,7 +685,9 @@ main (int argc, char **argv)
     {
       char *s1;
       char *s2;
-      if (asprintf (&s1, "%0.Lf", first.value) < 0)
+      if (all_digits_p (user_start))
+        s1 = xstrdup (user_start);
+      else if (asprintf (&s1, "%0.Lf", first.value) < 0)
         xalloc_die ();
       if (! isfinite (last.value))
         s2 = xstrdup ("inf"); /* Ensure "inf" is used.  */

@@ -1,5 +1,5 @@
 /* csplit - split a file into sections determined by context lines
-   Copyright (C) 1991-2024 Free Software Foundation, Inc.
+   Copyright (C) 1991-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 
 #include <regex.h>
 
+#include "c-ctype.h"
 #include "fd-reopen.h"
 #include "quote.h"
 #include "safe-read.h"
@@ -377,7 +378,7 @@ record_line_starts (struct buffer_record *b)
   return lines;
 }
 
-/* Work around <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109614>.  */
+/* Work around <https://gcc.gnu.org/PR109614>.  */
 #if 13 <= __GNUC__
 # pragma GCC diagnostic ignored "-Wanalyzer-mismatching-deallocation"
 # pragma GCC diagnostic ignored "-Wanalyzer-use-after-free"
@@ -493,13 +494,14 @@ load_buffer (void)
     }
 }
 
-/* Return the line number of the first line that has not yet been retrieved. */
+/* Return the line number of the first line that has not yet been retrieved.
+   Return 0 if no lines available.  */
 
 static intmax_t
 get_first_line_in_buffer (void)
 {
   if (head == nullptr && !load_buffer ())
-    error (EXIT_FAILURE, errno, _("input disappeared"));
+    return 0;
 
   return head->first_available;
 }
@@ -606,7 +608,7 @@ no_more_lines (void)
 static void
 set_input_file (char const *name)
 {
-  if (! STREQ (name, "-") && fd_reopen (STDIN_FILENO, name, O_RDONLY, 0) < 0)
+  if (! streq (name, "-") && fd_reopen (STDIN_FILENO, name, O_RDONLY, 0) < 0)
     error (EXIT_FAILURE, errno, _("cannot open %s for reading"),
            quoteaf (name));
 }
@@ -626,7 +628,7 @@ write_to_file (intmax_t last_line, bool ignore, int argnum)
 
   first_line = get_first_line_in_buffer ();
 
-  if (first_line > last_line)
+  if (! first_line || first_line > last_line)
     {
       error (0, 0, _("%s: line number out of range"),
              quote (global_argv[argnum]));
@@ -697,7 +699,9 @@ process_line_count (const struct control *p, intmax_t repetition)
   if (no_more_lines () && suppress_matched)
     handle_line_error (p, repetition);
 
-  linenum = get_first_line_in_buffer ();
+  if (!(linenum = get_first_line_in_buffer ()))
+    handle_line_error (p, repetition);
+
   while (linenum++ < last_line_to_save)
     {
       struct cstring *line = remove_line ();
@@ -1059,13 +1063,12 @@ parse_repeat_count (int argnum, struct control *p, char *str)
     {
       uintmax_t val;
       if (xstrtoumax (str + 1, nullptr, 10, &val, "") != LONGINT_OK
-          || INTMAX_MAX < val)
+          || ckd_add (&p->repeat, val, 0))
         {
           error (EXIT_FAILURE, 0,
                  _("%s}: integer required between '{' and '}'"),
                  quote (global_argv[argnum]));
         }
-      p->repeat = val;
     }
 
   *end = '}';
@@ -1262,10 +1265,10 @@ max_out (char *format)
         percent = true;
         int flags;
         f += get_format_flags (f, &flags);
-        while (ISDIGIT (*f))
+        while (c_isdigit (*f))
           f++;
         if (*f == '.')
-          while (ISDIGIT (*++f))
+          while (c_isdigit (*++f))
             continue;
         check_format_conv_type (f, flags);
       }
@@ -1388,7 +1391,7 @@ main (int argc, char **argv)
         SIGXFSZ,
 #endif
       };
-    enum { nsigs = ARRAY_CARDINALITY (sig) };
+    enum { nsigs = countof (sig) };
 
     struct sigaction act;
 

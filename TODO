@@ -11,10 +11,6 @@ Modify chmod so that it does not change an inode's st_ctime
     https://lists.gnu.org/r/bug-coreutils/2004-09/msg00145.html
   Discussed more recently on <https://bugs.debian.org/497514>.
 
-document the following in coreutils.texi:
-  [
-  pinky
-
 Suggestion from Paul Eggert:
   More generally, there's not that much use for imaxtostr nowadays,
   since the inttypes module and newer versions of gettext allow things
@@ -143,7 +139,7 @@ pr's use of nstrftime can make it malloc a very large (up to SIZE_MAX) buffer
 
 -----
 
-Copyright (C) 2002-2024 Free Software Foundation, Inc.
+Copyright (C) 2002-2025 Free Software Foundation, Inc.
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

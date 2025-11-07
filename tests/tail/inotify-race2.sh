@@ -4,7 +4,7 @@
 # are established in tail_forever_inotify.  That new file would be ignored
 # indefinitely.
 
-# Copyright (C) 2015-2024 Free Software Foundation, Inc.
+# Copyright (C) 2015-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -52,7 +52,7 @@ break_line=$(echo "$break_line" | cut -d: -f1) || framework_failure_
 # has _intermittent_ issues with this.
 # Sending SIGCONT resulted in either delayed child termination,
 # or no child termination resulting in a hung test.
-# See https://sourceware.org/bugzilla/show_bug.cgi?id=18364
+# See https://sourceware.org/PR18364
 
 env sleep 10 & sleep=$!
 

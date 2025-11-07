@@ -1,5 +1,5 @@
 /* chroot -- run command or shell with special root directory
-   Copyright (C) 1995-2024 Free Software Foundation, Inc.
+   Copyright (C) 1995-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -171,7 +171,7 @@ static bool
 is_root (char const *dir)
 {
   char *resolved = canonicalize_file_name (dir);
-  bool is_res_root = resolved && STREQ ("/", resolved);
+  bool is_res_root = resolved && streq ("/", resolved);
   free (resolved);
   return is_res_root;
 }
@@ -184,9 +184,7 @@ usage (int status)
   else
     {
       printf (_("\
-Usage: %s [OPTION] NEWROOT [COMMAND [ARG]...]\n\
-  or:  %s OPTION\n\
-"), program_name, program_name);
+Usage: %s [OPTION]... NEWROOT [COMMAND [ARG]...]\n"), program_name);
 
       fputs (_("\
 Run COMMAND with root directory set to NEWROOT.\n\

@@ -1,7 +1,7 @@
 #!/bin/sh
 # ensure that --follow=name does not imply --retry
 
-# Copyright (C) 2011-2024 Free Software Foundation, Inc.
+# Copyright (C) 2011-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -29,14 +29,19 @@ returns_ 1 timeout 10 tail --follow=name no-such > out 2> err || fail=1
 sed '/inotify cannot be used/d' err > k && mv k err
 compare exp err || fail=1
 
-# Between coreutils 8.34 and 9.5 inclusive, tail would have
-# waited indefinitely when a file was moved to the same file system
+# Between coreutils 8.34 and 9.5 inclusive, with inotify, tail would
+# have waited indefinitely when a file was moved to the same file system.
+# Also without inotify tail would have exited with success.
 cleanup_() { kill $pid 2>/dev/null && wait $pid; }
-touch file || framework_failure_
-timeout 10 tail --follow=name file & pid=$!
-sleep .1 # Usually in inotify loop here
-mv file file.unfollow || framework_failure_
-wait $pid
-test $? = 1 || fail=1
+fastpoll='-s.1 --max-unchanged-stats=1'  # speedup non inotify systems
+for inotify in '' '---disable-inotify'; do
+  touch file || framework_failure_
+  timeout 10 tail --follow=name $fastpoll file & pid=$!
+  sleep .1 # Usually in tail_forever{,_inotify}() here
+  mv file file.unfollow || framework_failure_
+  wait $pid
+  test $? = 1 || fail=1
+  rm -f file file.unfollow || framework_failure_
+done
 
 Exit $fail

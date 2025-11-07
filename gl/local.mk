@@ -1,7 +1,7 @@
 # Make coreutils programs.                             -*-Makefile-*-
 # This is included by the top-level Makefile.am.
 
-## Copyright (C) 2024 Free Software Foundation, Inc.
+## Copyright (C) 2024-2025 Free Software Foundation, Inc.
 
 ## This program is free software: you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
@@ -22,12 +22,16 @@ gl/lib/buffer-lcm.h \
 gl/lib/cl-strtod.c \
 gl/lib/cl-strtod.h \
 gl/lib/cl-strtold.c \
+gl/lib/dtimespec-bound.c \
+gl/lib/dtimespec-bound.h \
 gl/lib/fadvise.c \
 gl/lib/fadvise.h \
 gl/lib/fd-reopen.c \
 gl/lib/fd-reopen.h \
 gl/lib/heap.c \
 gl/lib/heap.h \
+gl/lib/mbbuf.c \
+gl/lib/mbbuf.h \
 gl/lib/rand-isaac.c \
 gl/lib/rand-isaac.h \
 gl/lib/randint.c \
@@ -57,11 +61,13 @@ gl/local.mk \
 gl/modules/buffer-lcm \
 gl/modules/cl-strtod \
 gl/modules/cl-strtold \
+gl/modules/dtimespec-bound \
 gl/modules/fadvise \
 gl/modules/fadvise-tests \
 gl/modules/fd-reopen \
 gl/modules/heap \
 gl/modules/link-tests.diff \
+gl/modules/mbbuf \
 gl/modules/randint \
 gl/modules/randperm \
 gl/modules/randread \

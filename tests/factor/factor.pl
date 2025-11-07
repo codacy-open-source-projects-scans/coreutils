@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # Basic tests for "factor".
 
-# Copyright (C) 1998-2024 Free Software Foundation, Inc.
+# Copyright (C) 1998-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -86,9 +86,15 @@ my @Tests =
       '115792089237316195423570985008687907853'
       . '269984665640564039457584007913129639936',
       {OUT => '2 'x255 . '2'}],
-     ['bug-gmp-plus_2_sup_128_plus_1',
+     ['bug-gmp-plus_2_sup_127_plus_1',
       '+170141183460469231731687303715884105729',
       {OUT => '3 56713727820156410577229101238628035243'}],
+     ['bug-with-128-bit-uintmax_t',
+      '340282366920938463463374607431768211355',
+      {OUT => '5 31 2195370109167344925570158757624311041'}],
+     ['lt-5000-times-128-bit',
+      '1701071552237771378853409662551409288273703',
+      {OUT => '4999 340282366920938463463374607431768211297'}],
      ['h-1', '-h 3000', {OUT => '2^3 3 5^3'}],
      ['h-2', '3000 --exponents', {OUT => '2^3 3 5^3'}],
     );
@@ -102,7 +108,7 @@ Test:
 foreach $t (@Tests)
   {
     (my $arg1 = $t->[1]) =~ s| *\+?||;     # strip '+'
-    (my $arg1 = $arg1) =~ s| *-[^ ]+ *||;  # strip option
+    ($arg1 = $arg1) =~ s| *-[^ ]+ *||;     # strip option
 
     # Don't fiddle with expected OUT string if there's a nonzero exit status.
     foreach my $e (@$t)

@@ -1,5 +1,5 @@
 /* tr -- a filter to translate characters
-   Copyright (C) 1991-2024 Free Software Foundation, Inc.
+   Copyright (C) 1991-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -25,9 +25,9 @@
 
 #include "system.h"
 #include "assure.h"
+#include "c-ctype.h"
 #include "fadvise.h"
 #include "quote.h"
-#include "safe-read.h"
 #include "xbinary-io.h"
 #include "xstrtol.h"
 
@@ -383,7 +383,7 @@ is_char_class_member (enum Char_class char_class, unsigned char c)
       result = iscntrl (c);
       break;
     case CC_DIGIT:
-      result = isdigit (c);
+      result = c_isdigit (c);
       break;
     case CC_GRAPH:
       result = isgraph (c);
@@ -404,9 +404,9 @@ is_char_class_member (enum Char_class char_class, unsigned char c)
       result = isupper (c);
       break;
     case CC_XDIGIT:
-      result = isxdigit (c);
+      result = c_isxdigit (c);
       break;
-    default:
+    case CC_NO_CLASS: default:
       unreachable ();
     }
 
@@ -545,7 +545,7 @@ look_up_char_class (char const *class_str, size_t len)
 {
   enum Char_class i;
 
-  for (i = 0; i < ARRAY_CARDINALITY (char_class_name); i++)
+  for (i = 0; i < countof (char_class_name); i++)
     if (STREQ_LEN (class_str, char_class_name[i], len)
         && strlen (char_class_name[i]) == len)
       return i;
@@ -830,7 +830,7 @@ star_digits_closebracket (const struct E_string *es, size_t idx)
     return false;
 
   for (size_t i = idx + 1; i < es->len; i++)
-    if (!ISDIGIT (es->s[i]) || es->escaped[i])
+    if (!c_isdigit (es->s[i]) || es->escaped[i])
       return es_match (es, i, ']');
   return false;
 }
@@ -1052,15 +1052,13 @@ get_next (struct Spec_list *s, enum Upper_Lower_class *class)
     case RE_CHAR_CLASS:
       if (class)
         {
-          switch (p->u.char_class)
+          switch (+p->u.char_class)
             {
             case CC_LOWER:
               *class = UL_LOWER;
               break;
             case CC_UPPER:
               *class = UL_UPPER;
-              break;
-            default:
               break;
             }
         }
@@ -1246,7 +1244,6 @@ get_spec_stats (struct Spec_list *s)
   for (p = s->head->next; p; p = p->next)
     {
       count len = 0;
-      count new_length;
 
       switch (p->type)
         {
@@ -1264,7 +1261,7 @@ get_spec_stats (struct Spec_list *s)
           for (int i = 0; i < N_CHARS; i++)
             if (is_char_class_member (p->u.char_class, i))
               ++len;
-          switch (p->u.char_class)
+          switch (+p->u.char_class)
             {
             case CC_UPPER:
             case CC_LOWER:
@@ -1300,10 +1297,8 @@ get_spec_stats (struct Spec_list *s)
          any length greater than the maximum repeat count, in case the
          length is later used to compute the repeat count for an
          indefinite element.  */
-      new_length = length + len;
-      if (! (length <= new_length && new_length <= REPEAT_COUNT_MAXIMUM))
+      if (ckd_add (&length, length, len) || REPEAT_COUNT_MAXIMUM < length)
         error (EXIT_FAILURE, 0, _("too many characters in set"));
-      length = new_length;
     }
 
   s->length = length;
@@ -1594,7 +1589,7 @@ squeeze_filter (char *buf, size_t size, size_t (*reader) (char *, size_t))
 static size_t
 plain_read (char *buf, size_t size)
 {
-  ptrdiff_t nr = safe_read (STDIN_FILENO, buf, size);
+  ssize_t nr = read (STDIN_FILENO, buf, size);
   if (nr < 0)
     error (EXIT_FAILURE, errno, _("read error"));
   return nr;

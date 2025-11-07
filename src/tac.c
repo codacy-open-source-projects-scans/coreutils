@@ -1,5 +1,5 @@
 /* tac - concatenate and print files in reverse
-   Copyright (C) 1988-2024 Free Software Foundation, Inc.
+   Copyright (C) 1988-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -45,7 +45,6 @@ tac -r -s '.\|
 
 #include "filenamecat.h"
 #include "full-read.h"
-#include "safe-read.h"
 #include "temp-stream.h"
 #include "xbinary-io.h"
 
@@ -212,7 +211,7 @@ tac_seekable (int input_fd, char const *file, off_t file_pos)
 
   /* Scan backward, looking for end of file.  This caters to proc-like
      file systems where the file size is just an estimate.  */
-  while ((saved_record_size = safe_read (input_fd, G_buffer, read_size)) == 0
+  while ((saved_record_size = read (input_fd, G_buffer, read_size)) == 0
          && file_pos != 0)
     {
       off_t rsize = read_size;
@@ -224,7 +223,7 @@ tac_seekable (int input_fd, char const *file, off_t file_pos)
   /* Now scan forward, looking for end of file.  */
   while (saved_record_size == read_size)
     {
-      ptrdiff_t nread = safe_read (input_fd, G_buffer, read_size);
+      ssize_t nread = read (input_fd, G_buffer, read_size);
       if (nread == 0)
         break;
       saved_record_size = nread;
@@ -385,7 +384,7 @@ copy_to_temp (FILE **g_tmp, char **g_tempfile, int input_fd, char const *file)
 
   while (true)
     {
-      ptrdiff_t bytes_read = safe_read (input_fd, G_buffer, read_size);
+      ssize_t bytes_read = read (input_fd, G_buffer, read_size);
       if (bytes_read == 0)
         break;
       if (bytes_read < 0)
@@ -443,7 +442,7 @@ tac_file (char const *filename)
   bool ok;
   off_t file_size;
   int fd;
-  bool is_stdin = STREQ (filename, "-");
+  bool is_stdin = streq (filename, "-");
 
   if (is_stdin)
     {
@@ -553,7 +552,7 @@ main (int argc, char **argv)
   G_buffer = xmalloc (G_buffer_size);
   if (sentinel_length)
     {
-      memcpy (G_buffer, separator, sentinel_length + 1);
+      memcpy (G_buffer, separator, sentinel_length + !!*separator);
       G_buffer += sentinel_length;
     }
   else

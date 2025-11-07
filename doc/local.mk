@@ -1,7 +1,7 @@
 # Make coreutils documentation.				-*-Makefile-*-
 # This is included by the top-level Makefile.am.
 
-# Copyright (C) 1995-2024 Free Software Foundation, Inc.
+# Copyright (C) 1995-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -42,7 +42,8 @@ AM_MAKEINFOFLAGS = --no-split
 doc/constants.texi: $(top_srcdir)/src/tail.c $(top_srcdir)/src/shred.c
 	$(AM_V_GEN)LC_ALL=C; export LC_ALL; \
 	$(MKDIR_P) doc && \
-	{ sed -n -e 's/^#define \(DEFAULT_MAX[_A-Z]*\) \(.*\)/@set \1 \2/p' \
+	{ sed -n -e \
+	      's/.*\(DEFAULT_MAX[_A-Z]*\)[ =]* \([0-9]*\).*/@set \1 \2/p' \
 	    $(top_srcdir)/src/tail.c && \
 	  sed -n -e \
 	      's/.*\(DEFAULT_PASSES\)[ =]* \([0-9]*\).*/@set SHRED_\1 \2/p'\

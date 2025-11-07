@@ -1,6 +1,6 @@
 /* rmdir -- remove directories
 
-   Copyright (C) 1990-2024 Free Software Foundation, Inc.
+   Copyright (C) 1990-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -28,6 +28,7 @@
 #include <sys/types.h>
 
 #include "system.h"
+#include "issymlink.h"
 #include "prog-fprintf.h"
 
 /* The official name of this program (e.g., no 'g' prefix).  */
@@ -269,8 +270,7 @@ main (int argc, char **argv)
                       /* Ensure the last component was a symlink.  */
                       char *dir_arg = xstrdup (dir);
                       strip_trailing_slashes (dir);
-                      ret = lstat (dir, &st);
-                      if (ret == 0 && S_ISLNK (st.st_mode))
+                      if (issymlink (dir) == 1)
                         {
                           error (0, 0,
                                  _("failed to remove %s:"

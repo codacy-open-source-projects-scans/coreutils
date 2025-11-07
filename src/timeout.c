@@ -1,5 +1,5 @@
 /* timeout -- run a command with bounded time
-   Copyright (C) 2008-2024 Free Software Foundation, Inc.
+   Copyright (C) 2008-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -56,7 +56,7 @@
 
 #include "system.h"
 #include "cl-strtod.h"
-#include "xstrtod.h"
+#include "dtimespec-bound.h"
 #include "sig2str.h"
 #include "operand2sig.h"
 #include "quote.h"
@@ -187,7 +187,7 @@ send_sig (pid_t where, int sig)
 /* Signal handler which is required for sigsuspend() to be interrupted
    whenever SIGCHLD is received.  */
 static void
-chld (int sig)
+chld (MAYBE_UNUSED int sig)
 {
 }
 
@@ -254,8 +254,7 @@ usage (int status)
   else
     {
       printf (_("\
-Usage: %s [OPTION] DURATION COMMAND [ARG]...\n\
-  or:  %s [OPTION]\n"), program_name, program_name);
+Usage: %s [OPTION]... DURATION COMMAND [ARG]...\n"), program_name);
 
       fputs (_("\
 Start COMMAND, and kill it if still running after DURATION.\n\
@@ -286,7 +285,7 @@ Start COMMAND, and kill it if still running after DURATION.\n\
                    see 'kill -l' for a list of signals\n\
 "), stdout);
       fputs (_("\
-  -v, --verbose  diagnose to stderr any signal sent upon timeout\n\
+  -v, --verbose  diagnose to standard error any signal sent upon timeout\n\
 "), stdout);
 
       fputs (HELP_OPTION_DESCRIPTION, stdout);
@@ -348,7 +347,7 @@ apply_time_suffix (double *x, char suffix_char)
       return false;
     }
 
-  *x *= multiplier;
+  *x = dtimespec_bound (*x * multiplier, 0);
 
   return true;
 }
@@ -356,22 +355,24 @@ apply_time_suffix (double *x, char suffix_char)
 static double
 parse_duration (char const *str)
 {
-  double duration;
-  char const *ep;
+  char *ep;
+  errno = 0;
+  double duration = cl_strtod (str, &ep);
+  double s = dtimespec_bound (duration, errno);
 
-  if (! (xstrtod (str, &ep, &duration, cl_strtod) || errno == ERANGE)
+  if (ep == str
       /* Nonnegative interval.  */
-      || ! (0 <= duration)
+      || ! (0 <= s)
       /* No extra chars after the number and an optional s,m,h,d char.  */
       || (*ep && *(ep + 1))
       /* Check any suffix char and update timeout based on the suffix.  */
-      || !apply_time_suffix (&duration, *ep))
+      || !apply_time_suffix (&s, *ep))
     {
       error (0, 0, _("invalid time interval %s"), quote (str));
       usage (EXIT_CANCELED);
     }
 
-  return duration;
+  return s;
 }
 
 static void
@@ -546,6 +547,11 @@ main (int argc, char **argv)
   sigset_t orig_set;
   block_cleanup_and_chld (term_signal, &orig_set);
 
+  /* We cannot use posix_spawn here since the child will have an exit status of
+     127 for any failure.  If implemented through fork and exec, posix_spawn
+     will return successfully and 'timeout' will have no way to determine if it
+     should exit with EXIT_CANNOT_INVOKE or EXIT_ENOENT upon checking the exit
+     status of the child.  */
   monitored_pid = fork ();
   if (monitored_pid == -1)
     {

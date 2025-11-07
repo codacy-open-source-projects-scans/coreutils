@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # Test "date".
 
-# Copyright (C) 2005-2024 Free Software Foundation, Inc.
+# Copyright (C) 2005-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -184,6 +184,9 @@ my @Tests =
      # Relative days, no time, across time zones.
      ['relative-3', "-I -d '2006-04-23 21 days ago'", {OUT=>"2006-04-02"},
          {ENV=>'TZ=PST8PDT,M4.1.0,M10.5.0'}],
+
+     # Relative days, negative not confused with option
+     ['relative-4', "--utc -d '-1 day' +%Z", {OUT=>"UTC"}],
 
      # This would infloop (or appear to) prior to coreutils-4.5.5,
      # due to a bug in strftime.c.

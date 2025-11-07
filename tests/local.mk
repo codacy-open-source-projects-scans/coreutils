@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in -*-Makefile-*-.
 
-## Copyright (C) 2007-2024 Free Software Foundation, Inc.
+## Copyright (C) 2007-2025 Free Software Foundation, Inc.
 
 ## This program is free software: you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
@@ -126,6 +126,7 @@ all_root_tests =				\
   tests/ls/capability.sh			\
   tests/ls/no-cap.sh				\
   tests/ls/nameless-uid.sh			\
+  tests/nproc/nproc-quota.sh			\
   tests/chcon/chcon.sh				\
   tests/chroot/chroot-credentials.sh		\
   tests/misc/selinux.sh				\
@@ -178,6 +179,7 @@ all_tests =					\
   tests/tty/tty-eof.pl				\
   tests/misc/read-errors.sh			\
   tests/misc/write-errors.sh			\
+  tests/tail/basic-seek.sh			\
   tests/tail/inotify-hash-abuse.sh		\
   tests/tail/inotify-hash-abuse2.sh		\
   tests/tail/F-vs-missing.sh			\
@@ -268,6 +270,8 @@ all_tests =					\
   tests/misc/xstrtol.pl				\
   tests/tail/overlay-headers.sh			\
   tests/tail/pid.sh				\
+  tests/tail/pid-pipe.sh			\
+  tests/od/big-w.sh				\
   tests/od/od.pl				\
   tests/od/od-endian.sh				\
   tests/od/od-float.sh				\
@@ -280,6 +284,7 @@ all_tests =					\
   tests/cut/cut.pl				\
   tests/cut/cut-huge-range.sh			\
   tests/wc/wc.pl				\
+  tests/wc/wc-cpu.sh				\
   tests/wc/wc-files0-from.pl			\
   tests/wc/wc-files0.sh				\
   tests/wc/wc-nbsp.sh				\
@@ -293,12 +298,15 @@ all_tests =					\
   tests/misc/basename.pl			\
   tests/basenc/base64.pl			\
   tests/basenc/basenc.pl			\
+  tests/basenc/bounded-memory.sh		\
+  tests/basenc/large-input.sh			\
   tests/misc/close-stdout.sh			\
   tests/chroot/chroot-fail.sh			\
   tests/cksum/cksum.sh				\
   tests/cksum/cksum-a.sh			\
   tests/cksum/cksum-c.sh			\
   tests/cksum/cksum-base64.pl			\
+  tests/cksum/cksum-base64-untagged.sh		\
   tests/cksum/cksum-raw.sh			\
   tests/misc/comm.pl				\
   tests/csplit/csplit.sh			\
@@ -307,7 +315,13 @@ all_tests =					\
   tests/csplit/csplit-io-err.sh			\
   tests/csplit/csplit-suppress-matched.pl	\
   tests/date/date-debug.sh			\
+  tests/date/date-ethiopia.sh			\
+  tests/date/date-iran.sh			\
+  tests/date/date-locale-hour.sh		\
+  tests/date/reference.sh			\
+  tests/date/resolution.sh			\
   tests/date/date-sec.sh			\
+  tests/date/date-thailand.sh			\
   tests/date/date-tz.sh				\
   tests/misc/dircolors.pl			\
   tests/misc/dirname.pl				\
@@ -320,7 +334,11 @@ all_tests =					\
   tests/factor/factor.pl			\
   tests/factor/factor-parallel.sh		\
   tests/misc/false-status.sh			\
-  tests/misc/fold.pl				\
+  tests/fold/fold-characters.sh			\
+  tests/fold/fold-nbsp.sh			\
+  tests/fold/fold-spaces.sh			\
+  tests/fold/fold-zero-width.sh			\
+  tests/fold/fold.pl				\
   tests/groups/groups-dash.sh			\
   tests/groups/groups-process-all.sh		\
   tests/groups/groups-version.sh		\
@@ -343,7 +361,9 @@ all_tests =					\
   tests/nproc/nproc-avail.sh			\
   tests/nproc/nproc-positive.sh			\
   tests/nproc/nproc-override.sh			\
-  tests/misc/numfmt.pl				\
+  tests/numfmt/numfmt.pl			\
+  tests/numfmt/mb-non-utf8.sh			\
+  tests/misc/option-aliases.sh			\
   tests/od/od-N.sh				\
   tests/od/od-j.sh				\
   tests/od/od-multiple-t.sh			\
@@ -360,6 +380,7 @@ all_tests =					\
   tests/printf/printf-quote.sh			\
   tests/pwd/pwd-long.sh				\
   tests/readlink/readlink-fp-loop.sh		\
+  tests/readlink/readlink-posix.sh		\
   tests/readlink/readlink-root.sh		\
   tests/misc/realpath.sh			\
   tests/runcon/runcon-compute.sh		\
@@ -370,6 +391,7 @@ all_tests =					\
   tests/cksum/sha256sum.pl			\
   tests/cksum/sha384sum.pl			\
   tests/cksum/sha512sum.pl			\
+  tests/cksum/cksum-sha3.sh			\
   tests/shred/shred-exact.sh			\
   tests/shred/shred-passes.sh			\
   tests/shred/shred-remove.sh			\
@@ -387,6 +409,7 @@ all_tests =					\
   tests/sort/sort-debug-keys.sh			\
   tests/sort/sort-debug-warn.sh			\
   tests/sort/sort-discrim.sh			\
+  tests/sort/sort-field-limit.sh		\
   tests/sort/sort-files0-from.pl		\
   tests/sort/sort-float.sh			\
   tests/sort/sort-h-thousands-sep.sh		\
@@ -423,6 +446,7 @@ all_tests =					\
   tests/stat/stat-printf.pl			\
   tests/stat/stat-slash.sh			\
   tests/misc/stdbuf.sh				\
+  tests/stty/bad-speed.sh			\
   tests/stty/stty.sh				\
   tests/stty/stty-invalid.sh			\
   tests/stty/stty-pairs.sh			\
@@ -437,6 +461,7 @@ all_tests =					\
   tests/misc/tee.sh				\
   tests/test/test-N.sh				\
   tests/test/test-diag.pl			\
+  tests/test/test-file.sh			\
   tests/misc/time-style.sh			\
   tests/timeout/timeout.sh			\
   tests/timeout/timeout-blocked.pl		\
@@ -552,6 +577,7 @@ all_tests =					\
   tests/dd/no-allocate.sh			\
   tests/dd/nocache.sh				\
   tests/dd/nocache_eof.sh			\
+  tests/dd/nocache_fail.sh			\
   tests/dd/not-rewound.sh			\
   tests/dd/reblock.sh				\
   tests/dd/skip-seek.pl				\
@@ -760,7 +786,8 @@ factor_tests = \
   $(tf)/t20.sh $(tf)/t21.sh $(tf)/t22.sh $(tf)/t23.sh $(tf)/t24.sh \
   $(tf)/t25.sh $(tf)/t26.sh $(tf)/t27.sh $(tf)/t28.sh $(tf)/t29.sh \
   $(tf)/t30.sh $(tf)/t31.sh $(tf)/t32.sh $(tf)/t33.sh $(tf)/t34.sh \
-  $(tf)/t35.sh $(tf)/t36.sh $(tf)/t37.sh
+  $(tf)/t35.sh $(tf)/t36.sh $(tf)/t37.sh $(tf)/t38.sh $(tf)/t39.sh \
+  $(tf)/t40.sh
 
 $(factor_tests): $(tf)/run.sh $(tf)/create-test.sh
 	$(AM_V_GEN)$(MKDIR_P) $(tf)

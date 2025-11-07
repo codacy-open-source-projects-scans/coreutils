@@ -3,7 +3,7 @@
    Contributed to the GNU project by Torbjörn Granlund and Niels Möller
    Contains code from GNU MP.
 
-Copyright 2012-2024 Free Software Foundation, Inc.
+Copyright 2012-2025 Free Software Foundation, Inc.
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -17,9 +17,6 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along with
 this program.  If not, see https://www.gnu.org/licenses/.  */
 
-#include <config.h>
-
-#include <attribute.h>
 #include <inttypes.h>
 
 #include <limits.h>
@@ -29,11 +26,20 @@ this program.  If not, see https://www.gnu.org/licenses/.  */
 #include <stdlib.h>
 #include <errno.h>
 
-/* Deactivate "rpl_"-prefixed definitions of these symbols.  */
-#undef fclose
-#undef free
-#undef malloc
-#undef strerror
+/* This program is compiled in a separate directory to avoid linking to Gnulib
+   which may be cross-compiled.  Therefore, we also do not have config.h and
+   attribute.h.  Just define what we need.  */
+#if 2 < __GNUC__ + (95 <= __GNUC_MINOR__)
+# define ATTRIBUTE_CONST __attribute__ ((__const__))
+#else
+# define ATTRIBUTE_CONST
+#endif
+#if 3 < __GNUC__
+# define ATTRIBUTE_MALLOC __attribute__ ((__malloc__))
+#else
+# define ATTRIBUTE_MALLOC
+#endif
+
 
 /* An unsigned type that is no narrower than 32 bits and no narrower
    than unsigned int.  It's best to make it as wide as possible.
@@ -102,7 +108,7 @@ print_wide_uint (wide_uint n, int nesting, unsigned wide_uint_bits)
     }
   else if (nesting)
     {
-      printf ("(uintmax_t) ");
+      printf ("(mp_limb_t) ");
       hex_digits_per_literal
         = ((wide_uint_bits - 1) % bits_per_literal) % 4 + 1;
     }
@@ -110,7 +116,7 @@ print_wide_uint (wide_uint n, int nesting, unsigned wide_uint_bits)
   printf ("0x%0*xU", hex_digits_per_literal, remainder);
 }
 
-/* Work around <https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109635>.  */
+/* Work around <https://gcc.gnu.org/PR109635>.  */
 #if 13 <= __GNUC__
 # pragma GCC diagnostic ignored "-Wanalyzer-use-of-uninitialized-value"
 #endif
@@ -133,20 +139,21 @@ output_primes (const struct prime *primes, unsigned nprimes)
   puts ("/* Generated file -- DO NOT EDIT */\n");
   printf ("#define WIDE_UINT_BITS %u\n", wide_uint_bits);
 
-  for (i = 0, p = 2; i < nprimes; i++)
+  for (i = 0; i < nprimes; i++)
     {
-      unsigned int d8 = i + 8 < nprimes ? primes[i + 8].p - primes[i].p : 0xff;
-      if (255 < d8) /* this happens at 668221 */
+      /* Check that primes[i].p fits in int_least16_t on all platforms,
+         and that its square fits in int_least32_t on all platforms,
+         as factor.c relies on this.  */
+      if ((1 << (16 - 1)) <= primes[i].p)
         abort ();
-      printf ("P (%u, %u,\n   (", primes[i].p - p, d8);
+
+      printf ("P (%u,\n   (", primes[i].p);
       print_wide_uint (primes[i].pinv, 0, wide_uint_bits);
-      printf ("),\n   UINTMAX_MAX / %u)\n", primes[i].p);
-      p = primes[i].p;
+      printf ("),\n   (mp_limb_t) -1 / %u)\n", primes[i].p);
     }
 
-  printf ("\n#undef FIRST_OMITTED_PRIME\n");
-
   /* Find next prime */
+  p = primes[nprimes - 1].p;
   do
     {
       p += 2;
@@ -163,7 +170,7 @@ output_primes (const struct prime *primes, unsigned nprimes)
     }
   while (!is_prime);
 
-  printf ("#define FIRST_OMITTED_PRIME %u\n", p);
+  printf ("#define SQUARE_OF_FIRST_OMITTED_PRIME %u\n", p * p);
 }
 
 ATTRIBUTE_MALLOC
@@ -230,7 +237,7 @@ main (int argc, char **argv)
   free (sieve);
   free (prime_list);
 
-  if (ferror (stdout) + fclose (stdout))
+  if (ferror (stdout) || fclose (stdout))
     {
       fprintf (stderr, "write error: %s\n", strerror (errno));
       return EXIT_FAILURE;

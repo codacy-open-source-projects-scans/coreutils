@@ -1,7 +1,7 @@
 #!/bin/sh
 # Validate sleep parameters
 
-# Copyright (C) 2016-2024 Free Software Foundation, Inc.
+# Copyright (C) 2016-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ returns_ 1 timeout 10 sleep || fail=1
 # subsecond actual sleep
 timeout 10 sleep 0.001 || fail=1
 timeout 10 sleep 0x.002p1 || fail=1
+timeout 10 sleep 0x0.01d || fail=1  # d is part of hex, not a day suffix
 
 # Using small timeouts for larger sleeps is racy,
 # but false positives should be avoided on most systems

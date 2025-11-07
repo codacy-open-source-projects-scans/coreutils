@@ -1,5 +1,5 @@
 /* du -- summarize device usage
-   Copyright (C) 1988-2024 Free Software Foundation, Inc.
+   Copyright (C) 1988-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,8 +26,8 @@
 #include <config.h>
 #include <getopt.h>
 #include <sys/types.h>
-#include "system.h"
 #include "argmatch.h"
+#include "system.h"
 #include "argv-iter.h"
 #include "assure.h"
 #include "di-set.h"
@@ -43,8 +43,6 @@
 #include "xstrtol.h"
 #include "xstrtol-error.h"
 
-extern bool fts_debug;
-
 /* The official name of this program (e.g., no 'g' prefix).  */
 #define PROGRAM_NAME "du"
 
@@ -53,12 +51,6 @@ extern bool fts_debug;
   proper_name ("David MacKenzie"), \
   proper_name ("Paul Eggert"), \
   proper_name ("Jim Meyering")
-
-#if DU_DEBUG
-# define FTS_CROSS_CHECK(Fts) fts_cross_check (Fts)
-#else
-# define FTS_CROSS_CHECK(Fts)
-#endif
 
 /* A set of dev/ino pairs to help identify files and directories
    whose sizes have already been counted.  */
@@ -206,7 +198,9 @@ enum
   EXCLUDE_OPTION,
   FILES0_FROM_OPTION,
   HUMAN_SI_OPTION,
+#if GNULIB_FTS_DEBUG
   FTS_DEBUG,
+#endif
   TIME_OPTION,
   TIME_STYLE_OPTION,
   INODES_OPTION
@@ -219,7 +213,9 @@ static struct option const long_options[] =
   {"block-size", required_argument, nullptr, 'B'},
   {"bytes", no_argument, nullptr, 'b'},
   {"count-links", no_argument, nullptr, 'l'},
-  /* {"-debug", no_argument, nullptr, FTS_DEBUG}, */
+#if GNULIB_FTS_DEBUG
+  {"-debug", no_argument, nullptr, FTS_DEBUG},
+#endif
   {"dereference", no_argument, nullptr, 'L'},
   {"dereference-args", no_argument, nullptr, 'D'},
   {"exclude", required_argument, nullptr, EXCLUDE_OPTION},
@@ -686,7 +682,11 @@ du_files (char **files, int bit_flags)
               prev_level = 0;
               break;
             }
-          FTS_CROSS_CHECK (fts);
+
+#if GNULIB_FTS_DEBUG
+          if (fts_debug)
+            fts_cross_check (fts);
+#endif
 
           ok &= process_file (fts, ent);
         }
@@ -745,7 +745,7 @@ main (int argc, char **argv)
 
       switch (c)
         {
-#if DU_DEBUG
+#if GNULIB_FTS_DEBUG
         case FTS_DEBUG:
           fts_debug = true;
           break;
@@ -950,7 +950,7 @@ main (int argc, char **argv)
           time_style = getenv ("TIME_STYLE");
 
           /* Ignore TIMESTYLE="locale", for compatibility with ls.  */
-          if (! time_style || STREQ (time_style, "locale"))
+          if (! time_style || streq (time_style, "locale"))
             time_style = "long-iso";
           else if (*time_style == '+')
             {
@@ -974,8 +974,10 @@ main (int argc, char **argv)
         time_format = time_style + 1;
       else
         {
-          switch (XARGMATCH ("time style", time_style,
-                             time_style_args, time_style_types))
+          switch (x_timestyle_match (time_style, /*allow_posix=*/ false,
+                                     time_style_args,
+                                     (char const *) time_style_types,
+                                     sizeof (*time_style_types), EXIT_FAILURE))
             {
             case full_iso_time_style:
               time_format = "%Y-%m-%d %H:%M:%S.%N %z";
@@ -1005,7 +1007,7 @@ main (int argc, char **argv)
           usage (EXIT_FAILURE);
         }
 
-      if (! (STREQ (files_from, "-") || freopen (files_from, "r", stdin)))
+      if (! (streq (files_from, "-") || freopen (files_from, "r", stdin)))
         error (EXIT_FAILURE, errno, _("cannot open %s for reading"),
                quoteaf (files_from));
 
@@ -1060,15 +1062,15 @@ main (int argc, char **argv)
               goto argv_iter_done;
             case AI_ERR_MEM:
               xalloc_die ();
-            default:
+            case AI_ERR_OK: default:
               affirm (!"unexpected error code from argv_iter");
             }
         }
-      if (files_from && STREQ (files_from, "-") && STREQ (file_name, "-"))
+      if (files_from && streq (files_from, "-") && streq (file_name, "-"))
         {
           /* Give a better diagnostic in an unusual case:
              printf - | du --files0-from=- */
-          error (0, 0, _("when reading file names from stdin, "
+          error (0, 0, _("when reading file names from standard input, "
                          "no file name of %s allowed"),
                  quoteaf (file_name));
           skip_file = true;

@@ -1,5 +1,5 @@
 # Customize maint.mk                           -*- makefile -*-
-# Copyright (C) 2003-2024 Free Software Foundation, Inc.
+# Copyright (C) 2003-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,7 +22,7 @@ manual_title = Core GNU utilities
 url_dir_list = https://ftp.gnu.org/gnu/$(PACKAGE)
 
 # Exclude bundled external projects from syntax checks
-VC_LIST_ALWAYS_EXCLUDE_REGEX = src/blake2/.*$$
+VC_LIST_ALWAYS_EXCLUDE_REGEX = src/(blake2/.*|longlong.h)$$
 
 # Tests not to run as part of "make distcheck".
 local-checks-to-skip = \
@@ -48,7 +48,7 @@ export VERBOSE = yes
 # 4914152 9e
 export XZ_OPT = -8e
 
-old_NEWS_hash = 853a6f5bc2e9d25346d494bef9eaf8a3
+old_NEWS_hash = 6651d3c6c61d6b5d0f95b969e5c0c2af
 
 # Add an exemption for sc_makefile_at_at_check.
 _makefile_at_at_check_exceptions = \
@@ -68,7 +68,8 @@ sc_dd_O_FLAGS:
 	@rm -f $@.1 $@.2
 	@{ echo O_FULLBLOCK; echo O_NOCACHE;				\
 	  perl -nle '/^ +\| (O_\w*)$$/ and print $$1' $(dd); } | sort > $@.1
-	@{ echo O_NOFOLLOW; perl -nle '/{"[a-z]+",\s*(O_\w+)},/ and print $$1' \
+	@{ echo O_NOFOLLOW; echo O_EXCL;				\
+	   perl -nle '/{"[a-z]+",\s*(O_\w+)},/ and print $$1'		\
 	  $(dd); } | sort > $@.2
 	@diff -u $@.1 $@.2; diff=$$?;					\
 	rm -f $@.1 $@.2;						\
@@ -144,9 +145,10 @@ sc_ensure_gl_diffs_apply_cleanly:
 	done
 
 # Avoid :>file which doesn't propagate errors
+# Also  :>file was seen to trigger EXIT trap on cygwin
 sc_prohibit_colon_redirection:
-	@cd $(srcdir)/tests && GIT_PAGER= git grep -En ': *>.*\|\|'	\
-	  && { echo '$(ME): '"The leading colon in :> will hide errors" >&2; \
+	@cd $(srcdir)/tests && GIT_PAGER= git grep -En ': *>[^>]'	\
+	  && { echo '$(ME): '":> will hide errors or may trigger EXIT" >&2; \
 	       exit 1; }  \
 	  || :
 
@@ -303,6 +305,20 @@ sc_prohibit-gl-attributes:
 	halt='Use _GL... attribute macros'			\
 	  $(_sc_search_regexp)
 
+# Ensure that <attributes.h> macros are used in .c files.
+sc_prohibit-_gl-attributes:
+	@prohibit='_GL_ATTRIBUTE'				\
+	in_vc_files='\.c$$'					\
+	halt='Use ATTRIBUTE_... instead of _GL_ATTRIBUTE_...'	\
+	  $(_sc_search_regexp)
+
+# Prefer the STRUCT_UTMP typedef over struct gl_utmp.
+sc_prohibit-struct-gl_utmp:
+	@prohibit='struct gl_utmp'				\
+	in_vc_files='\.[ch]$$'					\
+	halt='Use STRUCT_UTMP, not struct gl_utmp'		\
+	  $(_sc_search_regexp)
+
 # Prefer the const declaration form, with const following the type
 sc_prohibit-const-char:
 	@prohibit='const char \*'				\
@@ -334,6 +350,14 @@ sc_long_lines:
 	  expand $$file | grep -nE '^.{80}.' |				\
 	  sed -e "s|^|$$file:|" -e '$(FILTER_LONG_LINES)';		\
 	done | grep . && { msg="$$halt" $(_sc_say_and_exit) } || :
+
+sc_standard_outputs: $(ALL_MANS)
+	@grep -E 'std(in|out|err)' man/*.1 doc/*.texi			 \
+	  && { echo 1>&2 '$@: use "standard ....." in user docs'; exit 1; } || :
+	@grep -E '[Ss]tandard (in|out|err)([^op]|$$)' man/*.1 doc/*.texi \
+	  && { echo 1>&2 '$@: use "standard ..put" in user docs'; exit 1; } || :
+	@grep -E '_\("[^"]*std(in|out|err)' src/*.c \
+	  && { echo 1>&2 '$@: use "standard ..put" in messages'; exit 1; } || :
 
 # Option descriptions should not start with a capital letter.
 # One could grep source directly as follows:
@@ -496,6 +520,12 @@ sc_prohibit_NULL:
 	@prohibit='$(begword)NULL$(endword)'				\
 	in_vc_files='\.[ch]$$'						\
 	halt='use nullptr instead'					\
+	  $(_sc_search_regexp)
+
+sc_prohibit_bare_set:
+	@prohibit='^ *set [`$$]'					\
+	in_vc_files='\.sh$$'						\
+	halt='use set -- $$args instead of set $$args'			\
 	  $(_sc_search_regexp)
 
 # Don't use "indent-tabs-mode: nil" anymore.  No longer needed.
@@ -806,7 +836,8 @@ sc_fs-magic-compare:
 sc_gitignore_missing:
 	@{ sed -n '/^\/lib\/.*\.h$$/{p;p}' $(srcdir)/.gitignore;	\
 	    find lib -name '*.in*' ! -name '*~' ! -name 'sys_*' |	\
-	      sed 's|^|/|; s|_\(.*in\.h\)|/\1|; s/\.in//'; } |		\
+	      sed 's|^|/|; s|_\(.*in\.h\)|/\1|; s/\.in//' |		\
+	      sed 's|/fts\.h$$|/fts_.h|'; } |				\
 	      sort | uniq -u | grep . && { echo '$(ME): Add above'	\
 		'entries to .gitignore' >&2; exit 1; } || :
 
@@ -840,6 +871,15 @@ sc_prohibit-form-feed:
 	halt='Form Feed (^L) detected' \
 	  $(_sc_search_regexp)
 
+# debbugs.gnu.org/cgi/bugreport.cgi?bug=... ->   bugs.gnu.org/...
+# bugzilla.redhat.com/show_bug.cgi?id=... ->     bugzilla.redhat.com/...
+# sourceware.org/bugzilla/show_bug.cgi?id=... -> sourceware.org/PR...
+# gcc.gnu.org/bugzilla/show_bug.cgi?id=... ->    gcc.gnu.org/PR...
+sc_prohibit-long-form-bug-urls:
+	@prohibit='http.*(bugreport|show_bug)\.cgi' \
+	halt='use short form bug url' \
+	  $(_sc_search_regexp)
+
 # Override the default Cc: used in generating an announcement.
 announcement_Cc_ = $(translation_project_), \
   coreutils@gnu.org, coreutils-announce@gnu.org
@@ -858,11 +898,13 @@ exclude_file_name_regexp--sc_bindtextdomain = \
   ^(gl/.*|lib/euidaccess-stat|src/make-prime-list|src/cksum)\.c$$
 exclude_file_name_regexp--sc_trailing_blank = \
   ^(tests/pr/|gl/.*\.diff$$|man/help2man)
+_x_system_h := (system|copy|chown-core|find-mount-point)\.h
+_x_system_c := (libstdbuf|make-prime-list)\.c
 exclude_file_name_regexp--sc_system_h_headers = \
-  ^src/((system|copy|chown-core|find-mount-point)\.h|make-prime-list\.c)$$
+  ^src/($(_x_system_h)|$(_x_system_c))$$
 
 _src := (false|lbracket|chown-(chgrp|chown)
-_src := $(_src)|ls-(dir|ls|vdir)|tac-pipe|uname-(arch|uname))
+_src := $(_src)|ls-(dir|ls|vdir)|make-prime-list|tac-pipe|uname-(arch|uname))
 _gl_src = (xdecto.max|cl-strtold)
 exclude_file_name_regexp--sc_require_config_h_first = \
   (^lib/buffer-lcm\.c|gl/lib/$(_gl_src)\.c|src/$(_src)\.c)$$
@@ -896,7 +938,7 @@ exclude_file_name_regexp--sc_prohibit_tab_based_indentation = \
   $(tbi_1)|$(tbi_2)|$(tbi_3)
 
 exclude_file_name_regexp--sc_preprocessor_indentation = \
-  ^(gl/lib/rand-isaac\.[ch]|gl/tests/test-rand-isaac\.c)$$|$(_ll)
+  ^(gl/lib/(rand-isaac|mbbuf)\.[ch]|gl/tests/test-rand-isaac\.c)$$|$(_ll)
 exclude_file_name_regexp--sc_prohibit_stat_st_blocks = \
   ^(src/system\.h|tests/du/2g\.sh)$$
 
@@ -914,8 +956,10 @@ exclude_file_name_regexp--sc_prohibit_operator_at_end_of_line = \
 exclude_file_name_regexp--sc_error_message_uppercase = ^src/factor\.c$$
 exclude_file_name_regexp--sc_prohibit_atoi_atof = ^src/make-prime-list\.c$$
 
-# Exception here as we don't want __attribute elided on non GCC
-exclude_file_name_regexp--sc_prohibit-gl-attributes = ^src/libstdbuf\.c$$
+# Exception here as we don't want __attribute elided on non GCC for stdbuf
+# and we don't want to depend on gnulib for make-prime-list
+exclude_file_name_regexp--sc_prohibit-gl-attributes = \
+  ^src/(make-prime-list|libstdbuf)\.c$$
 
 exclude_file_name_regexp--sc_prohibit_uppercase_id_est = \.diff$$
 exclude_file_name_regexp--sc_ensure_dblspace_after_dot_before_id_est = \.diff$$
@@ -949,3 +993,10 @@ _gl_TS_unmarked_extern_vars = ptr_MD5_.*
 # Other tight_scope settings
 _gl_TS_dir = .
 _gl_TS_obj_files = src/*.$(OBJEXT)
+# Settings for running codespell.
+csiwl_1 = debbugs,clen,te,bu,shs,linke,fo,souch,inout,outin
+csiwl_2 = kno,ois,afile,whats,hda,indx,ot,nam,ist
+codespell_ignore_words_list = $(csiwl_1),$(csiwl_2)
+exclude_file_name_regexp--sc_codespell = \
+  ^(THANKS\.in|tests/pr/.*(F|tn?|l(o|m|i)|bl))$$
+exclude_file_name_regexp--sc_GPL_version = ^(gl/lib/mbbuf\.[hc])$$

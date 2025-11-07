@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 # Test 'env -S' feature
 
-# Copyright (C) 2018-2024 Free Software Foundation, Inc.
+# Copyright (C) 2018-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -27,6 +27,19 @@ $env =~ m!^([-+\@\w./]+)$!
   or CuSkip::skip "unusual absolute builddir name; skipping this test\n";
 $env = $1;
 
+# We may depend on a library found in LD_LIBRARY_PATH, or an equivalent
+# environment variable.  Skip the test if it is set since unsetting it may
+# prevent us from running commands.
+foreach my $var (qw(LD_LIBRARY_PATH LD_32_LIBRARY_PATH DYLD_LIBRARY_PATH
+                    LIBPATH))
+  {
+    if (exists $ENV{$var})
+      {
+        CuSkip::skip ("programs may depend on $var being set; "
+                      . "skipping this test\n");
+      }
+  }
+
 # Turn off localization of executable's output.
 @ENV{qw(LANGUAGE LANG LC_ALL)} = ('C') x 3;
 
@@ -35,9 +48,12 @@ $env = $1;
 my $cf = '__CF_USER_TEXT_ENCODING';
 exists $ENV{$cf} and $env .= " -u$cf";
 # Likewise for these Cygwin env vars
-my $cf = 'SYSTEMROOT';
+$cf = 'SYSTEMROOT';
 exists $ENV{$cf} and $env .= " -u$cf";
-my $cf = 'WINDIR';
+$cf = 'WINDIR';
+exists $ENV{$cf} and $env .= " -u$cf";
+# Likewise for these GNU/Hurd env vars
+$cf = 'LD_ORIGIN_PATH';
 exists $ENV{$cf} and $env .= " -u$cf";
 
 my @Tests =

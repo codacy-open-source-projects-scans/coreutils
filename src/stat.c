@@ -1,5 +1,5 @@
 /* stat.c -- display file or file system status
-   Copyright (C) 2001-2024 Free Software Foundation, Inc.
+   Copyright (C) 2001-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -738,7 +738,7 @@ out_epoch_sec (char *pformat, size_t prefix_len,
       sec_prefix_len = dot - pformat;
       pformat[prefix_len] = '\0';
 
-      if (ISDIGIT (dot[1]))
+      if (c_isdigit (dot[1]))
         {
           long int lprec = strtol (dot + 1, nullptr, 10);
           precision = (lprec <= INT_MAX ? lprec : INT_MAX);
@@ -748,7 +748,7 @@ out_epoch_sec (char *pformat, size_t prefix_len,
           precision = 9;
         }
 
-      if (precision && ISDIGIT (dot[-1]))
+      if (precision && c_isdigit (dot[-1]))
         {
           /* If a nontrivial width is given, subtract the width of the
              decimal point and PRECISION digits that will be output
@@ -758,7 +758,7 @@ out_epoch_sec (char *pformat, size_t prefix_len,
 
           do
             --p;
-          while (ISDIGIT (p[-1]));
+          while (c_isdigit (p[-1]));
 
           long int lwidth = strtol (p, nullptr, 10);
           width = (lwidth <= INT_MAX ? lwidth : INT_MAX);
@@ -857,7 +857,7 @@ out_file_context (char *pformat, size_t prefix_len, char const *filename)
 NODISCARD
 static bool
 print_statfs (char *pformat, size_t prefix_len, MAYBE_UNUSED char mod, char m,
-              int fd, char const *filename,
+              MAYBE_UNUSED int fd, char const *filename,
               void const *data)
 {
   STRUCT_STATVFS const *statfsbuf = data;
@@ -967,7 +967,7 @@ find_bind_mount (char const * name)
   for (me = mount_list; me; me = me->me_next)
     {
       if (me->me_dummy && me->me_devname[0] == '/'
-          && STREQ (me->me_mountdir, name))
+          && streq (me->me_mountdir, name))
         {
           struct stat dev_stats;
 
@@ -1260,7 +1260,7 @@ do_statfs (char const *filename, char const *format)
 {
   STRUCT_STATVFS statfsbuf;
 
-  if (STREQ (filename, "-"))
+  if (streq (filename, "-"))
     {
       error (0, 0, _("using %s to denote standard input does not work"
                      " in file system mode"), quoteaf (filename));
@@ -1367,7 +1367,7 @@ NODISCARD
 static bool
 do_stat (char const *filename, char const *format, char const *format2)
 {
-  int fd = STREQ (filename, "-") ? 0 : AT_FDCWD;
+  int fd = streq (filename, "-") ? 0 : AT_FDCWD;
   int flags = 0;
   struct stat st;
   struct statx stx = {0};
@@ -1456,7 +1456,7 @@ static bool
 do_stat (char const *filename, char const *format,
          char const *format2)
 {
-  int fd = STREQ (filename, "-") ? 0 : -1;
+  int fd = streq (filename, "-") ? 0 : -1;
   struct stat statbuf;
   struct print_args pa;
   pa.st = &statbuf;
@@ -1501,7 +1501,7 @@ unsigned_file_size (off_t size)
 /* Print stat info.  Return zero upon success, nonzero upon failure.  */
 static bool
 print_stat (char *pformat, size_t prefix_len, char mod, char m,
-            int fd, char const *filename, void const *data)
+            MAYBE_UNUSED int fd, char const *filename, void const *data)
 {
   struct print_args *parg = (struct print_args *) data;
   struct stat *statbuf = parg->st;

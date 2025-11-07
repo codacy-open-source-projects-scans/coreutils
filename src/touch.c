@@ -1,5 +1,5 @@
 /* touch -- change modification and access times of files
-   Copyright (C) 1987-2024 Free Software Foundation, Inc.
+   Copyright (C) 1987-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -124,7 +124,7 @@ touch (char const *file)
   int open_errno = 0;
   struct timespec const *t = newtime;
 
-  if (STREQ (file, "-"))
+  if (streq (file, "-"))
     fd = STDOUT_FILENO;
   else if (! (no_create || no_dereference))
     {
@@ -180,11 +180,12 @@ touch (char const *file)
          would give a bogus diagnostic for e.g., 'touch /' (assuming we
          don't own / or have write access).  On Solaris 10 and probably
          other systems, opening a directory like "." fails with EINVAL.
-         (On SunOS 4 it was EPERM but that's obsolete.)  */
+         (On SunOS 4 it was EPERM but that's obsolete.)  On macOS 26
+         opening "/" fails with EEXIST.  */
       struct stat st;
       if (open_errno
           && ! (open_errno == EISDIR
-                || (open_errno == EINVAL
+                || ((open_errno == EINVAL || open_errno == EEXIST)
                     && stat (file, &st) == 0 && S_ISDIR (st.st_mode))))
         {
           /* The wording of this diagnostic should cover at least two cases:

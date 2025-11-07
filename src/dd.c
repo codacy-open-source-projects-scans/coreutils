@@ -1,5 +1,5 @@
 /* dd -- convert a file while copying it.
-   Copyright (C) 1985-2024 Free Software Foundation, Inc.
+   Copyright (C) 1985-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -295,6 +295,7 @@ enum
           | O_DIRECT
           | O_DIRECTORY
           | O_DSYNC
+          | O_EXCL
           | O_NOATIME
           | O_NOCTTY
           | O_NOFOLLOW
@@ -550,14 +551,14 @@ Copy a file, converting and formatting according to the operands.\n\
   ibs=BYTES       read up to BYTES bytes at a time (default: 512)\n\
 "), stdout);
       fputs (_("\
-  if=FILE         read from FILE instead of stdin\n\
+  if=FILE         read from FILE instead of standard input\n\
   iflag=FLAGS     read as per the comma separated symbol list\n\
   obs=BYTES       write BYTES bytes at a time (default: 512)\n\
-  of=FILE         write to FILE instead of stdout\n\
+  of=FILE         write to FILE instead of standard output\n\
   oflag=FLAGS     write as per the comma separated symbol list\n\
   seek=N          (or oseek=N) skip N obs-sized output blocks\n\
   skip=N          (or iseek=N) skip N ibs-sized input blocks\n\
-  status=LEVEL    The LEVEL of information to print to stderr;\n\
+  status=LEVEL    The LEVEL of information to print to standard error;\n\
                   'none' suppresses everything but error messages,\n\
                   'noxfer' suppresses the final transfer statistics,\n\
                   'progress' shows periodic transfer statistics\n\
@@ -604,8 +605,7 @@ Each FLAG symbol may be:\n\
         fputs (_("  cio       use concurrent I/O for data\n"), stdout);
       if (O_DIRECT)
         fputs (_("  direct    use direct I/O for data\n"), stdout);
-      if (O_DIRECTORY)
-        fputs (_("  directory  fail unless a directory\n"), stdout);
+      fputs (_("  directory  fail unless a directory\n"), stdout);
       if (O_DSYNC)
         fputs (_("  dsync     use synchronized I/O for data\n"), stdout);
       if (O_SYNC)
@@ -1027,7 +1027,8 @@ cache_round (int fd, off_t len)
 
 /* Discard the cache from the current offset of either
    STDIN_FILENO or STDOUT_FILENO.
-   Return true on success.  */
+   Return true on success.
+   Return false on failure, with errno set.  */
 
 static bool
 invalidate_cache (int fd, off_t len)
@@ -1087,12 +1088,13 @@ invalidate_cache (int fd, off_t len)
      if (clen == 0)
        offset -= offset % page_size;
      adv_ret = posix_fadvise (fd, offset, clen, POSIX_FADV_DONTNEED);
+     errno = adv_ret;
 #else
      errno = ENOTSUP;
 #endif
    }
 
-  return adv_ret != -1 ? true : false;
+  return adv_ret == 0;
 }
 
 /* Read from FD into the buffer BUF of size SIZE, processing any

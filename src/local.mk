@@ -1,7 +1,7 @@
 # Make coreutils programs.                             -*-Makefile-*-
 # This is included by the top-level Makefile.am.
 
-## Copyright (C) 1990-2024 Free Software Foundation, Inc.
+## Copyright (C) 1990-2025 Free Software Foundation, Inc.
 
 ## This program is free software: you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
@@ -36,8 +36,7 @@ pkglibexec_PROGRAMS = @pkglibexec_PROGRAMS@
 
 # Needed by the testsuite.
 noinst_PROGRAMS =		\
-  src/getlimits			\
-  src/make-prime-list
+  src/getlimits
 
 noinst_HEADERS =		\
   src/chown.h			\
@@ -69,9 +68,13 @@ noinst_HEADERS =		\
 EXTRA_DIST +=		\
   src/dcgen		\
   src/dircolors.hin	\
+  src/make-prime-list.c	\
   src/primes.h		\
+  src/crctab.c		\
   src/tac-pipe.c	\
-  src/extract-magic
+  src/extract-magic	\
+  src/speedgen		\
+  src/termios.c
 
 CLEANFILES += $(SCRIPTS)
 
@@ -149,11 +152,6 @@ src_link_LDADD = $(LDADD)
 src_ln_LDADD = $(LDADD)
 src_logname_LDADD = $(LDADD)
 src_ls_LDADD = $(LDADD)
-
-# This must *not* depend on anything in lib/, since it is used to generate
-# src/primes.h.  If it depended on libcoreutils.a, that would pull all lib/*.c
-# into BUILT_SOURCES.
-src_make_prime_list_LDADD =
 
 src_md5sum_LDADD = $(LDADD)
 src_mkdir_LDADD = $(LDADD)
@@ -239,6 +237,7 @@ src_test_LDADD += $(EUIDACCESS_LIBGEN)
 
 # for selinux use
 copy_ldadd += $(LIB_SELINUX)
+copy_ldadd += $(LIB_SMACK)
 src_chcon_LDADD += $(LIB_SELINUX)
 src_ginstall_LDADD += $(LIB_SELINUX)
 src_id_LDADD += $(LIB_SELINUX)
@@ -288,6 +287,7 @@ src_sort_LDADD += $(NANOSLEEP_LIB)
 src_tail_LDADD += $(NANOSLEEP_LIB)
 
 # for various GMP functions
+src_basenc_LDADD += $(LIBGMP)
 src_expr_LDADD += $(LIBGMP)
 src_factor_LDADD += $(LIBGMP)
 
@@ -337,6 +337,16 @@ src_sort_LDADD += $(LIBPMULTITHREAD)
 # for pthread_sigmask
 src_sort_LDADD += $(PTHREAD_SIGMASK_LIB)
 
+if !USE_NLS
+# for CFPreferencesCopyAppValue
+src_date_LDADD += $(INTL_MACOSX_LIBS)
+src_du_LDADD += $(INTL_MACOSX_LIBS)
+src_ls_LDADD += $(INTL_MACOSX_LIBS)
+src_pr_LDADD += $(INTL_MACOSX_LIBS)
+src_stat_LDADD += $(INTL_MACOSX_LIBS)
+src_uptime_LDADD += $(INTL_MACOSX_LIBS)
+endif
+
 # Get the release year from lib/version-etc.c.
 RELEASE_YEAR = \
   `sed -n '/.*COPYRIGHT_YEAR = \([0-9][0-9][0-9][0-9]\) };/s//\1/p' \
@@ -348,6 +358,7 @@ selinux_sources = \
 
 copy_sources = \
   src/copy.c \
+  src/copy-file-data.c \
   src/cp-hash.c \
   src/force-link.c \
   src/force-link.h
@@ -372,6 +383,9 @@ src___SOURCES = src/lbracket.c
 
 nodist_src_coreutils_SOURCES = src/coreutils.h
 src_coreutils_SOURCES = src/coreutils.c
+
+nodist_src_stty_SOURCES = src/speedlist.h
+src_stty_SOURCES = src/stty.c
 
 src_cp_SOURCES = src/cp.c $(copy_sources) $(selinux_sources)
 src_date_SOURCES = src/date.c src/show-date.c
@@ -480,6 +494,13 @@ src_expand_SOURCES = src/expand.c src/expand-common.c
 src_unexpand_SOURCES = src/unexpand.c src/expand-common.c
 
 src_wc_SOURCES = src/wc.c
+if USE_AVX512_WC_LINECOUNT
+noinst_LIBRARIES += src/libwc_avx512.a
+src_libwc_avx512_a_SOURCES = src/wc_avx512.c
+wc_avx512_ldadd = src/libwc_avx512.a
+src_wc_LDADD += $(wc_avx512_ldadd)
+src_libwc_avx512_a_CFLAGS = -mavx512bw -mavx512f  $(AM_CFLAGS)
+endif
 if USE_AVX2_WC_LINECOUNT
 noinst_LIBRARIES += src/libwc_avx2.a
 src_libwc_avx2_a_SOURCES = src/wc_avx2.c
@@ -556,15 +577,40 @@ $(top_srcdir)/src/dircolors.h: src/dcgen src/dircolors.hin
 # and it needs to be built on a widest-known-int architecture, so it's
 # built only if absent.  It is not cleaned because we don't want to
 # insist that maintainers must build on hosts that support the widest
-# known ints (currently 128-bit).
+# known ints (currently 128-bit).  It is built in a temporary directory
+# to avoid Gnulib and allow cross-compilers.  The BUILD_* definitions
+# come from Gnulib's gl_BUILD_CC which is invoked for the crc module.
 BUILT_SOURCES += $(top_srcdir)/src/primes.h
-$(top_srcdir)/src/primes.h:
-	$(AM_V_at)${MKDIR_P} src
-	$(MAKE) src/make-prime-list$(EXEEXT)
-	$(AM_V_GEN)rm -f $@ $@-t
-	$(AM_V_at)src/make-prime-list$(EXEEXT) 5000 > $@-t
-	$(AM_V_at)chmod a-w $@-t
-	$(AM_V_at)mv $@-t $@
+$(top_srcdir)/src/primes.h: $(top_srcdir)/src/make-prime-list.c
+	$(AM_V_GEN)if test -n '$(BUILD_CC)'; then \
+	  $(MKDIR_P) $(top_srcdir)/src/primes-tmp \
+	  && (cd $(top_srcdir)/src/primes-tmp \
+	      && $(BUILD_CC) $(BUILD_CPPFLAGS) $(BUILD_CFLAGS) \
+		$(BUILD_LDFLAGS) -o make-prime-list$(EXEEXT) \
+		$(abs_top_srcdir)/src/make-prime-list.c) \
+	  && rm -f $@ $@-t \
+	  && $(top_srcdir)/src/primes-tmp/make-prime-list$(EXEEXT) \
+	    5000 > $@-t \
+	  && chmod a-w $@-t \
+	  && mv $@-t $@ \
+	  && rm -rf $(top_srcdir)/src/primes-tmp; \
+	fi
+
+# We build crctab in a similar manner to primes.h.
+BUILT_SOURCES += $(top_srcdir)/src/crctab.c
+$(top_srcdir)/src/crctab.c: $(top_srcdir)/src/cksum.c
+	$(AM_V_GEN)if test -n '$(BUILD_CC)'; then \
+	  $(MKDIR_P) $(top_srcdir)/src/crctab-tmp \
+	  && (cd $(top_srcdir)/src/crctab-tmp \
+	      && $(BUILD_CC) $(BUILD_CPPFLAGS) $(BUILD_CFLAGS) \
+		$(BUILD_LDFLAGS) -DCRCTAB -o crctab$(EXEEXT) \
+		$(abs_top_srcdir)/src/cksum.c) \
+	  && rm -f $@ $@-t \
+	  && $(top_srcdir)/src/crctab-tmp/crctab$(EXEEXT) > $@-t \
+	  && chmod a-w $@-t \
+	  && mv $@-t $@ \
+	  && rm -rf $(top_srcdir)/src/crctab-tmp; \
+	fi
 
 # false exits nonzero even with --help or --version.
 # test doesn't support --help or --version.
@@ -669,6 +715,31 @@ src/version.h: Makefile
 	$(AM_V_GEN)rm -f $@
 	$(AM_V_at)${MKDIR_P} src
 	$(AM_V_at)printf 'extern char const *Version;\n' > $@t
+	$(AM_V_at)chmod a-w $@t
+	$(AM_V_at)mv $@t $@
+
+# Target-specific termios baud rate file. This is opportunistic; if cc
+# -E doesn't support any of the macro extraction options, the speedgen
+# script still includes an extensive fallback list of common
+# constants.
+
+# List of options used by various compilers to extract macro definitions;
+# these are tried in the order listed until the compiler exits successfully.
+# -dM: gcc, clang and derived compilers, icc classic
+# -xdumpmacros: Sun Studio (writes to stderr!)
+# -qshowmacros: IBM XL classic
+# -PD: MSVC (usable with a wrapper such as cccl from the SWIG project)
+getmacopts = -dM -xdumpmacros -qshowmacros -PD
+
+BUILT_SOURCES += src/speedlist.h
+DISTCLEANFILES += src/speedlist.h
+src/speedlist.h: src/termios.c lib/config.h src/speedgen
+	$(AM_V_GEN)rm -f $@
+	$(AM_V_at)${MKDIR_P} src
+	$(AM_V_at)( for opt in $(getmacopts); do \
+			$(COMPILE) -E $$opt $(srcdir)/src/termios.c 2>&1 \
+			  && break; \
+		    done ) | $(SHELL) $(srcdir)/src/speedgen $@t
 	$(AM_V_at)chmod a-w $@t
 	$(AM_V_at)mv $@t $@
 

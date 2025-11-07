@@ -1,5 +1,5 @@
 /* expand-common - common functionality for expand/unexpand
-   Copyright (C) 1989-2024 Free Software Foundation, Inc.
+   Copyright (C) 1989-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include "system.h"
+#include "c-ctype.h"
 #include "fadvise.h"
 #include "quote.h"
 
@@ -69,6 +70,15 @@ static bool have_read_stdin = false;
 int exit_status = EXIT_SUCCESS;
 
 
+static void
+set_max_column_width (colno width)
+{
+  if (max_column_width < width)
+    {
+      if (ckd_add (&max_column_width, width, 0))
+        error (EXIT_FAILURE, 0, _("tabs are too far apart"));
+    }
+}
 
 /* Add tab stop TABVAL to the end of 'tab_list'.  */
 extern void
@@ -81,11 +91,7 @@ add_tab_stop (colno tabval)
     tab_list = xpalloc (tab_list, &n_tabs_allocated, 1, -1, sizeof *tab_list);
   tab_list[first_free_tab++] = tabval;
 
-  if (max_column_width < column_width)
-    {
-      if (ckd_add (&max_column_width, column_width, 0))
-        error (EXIT_FAILURE, 0, _("tabs are too far apart"));
-    }
+  set_max_column_width (column_width);
 }
 
 static bool
@@ -101,6 +107,8 @@ set_extend_size (colno tabval)
       ok = false;
     }
   extend_size = tabval;
+
+  set_max_column_width (extend_size);
 
   return ok;
 }
@@ -118,6 +126,8 @@ set_increment_size (colno tabval)
       ok = false;
     }
   increment_size = tabval;
+
+  set_max_column_width (increment_size);
 
   return ok;
 }
@@ -183,7 +193,7 @@ parse_tab_stops (char const *stops)
           increment_tabval = true;
           extend_tabval = false;
         }
-      else if (ISDIGIT (*stops))
+      else if (c_isdigit (*stops))
         {
           if (!have_tabval)
             {
@@ -272,7 +282,7 @@ finalize_tab_stops (void)
 
 
 /* Return number of first tab stop after COLUMN.  TAB_INDEX specifies
-   amny multiple tab-sizes.  Set *LAST_TAB depending on whether we are
+   many multiple tab-sizes.  Set *LAST_TAB depending on whether we are
    returning COLUMN + 1 merely because we're past the last tab.
    If the number would overflow, diagnose this and exit.  */
 extern colno
@@ -347,7 +357,7 @@ next_file (FILE *fp)
       int err = errno;
       if (!ferror (fp))
         err = 0;
-      if (STREQ (prev_file, "-"))
+      if (streq (prev_file, "-"))
         clearerr (fp);		/* Also clear EOF.  */
       else if (fclose (fp) != 0)
         err = errno;
@@ -360,7 +370,7 @@ next_file (FILE *fp)
 
   while ((file = *file_list++) != nullptr)
     {
-      if (STREQ (file, "-"))
+      if (streq (file, "-"))
         {
           have_read_stdin = true;
           fp = stdin;
@@ -379,7 +389,7 @@ next_file (FILE *fp)
   return nullptr;
 }
 
-/* */
+/* Close standard input if we have read from it.  */
 extern void
 cleanup_file_list_stdin (void)
 {
@@ -387,7 +397,8 @@ cleanup_file_list_stdin (void)
       error (EXIT_FAILURE, errno, "-");
 }
 
-
+/* Emit the --help output for --tabs=LIST option accepted by expand and
+   unexpand.  */
 extern void
 emit_tab_list_info (void)
 {

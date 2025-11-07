@@ -1,5 +1,5 @@
 /* stdbuf -- setup the standard streams for a command
-   Copyright (C) 2009-2024 Free Software Foundation, Inc.
+   Copyright (C) 2009-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -192,6 +192,9 @@ set_LD_PRELOAD (void)
   int ret;
 #ifdef __APPLE__
   char const *preload_env = "DYLD_INSERT_LIBRARIES";
+#elif defined _AIX
+  char const *preload_env = (sizeof (void *) < 8
+                             ? "LDR_PRELOAD" : "LDR_PRELOAD64");
 #else
   char const *preload_env = "LD_PRELOAD";
 #endif
@@ -276,7 +279,7 @@ set_libstdbuf_options (void)
 {
   bool env_set = false;
 
-  for (size_t i = 0; i < ARRAY_CARDINALITY (stdbuf); i++)
+  for (size_t i = 0; i < countof (stdbuf); i++)
     {
       if (stdbuf[i].optarg)
         {
@@ -330,7 +333,7 @@ main (int argc, char **argv)
         case 'i':
         case 'o':
           opt_fileno = optc_to_fileno (c);
-          affirm (0 <= opt_fileno && opt_fileno < ARRAY_CARDINALITY (stdbuf));
+          affirm (0 <= opt_fileno && opt_fileno < countof (stdbuf));
           stdbuf[opt_fileno].optc = c;
           while (c_isspace (*optarg))
             optarg++;
@@ -340,11 +343,11 @@ main (int argc, char **argv)
               /* -oL will be by far the most common use of this utility,
                  but one could easily think -iL might have the same affect,
                  so disallow it as it could be confusing.  */
-              error (0, 0, _("line buffering stdin is meaningless"));
+              error (0, 0, _("line buffering standard input is meaningless"));
               usage (EXIT_CANCELED);
             }
 
-          if (!STREQ (optarg, "L")
+          if (!streq (optarg, "L")
               && parse_size (optarg, &stdbuf[opt_fileno].size) == -1)
             error (EXIT_CANCELED, errno, _("invalid mode %s"), quote (optarg));
 

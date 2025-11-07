@@ -1,7 +1,7 @@
 #!/bin/sh
 # Validate realpath operation
 
-# Copyright (C) 2011-2024 Free Software Foundation, Inc.
+# Copyright (C) 2011-2025 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -49,6 +49,9 @@ returns_ 1 realpath --relative-base . || fail=1
 # -e --relative-* require directories
 returns_ 1 realpath -e --relative-to=dir1/f --relative-base=. . || fail=1
 realpath -e --relative-to=dir1/  --relative-base=. . || fail=1
+
+# Check that using -E after -e uses -E as specified by POSIX.
+realpath -e -E --relative-to=dir1/f --relative-base=. . || fail=1
 
 # Note NUL params are unconditionally rejected by canonicalize_filename_mode
 returns_ 1 realpath -m '' || fail=1

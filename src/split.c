@@ -1,5 +1,5 @@
 /* split.c -- split a file into pieces.
-   Copyright (C) 1988-2024 Free Software Foundation, Inc.
+   Copyright (C) 1988-2025 Free Software Foundation, Inc.
 
    This program is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <spawn.h>
 
 #include "system.h"
 #include "alignalloc.h"
@@ -262,11 +263,11 @@ default size is 1000 lines, and default PREFIX is 'x'.\n\
       fputs (_("\n\
 CHUNKS may be:\n\
   N       split into N files based on size of input\n\
-  K/N     output Kth of N to stdout\n\
+  K/N     output Kth of N to standard output\n\
   l/N     split into N files without splitting lines/records\n\
-  l/K/N   output Kth of N to stdout without splitting lines/records\n\
+  l/K/N   output Kth of N to standard output without splitting lines/records\n\
   r/N     like 'l' but use round robin distribution\n\
-  r/K/N   likewise but only output Kth of N to stdout\n\
+  r/K/N   likewise but only output Kth of N to standard output\n\
 "), stdout);
       emit_ancillary_info (PROGRAM_NAME);
     }
@@ -497,50 +498,72 @@ create (char const *name)
     }
   else
     {
-      int fd_pair[2];
-      pid_t child_pid;
-      char const *shell_prog = getenv ("SHELL");
-      if (shell_prog == nullptr)
-        shell_prog = "/bin/sh";
       if (setenv ("FILE", name, 1) != 0)
         error (EXIT_FAILURE, errno,
                _("failed to set FILE environment variable"));
       if (verbose)
         fprintf (stdout, _("executing with FILE=%s\n"), quotef (name));
+
+      int result;
+      int fd_pair[2];
+      pid_t child_pid;
+
+      posix_spawnattr_t attr;
+      posix_spawn_file_actions_t actions;
+
+      sigset_t set;
+      sigemptyset (&set);
+      if (default_SIGPIPE)
+        sigaddset (&set, SIGPIPE);
+
+      if (   (result = posix_spawnattr_init (&attr))
+          || (result = posix_spawnattr_setflags (&attr,
+                                                 (POSIX_SPAWN_USEVFORK
+                                                  | POSIX_SPAWN_SETSIGDEF)))
+          || (result = posix_spawnattr_setsigdefault (&attr, &set))
+          || (result = posix_spawn_file_actions_init (&actions))
+         )
+        error (EXIT_FAILURE, result, _("posix_spawn initialization failed"));
+
       if (pipe (fd_pair) != 0)
         error (EXIT_FAILURE, errno, _("failed to create pipe"));
-      child_pid = fork ();
-      if (child_pid == 0)
-        {
-          /* This is the child process.  If an error occurs here, the
-             parent will eventually learn about it after doing a wait,
-             at which time it will emit its own error message.  */
-          int j;
-          /* We have to close any pipes that were opened during an
-             earlier call, otherwise this process will be holding a
-             write-pipe that will prevent the earlier process from
-             reading an EOF on the corresponding read-pipe.  */
-          for (j = 0; j < n_open_pipes; ++j)
-            if (close (open_pipes[j]) != 0)
-              error (EXIT_FAILURE, errno, _("closing prior pipe"));
-          if (close (fd_pair[1]))
-            error (EXIT_FAILURE, errno, _("closing output pipe"));
-          if (fd_pair[0] != STDIN_FILENO)
-            {
-              if (dup2 (fd_pair[0], STDIN_FILENO) != STDIN_FILENO)
-                error (EXIT_FAILURE, errno, _("moving input pipe"));
-              if (close (fd_pair[0]) != 0)
-                error (EXIT_FAILURE, errno, _("closing input pipe"));
-            }
-          if (default_SIGPIPE)
-            signal (SIGPIPE, SIG_DFL);
-          execl (shell_prog, last_component (shell_prog), "-c",
-                 filter_command, (char *) nullptr);
-          error (EXIT_FAILURE, errno, _("failed to run command: \"%s -c %s\""),
-                 shell_prog, filter_command);
-        }
-      if (child_pid < 0)
-        error (EXIT_FAILURE, errno, _("fork system call failed"));
+
+      /* We have to close any pipes that were opened during an
+         earlier call, otherwise this process will be holding a
+         write-pipe that will prevent the earlier process from
+         reading an EOF on the corresponding read-pipe.  */
+      for (int i = 0; i < n_open_pipes; ++i)
+        if ((result = posix_spawn_file_actions_addclose (&actions,
+                                                         open_pipes[i])))
+          break;
+
+      if (   result
+          || (result = posix_spawn_file_actions_addclose (&actions, fd_pair[1]))
+          || (fd_pair[0] != STDIN_FILENO
+              && (   (result = posix_spawn_file_actions_adddup2 (&actions,
+                                                                 fd_pair[0],
+                                                                 STDIN_FILENO))
+                  || (result = posix_spawn_file_actions_addclose (&actions,
+                                                                  fd_pair[0]))))
+         )
+        error (EXIT_FAILURE, result, _("posix_spawn setup failed"));
+
+
+      char const *shell_prog = getenv ("SHELL");
+      if (shell_prog == nullptr)
+        shell_prog = "/bin/sh";
+      char const *const argv[] = { last_component (shell_prog), "-c",
+                                   filter_command, nullptr };
+
+      result = posix_spawn (&child_pid, shell_prog, &actions, &attr,
+                            (char * const *) argv, environ);
+      if (result != 0)
+        error (EXIT_FAILURE, errno, _("failed to run command: \"%s -c %s\""),
+               shell_prog, filter_command);
+
+      posix_spawnattr_destroy (&attr);
+      posix_spawn_file_actions_destroy (&actions);
+
       if (close (fd_pair[0]) != 0)
         error (EXIT_FAILURE, errno, _("failed to close input pipe"));
       filter_pid = child_pid;
@@ -1452,7 +1475,7 @@ main (int argc, char **argv)
               error (EXIT_FAILURE, 0, _("empty record separator"));
             if (optarg[1])
               {
-                if (STREQ (optarg, "\\0"))
+                if (streq (optarg, "\\0"))
                   neweol = '\0';
                 else
                   {
@@ -1558,7 +1581,8 @@ main (int argc, char **argv)
 
   if (k_units != 0 && filter_command)
     {
-      error (0, 0, _("--filter does not process a chunk extracted to stdout"));
+      error (0, 0, _("--filter does not process a chunk extracted to "
+                     "standard output"));
       usage (EXIT_FAILURE);
     }
 
@@ -1604,7 +1628,7 @@ main (int argc, char **argv)
     }
 
   /* Open the input file.  */
-  if (! STREQ (infile, "-")
+  if (! streq (infile, "-")
       && fd_reopen (STDIN_FILENO, infile, O_RDONLY, 0) < 0)
     error (EXIT_FAILURE, errno, _("cannot open %s for reading"),
            quoteaf (infile));
@@ -1683,7 +1707,7 @@ main (int argc, char **argv)
       }
       break;
 
-    default:
+    case type_undef: default:
       affirm (false);
     }
 
