@@ -277,6 +277,7 @@ all_tests =					\
   tests/od/od-float.sh				\
   tests/misc/mktemp.pl				\
   tests/misc/arch.sh				\
+  tests/pr/bounded-memory.sh			\
   tests/pr/pr-tests.pl				\
   tests/pwd/pwd-option.sh			\
   tests/chcon/chcon-fail.sh			\
@@ -413,6 +414,7 @@ all_tests =					\
   tests/sort/sort-files0-from.pl		\
   tests/sort/sort-float.sh			\
   tests/sort/sort-h-thousands-sep.sh		\
+  tests/sort/sort-locale.sh			\
   tests/sort/sort-merge.pl			\
   tests/sort/sort-merge-fdlimit.sh		\
   tests/sort/sort-month.sh			\
@@ -481,6 +483,7 @@ all_tests =					\
   tests/misc/tsort.pl				\
   tests/tty/tty.sh				\
   tests/misc/usage_vs_getopt.sh			\
+  tests/misc/getopt_vs_usage.sh			\
   tests/misc/unexpand.pl			\
   tests/uniq/uniq.pl				\
   tests/uniq/uniq-perf.sh			\
@@ -572,6 +575,7 @@ all_tests =					\
   tests/df/skip-duplicates.sh			\
   tests/df/skip-rootfs.sh			\
   tests/dd/ascii.sh				\
+  tests/dd/conv-case.sh				\
   tests/dd/direct.sh				\
   tests/dd/misc.sh				\
   tests/dd/no-allocate.sh			\

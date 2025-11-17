@@ -3992,6 +3992,11 @@ Print only the newline character counts.
 If a file ends in a non-newline character,
 its trailing partial line is not counted.
 
+@item --debug
+@opindex --debug
+Output extra information to standard error.
+Currently; print the line count acceleration implementation being used.
+
 @item -L
 @itemx --max-line-length
 @opindex -L
@@ -10883,6 +10888,7 @@ synchronous metadata updates.
 @opindex -v
 @opindex --verbose
 Display to standard error all status updates as sterilization proceeds.
+This details each data and metadata operation as it is performed.
 
 @item -x
 @itemx --exact

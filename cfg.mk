@@ -48,7 +48,7 @@ export VERBOSE = yes
 # 4914152 9e
 export XZ_OPT = -8e
 
-old_NEWS_hash = 6651d3c6c61d6b5d0f95b969e5c0c2af
+old_NEWS_hash = cb35d17f3e25db18b46d6858946d977f
 
 # Add an exemption for sc_makefile_at_at_check.
 _makefile_at_at_check_exceptions = \
@@ -895,7 +895,7 @@ update-copyright-env = \
 exclude_file_name_regexp--sc_space_tab = \
   ^(tests/pr/|tests/misc/nl\.sh$$|gl/.*\.diff$$|man/help2man$$)
 exclude_file_name_regexp--sc_bindtextdomain = \
-  ^(gl/.*|lib/euidaccess-stat|src/make-prime-list|src/cksum)\.c$$
+  ^(gl/.*|lib/euidaccess-stat|src/make-prime-list|src/cksum_crc)\.c$$
 exclude_file_name_regexp--sc_trailing_blank = \
   ^(tests/pr/|gl/.*\.diff$$|man/help2man)
 _x_system_h := (system|copy|chown-core|find-mount-point)\.h
