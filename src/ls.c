@@ -60,17 +60,6 @@
 # include <langinfo.h>
 #endif
 
-/* Use SA_NOCLDSTOP as a proxy for whether the sigaction machinery is
-   present.  */
-#ifndef SA_NOCLDSTOP
-# define SA_NOCLDSTOP 0
-# define sigprocmask(How, Set, Oset) /* empty */
-# define sigset_t int
-# if ! HAVE_SIGINTERRUPT
-#  define siginterrupt(sig, flag) /* empty */
-# endif
-#endif
-
 /* NonStop circa 2011 lacks both SA_RESTART and siginterrupt, so don't
    restart syscalls after a signal handler fires.  This may cause
    colors to get messed up on the screen if 'ls' is interrupted, but
@@ -81,20 +70,22 @@
 
 #include <fnmatch.h>
 
+/* Gnulib includes.  */
 #include "acl.h"
+#include "areadlink.h"
 #include "argmatch.h"
-#include "system.h"
 #include "assure.h"
+#include "c-ctype.h"
 #include "c-strcase.h"
+#include "canonicalize.h"
 #include "dev-ino.h"
+#include "filemode.h"
 #include "filenamecat.h"
+#include "filevercmp.h"
 #include "hard-locale.h"
 #include "hash.h"
 #include "human.h"
-#include "filemode.h"
-#include "filevercmp.h"
 #include "idcache.h"
-#include "ls.h"
 #include "mbswidth.h"
 #include "mpsort.h"
 #include "obstack.h"
@@ -103,14 +94,17 @@
 #include "stat-time.h"
 #include "strftime.h"
 #include "xdectoint.h"
-#include "xstrtol.h"
-#include "xstrtol-error.h"
-#include "areadlink.h"
-#include "dircolors.h"
 #include "xgethostname.h"
-#include "c-ctype.h"
-#include "canonicalize.h"
+#include "xmemdup0.h"
+#include "xstrtol-error.h"
+#include "xstrtol.h"
+
+#include "system.h"
+
+#include "dircolors.h"
+#include "ls.h"
 #include "statx.h"
+#include "term-sig.h"
 
 /* Include <sys/capability.h> last to avoid a clash of <sys/types.h>
    include guards with some premature versions of libcap.
@@ -1528,8 +1522,6 @@ set_normal_color (void)
 static void
 sighandler (int sig)
 {
-  if (! SA_NOCLDSTOP)
-    signal (sig, SIG_IGN);
   if (! interrupt_signal)
     interrupt_signal = sig;
 }
@@ -1537,10 +1529,8 @@ sighandler (int sig)
 /* A SIGTSTP was received; arrange for the program to suspend itself.  */
 
 static void
-stophandler (int sig)
+stophandler (MAYBE_UNUSED int sig)
 {
-  if (! SA_NOCLDSTOP)
-    signal (sig, stophandler);
   if (! interrupt_signal)
     stop_signal_count++;
 }
@@ -1598,80 +1588,48 @@ static void
 signal_setup (bool init)
 {
   /* The signals that are trapped, and the number of such signals.  */
-  static int const sig[] =
+  static int const stop_sig[] =
     {
       /* This one is handled specially.  */
       SIGTSTP,
-
-      /* The usual suspects.  */
-      SIGALRM, SIGHUP, SIGINT, SIGPIPE, SIGQUIT, SIGTERM,
-#ifdef SIGPOLL
-      SIGPOLL,
-#endif
-#ifdef SIGPROF
-      SIGPROF,
-#endif
-#ifdef SIGVTALRM
-      SIGVTALRM,
-#endif
-#ifdef SIGXCPU
-      SIGXCPU,
-#endif
-#ifdef SIGXFSZ
-      SIGXFSZ,
-#endif
     };
-  enum { nsigs = countof (sig) };
 
-#if ! SA_NOCLDSTOP
-  static bool caught_sig[nsigs];
-#endif
+  enum { nsigs = countof (term_sig), nstop = countof (stop_sig) };
 
   if (init)
     {
-#if SA_NOCLDSTOP
       struct sigaction act;
 
       sigemptyset (&caught_signals);
-      for (int j = 0; j < nsigs; j++)
+      for (int j = 0; j < nsigs + nstop; j++)
         {
-          sigaction (sig[j], nullptr, &act);
+          int sig = j < nsigs ? term_sig[j]: stop_sig[j - nsigs];
+          sigaction (sig, nullptr, &act);
           if (act.sa_handler != SIG_IGN)
-            sigaddset (&caught_signals, sig[j]);
+            sigaddset (&caught_signals, sig);
         }
 
       act.sa_mask = caught_signals;
       act.sa_flags = SA_RESTART;
 
-      for (int j = 0; j < nsigs; j++)
-        if (sigismember (&caught_signals, sig[j]))
-          {
-            act.sa_handler = sig[j] == SIGTSTP ? stophandler : sighandler;
-            sigaction (sig[j], &act, nullptr);
-          }
-#else
-      for (int j = 0; j < nsigs; j++)
+      for (int j = 0; j < nsigs + nstop; j++)
         {
-          caught_sig[j] = (signal (sig[j], SIG_IGN) != SIG_IGN);
-          if (caught_sig[j])
+          int sig = j < nsigs ? term_sig[j]: stop_sig[j - nsigs];
+          if (sigismember (&caught_signals, sig))
             {
-              signal (sig[j], sig[j] == SIGTSTP ? stophandler : sighandler);
-              siginterrupt (sig[j], 0);
+              act.sa_handler = j < nsigs ? sighandler : stophandler;
+              sigaction (sig, &act, nullptr);
             }
         }
-#endif
     }
   else /* restore.  */
     {
-#if SA_NOCLDSTOP
-      for (int j = 0; j < nsigs; j++)
-        if (sigismember (&caught_signals, sig[j]))
-          signal (sig[j], SIG_DFL);
-#else
-      for (int j = 0; j < nsigs; j++)
-        if (caught_sig[j])
-          signal (sig[j], SIG_DFL);
-#endif
+      for (int j = 0; j < nsigs + nstop; j++)
+        {
+          int sig = j < nsigs ? term_sig[j]: stop_sig[j - nsigs];
+          if (sigismember (&caught_signals, sig))
+            signal (sig, SIG_DFL);
+        }
     }
 }
 
@@ -1950,7 +1908,7 @@ stdout_isatty (void)
 static int
 decode_switches (int argc, char **argv)
 {
-  char const *time_style_option = nullptr;
+  char *time_style_option = nullptr;
 
   /* These variables are false or -1 unless a switch says otherwise.  */
   bool kibibytes_specified = false;
@@ -2197,7 +2155,7 @@ decode_switches (int argc, char **argv)
 
         case FULL_TIME_OPTION:
           format_opt = long_format;
-          time_style_option = "full-iso";
+          time_style_option = (char *) "full-iso";
           break;
 
         case COLOR_OPTION:
@@ -2423,35 +2381,39 @@ decode_switches (int argc, char **argv)
 
   if (format == long_format)
     {
-      char const *style = time_style_option;
-      static char const posix_prefix[] = "posix-";
+      char *envstyle = nullptr;
+      char *style = time_style_option;
+      if (! style)
+        style = envstyle = getenv ("TIME_STYLE");
 
       if (! style)
+        style = (char *) "locale";
+      else
         {
-          style = getenv ("TIME_STYLE");
-          if (! style)
-            style = "locale";
-        }
-
-      while (STREQ_LEN (style, posix_prefix, sizeof posix_prefix - 1))
-        {
-          if (! hard_locale (LC_TIME))
-            return optind;
-          style += sizeof posix_prefix - 1;
+          static char const posix_prefix[] = "posix-";
+          while (STREQ_LEN (style, posix_prefix, sizeof posix_prefix - 1))
+            {
+              if (! hard_locale (LC_TIME))
+                return optind;
+              style += sizeof posix_prefix - 1;
+            }
         }
 
       if (*style == '+')
         {
-          char const *p0 = style + 1;
+          char *p0 = style + 1;
           char *p0nl = strchr (p0, '\n');
           char const *p1 = p0;
           if (p0nl)
             {
-              if (strchr (p0nl + 1, '\n'))
+              p1 = p0nl + 1;
+              if (strchr (p1, '\n'))
                 error (LS_FAILURE, 0, _("invalid time style format %s"),
                        quote (p0));
-              *p0nl++ = '\0';
-              p1 = p0nl;
+              if (envstyle)
+                p0 = xmemdup0 (p0, p0nl - p0);
+              else
+                *p0nl = '\0';
             }
           long_time_format[0] = p0;
           long_time_format[1] = p1;

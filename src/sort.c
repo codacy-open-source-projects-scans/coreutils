@@ -51,6 +51,7 @@
 #include "readtokens0.h"
 #include "stdlib--.h"
 #include "strnumcmp.h"
+#include "term-sig.h"
 #include "xmemcoll.h"
 #include "xnanosleep.h"
 #include "xstrtol.h"
@@ -70,18 +71,6 @@ struct rlimit { size_t rlim_cur; };
 
 #if HAVE_LANGINFO_CODESET
 # include <langinfo.h>
-#endif
-
-/* Use SA_NOCLDSTOP as a proxy for whether the sigaction machinery is
-   present.  */
-#ifndef SA_NOCLDSTOP
-# define SA_NOCLDSTOP 0
-/* No sigprocmask.  Always 'return' zero. */
-# define sigprocmask(How, Set, Oset) (0)
-# define sigset_t int
-# if ! HAVE_SIGINTERRUPT
-#  define siginterrupt(sig, flag) /* empty */
-# endif
 #endif
 
 #if !defined OPEN_MAX && defined NR_OPEN
@@ -401,9 +390,6 @@ cleanup (void)
 static void
 sighandler (int sig)
 {
-  if (! SA_NOCLDSTOP)
-    signal (sig, SIG_IGN);
-
   cleanup ();
 
   signal (sig, SIG_DFL);
@@ -4447,37 +4433,16 @@ main (int argc, char **argv)
   inittables ();
 
   {
-    static int const sig[] =
-      {
-        /* The usual suspects.  */
-        SIGALRM, SIGHUP, SIGINT, SIGQUIT, SIGTERM,
-#ifdef SIGPOLL
-        SIGPOLL,
-#endif
-#ifdef SIGPROF
-        SIGPROF,
-#endif
-#ifdef SIGVTALRM
-        SIGVTALRM,
-#endif
-#ifdef SIGXCPU
-        SIGXCPU,
-#endif
-#ifdef SIGXFSZ
-        SIGXFSZ,
-#endif
-      };
-    enum { nsigs = countof (sig) };
+    enum { nsigs = countof (term_sig) };
 
-#if SA_NOCLDSTOP
     struct sigaction act;
 
     sigemptyset (&caught_signals);
     for (size_t i = 0; i < nsigs; i++)
       {
-        sigaction (sig[i], nullptr, &act);
+        sigaction (term_sig[i], nullptr, &act);
         if (act.sa_handler != SIG_IGN)
-          sigaddset (&caught_signals, sig[i]);
+          sigaddset (&caught_signals, term_sig[i]);
       }
 
     act.sa_handler = sighandler;
@@ -4485,16 +4450,8 @@ main (int argc, char **argv)
     act.sa_flags = 0;
 
     for (size_t i = 0; i < nsigs; i++)
-      if (sigismember (&caught_signals, sig[i]))
-        sigaction (sig[i], &act, nullptr);
-#else
-    for (size_t i = 0; i < nsigs; i++)
-      if (signal (sig[i], SIG_IGN) != SIG_IGN)
-        {
-          signal (sig[i], sighandler);
-          siginterrupt (sig[i], 1);
-        }
-#endif
+      if (sigismember (&caught_signals, term_sig[i]))
+        sigaction (term_sig[i], &act, nullptr);
   }
   signal (SIGCHLD, SIG_DFL); /* Don't inherit CHLD handling from parent.  */
 

@@ -59,6 +59,7 @@
 #include "dtimespec-bound.h"
 #include "sig2str.h"
 #include "operand2sig.h"
+#include "term-sig.h"
 #include "quote.h"
 
 #if HAVE_SETRLIMIT
@@ -70,6 +71,14 @@
 /* NonStop circa 2011 lacks both SA_RESTART and siginterrupt.  */
 #ifndef SA_RESTART
 # define SA_RESTART 0
+#endif
+
+#ifndef SIGRTMIN
+# define SIGRTMIN 0
+# undef SIGRTMAX
+#endif
+#ifndef SIGRTMAX
+# define SIGRTMAX (SIGRTMIN - 1)
 #endif
 
 #define PROGRAM_NAME "timeout"
@@ -190,7 +199,6 @@ static void
 chld (MAYBE_UNUSED int sig)
 {
 }
-
 
 static void
 cleanup (int sig)
@@ -401,6 +409,23 @@ install_sigchld (void)
   unblock_signal (SIGCHLD);
 }
 
+/* Filter out signals that were ignored.  */
+
+static bool
+sig_needs_handling (int sig, int sigterm)
+{
+  if (sig == SIGALRM || sig == sigterm)
+    return true;  /* We can't ignore these.  */
+
+  /* Note background jobs in shells have SIGINT and SIGQUIT
+     set to SIG_IGN by default.  I.e., those signals will
+     not be propagated through background timeout jobs.  */
+  struct sigaction old_sa;
+  sigaction (sig, nullptr, &old_sa);
+  bool ret = old_sa.sa_handler != SIG_IGN;
+  return ret;
+}
+
 static void
 install_cleanup (int sigterm)
 {
@@ -410,11 +435,15 @@ install_cleanup (int sigterm)
   sa.sa_flags = SA_RESTART;   /* Restart syscalls if possible, as that's
                                  more likely to work cleanly.  */
 
-  sigaction (SIGALRM, &sa, nullptr); /* our timeout.  */
-  sigaction (SIGINT, &sa, nullptr);  /* Ctrl-C at terminal for example.  */
-  sigaction (SIGQUIT, &sa, nullptr); /* Ctrl-\ at terminal for example.  */
-  sigaction (SIGHUP, &sa, nullptr);  /* terminal closed for example.  */
-  sigaction (SIGTERM, &sa, nullptr); /* if killed, stop monitored proc.  */
+  for (int i = 0; i < countof (term_sig); i++)
+    if (sig_needs_handling (term_sig[i], sigterm))
+      sigaction (term_sig[i], &sa, nullptr);
+
+  /* Real Time signals also terminate by default.  */
+  for (int s = SIGRTMIN; s <= SIGRTMAX; s++)
+    if (sig_needs_handling (s, sigterm))
+      sigaction (s, &sa, nullptr);
+
   sigaction (sigterm, &sa, nullptr); /* user specified termination signal.  */
 }
 
@@ -429,11 +458,14 @@ block_cleanup_and_chld (int sigterm, sigset_t *old_set)
   sigset_t block_set;
   sigemptyset (&block_set);
 
-  sigaddset (&block_set, SIGALRM);
-  sigaddset (&block_set, SIGINT);
-  sigaddset (&block_set, SIGQUIT);
-  sigaddset (&block_set, SIGHUP);
-  sigaddset (&block_set, SIGTERM);
+  for (int i = 0; i < countof (term_sig); i++)
+    if (sig_needs_handling (term_sig[i], sigterm))
+      sigaddset (&block_set, term_sig[i]);
+
+  for (int s = SIGRTMIN; s <= SIGRTMAX; s++)
+    if (sig_needs_handling (s, sigterm))
+      sigaddset (&block_set, s);
+
   sigaddset (&block_set, sigterm);
 
   sigaddset (&block_set, SIGCHLD);

@@ -4,13 +4,24 @@ GNU coreutils NEWS                                    -*- outline -*-
 
 ** Bug fixes
 
+  du and ls no longer modify strings returned by getenv.
+  POSIX says this is not portable.
+  [bug introduced in fileutils-4.1.6]
+
   md5sum --text correctly translates CRLF line endings with the MSYS2 runtime.
   This also applies to the sha*sum and b2sum utilities.
   [This bug was present in "the beginning".]
 
+  'timeout' will now propagate all terminating signals to the monitored command.
+  Previously 'timeout' could have exited and left the monitored command running.
+  [bug introduced with timeout in coreutils-7.0]
+
   wc now documents its --debug option, currently used to
   indicate the line count acceleration being used.
   [bug introduced in coreutils-9.0]
+
+  Programs now port to C23 platforms that strictly check types when
+  qualifier-generic functions like strchr are used.
 
 ** New Features
 
@@ -21,6 +32,16 @@ GNU coreutils NEWS                                    -*- outline -*-
 
   'tail' now accepts the --debug option, which is currently used to
   detail the --follow implementation being used.
+
+** Changes in behavior
+
+  'timeout' now honors ignored signals and will not propagate them.  E.g.,
+  timeout(1) in a shell backgrounded job, will not terminate upon receiving
+  SIGINT or SIGQUIT, as these are ignored by default in shell background jobs.
+
+** Improvements
+
+  csplit, ls, and sort, now handle a more complete set of terminating signals.
 
 
 * Noteworthy changes in release 9.9 (2025-11-10) [stable]
