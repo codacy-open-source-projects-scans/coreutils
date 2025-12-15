@@ -23,7 +23,7 @@ root_tests = $(all_root_tests)
 
 EXTRA_DIST += $(all_tests)
 
-TEST_EXTENSIONS = .sh .pl .xpl
+TEST_EXTENSIONS = .sh .pl
 
 if HAVE_PERL
 TESTSUITE_PERL = $(PERL)
@@ -135,12 +135,15 @@ all_root_tests =				\
   tests/mkdir/smack-root.sh			\
   tests/mv/hardlink-case.sh			\
   tests/mv/sticky-to-xpart.sh			\
+  tests/mv/meta-to-xpart.sh			\
+  tests/mv/mv-special-2.sh			\
   tests/rm/fail-2eperm.sh			\
   tests/rm/no-give-up.sh			\
   tests/rm/one-file-system.sh			\
   tests/rm/read-only.sh				\
   tests/rm/empty-immutable-skip.sh		\
   tests/split/l-chunk-root.sh			\
+  tests/tac/tac-continue.sh			\
   tests/tail/append-only.sh			\
   tests/tail/end-of-device.sh			\
   tests/touch/now-owned-by-other.sh
@@ -207,7 +210,6 @@ all_tests =					\
   tests/rm/empty-name.pl			\
   tests/rm/f-1.sh				\
   tests/rm/fail-eacces.sh			\
-  tests/rm/fail-eperm.xpl			\
   tests/tail/assert.sh				\
   tests/rm/hash.sh				\
   tests/rm/i-1.sh				\
@@ -283,6 +285,7 @@ all_tests =					\
   tests/chcon/chcon-fail.sh			\
   tests/misc/coreutils.sh			\
   tests/cut/cut.pl				\
+  tests/cut/bounded-memory.sh			\
   tests/cut/cut-huge-range.sh			\
   tests/wc/wc.pl				\
   tests/wc/wc-cpu.sh				\
@@ -329,7 +332,8 @@ all_tests =					\
   tests/env/env-null.sh				\
   tests/env/env-S.pl				\
   tests/env/env-S-script.sh			\
-  tests/misc/expand.pl				\
+  tests/expand/expand.pl			\
+  tests/expand/bounded-memory.sh		\
   tests/expr/expr.pl				\
   tests/expr/expr-multibyte.pl			\
   tests/factor/factor.pl			\
@@ -457,10 +461,11 @@ all_tests =					\
   tests/cksum/sum-sysv.sh			\
   tests/misc/sync.sh				\
   tests/tac/tac.pl				\
-  tests/tac/tac-continue.sh			\
+  tests/tac/tac-locale.sh			\
   tests/tac/tac-2-nonseekable.sh		\
   tests/tail/tail.pl				\
-  tests/misc/tee.sh				\
+  tests/tee/append.sh				\
+  tests/tee/tee.sh				\
   tests/test/test-N.sh				\
   tests/test/test-diag.pl			\
   tests/test/test-file.sh			\
@@ -484,7 +489,8 @@ all_tests =					\
   tests/tty/tty.sh				\
   tests/misc/usage_vs_getopt.sh			\
   tests/misc/getopt_vs_usage.sh			\
-  tests/misc/unexpand.pl			\
+  tests/unexpand/unexpand.pl			\
+  tests/unexpand/bounded-memory.sh		\
   tests/uniq/uniq.pl				\
   tests/uniq/uniq-perf.sh			\
   tests/uniq/uniq-collate.sh			\

@@ -131,3 +131,5 @@ sc-lower-case-var:
 	  $(PERL) -lne $(find_upper_case_var) $(texi_files)
 
 check-local: check-texinfo
+
+.PHONY: html-local

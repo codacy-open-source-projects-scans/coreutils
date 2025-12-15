@@ -17,7 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 . "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
-print_ver_ timeout kill
+print_ver_ timeout
 require_trap_signame_
 
 # no timeout
@@ -62,7 +62,7 @@ test "$out" = "" && test $status = 124 || fail=1
 
 # Verify --verbose output
 cat > exp <<\EOF
-timeout: sending signal EXIT to command 'sleep'
+timeout: sending signal 0 to command 'sleep'
 timeout: sending signal KILL to command 'sleep'
 EOF
 for opt in -v --verbose; do
@@ -75,7 +75,7 @@ done
 # Specifically here we're testing that SIGPIPE is handled.
 # I.e., that we're not killed by the SIGPIPE (and leave the sleep running).
 # timeout would exit with 141 usually if SIGPIPE wasn't being handled.
-echo 125 > timeout.exp || framework_failure_
+echo 124 > timeout.exp || framework_failure_
 { timeout -v .1 sleep 10 2>&1; echo $? >timeout.status; } | :
 compare timeout.exp timeout.status || fail=1
 # Ensure we don't catch/propagate ignored signals

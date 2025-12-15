@@ -17,6 +17,11 @@
 # Used in maint.mk's web-manual rule
 manual_title = Core GNU utilities
 
+# html post processing
+export MAKEINFO = $(abs_top_srcdir)/build-aux/makeinfo-wrapper.sh
+# Don't create node redirection files for each anchor
+gendocs_options_ = --common --no-node-files
+
 # Use the direct link.  This is guaranteed to work immediately, while
 # it can take a while for the faster mirror links to become usable.
 url_dir_list = https://ftp.gnu.org/gnu/$(PACKAGE)
@@ -48,7 +53,7 @@ export VERBOSE = yes
 # 4914152 9e
 export XZ_OPT = -8e
 
-old_NEWS_hash = cb35d17f3e25db18b46d6858946d977f
+old_NEWS_hash = c2f7c7fa1bc232ce8f32908b53eab953
 
 # Add an exemption for sc_makefile_at_at_check.
 _makefile_at_at_check_exceptions = \
@@ -372,6 +377,11 @@ sc_texi_long_option_escaped: doc/coreutils.info
 	@grep ' –[^ ]' '$<'						\
 	  && { echo 1>&2 '$@: found unquoted --long-option'; exit 1; } || :
 
+# pdf (and dvi) generation requires explicit empty args (trailing comma)
+sc_texi_ensure_empty_option_args:
+	@grep '^@optItem[^,]*,[^,]*$$' doc/*.texi && { echo 1>&2 \
+	  '$@: Use explicit empty argument to @optItem[x]'; exit 1; } || :
+
 # Ensure all man/*.[1x] files are present.
 sc_man_file_correlation: check-x-vs-1 check-programs-vs-x
 
@@ -631,6 +641,12 @@ sc_env_test_dependencies:
 	      grep "print_ver_.* $$prog" $$test >/dev/null \
 		|| echo $$test should call: print_ver_ $$prog; \
 	    done | grep . && exit 1 || :
+
+# Enforce using our printf if using \u or \x
+sc_env_printf:
+	@cd $(top_srcdir) && GIT_PAGER= git grep 'printf.*[^\\]\\[ux]' tests \
+	  | grep -v -- '--printf' | grep -v 'env printf' \
+	  && { echo 'use "env printf" with \x or \u'; exit 1; } || :
 
 # Use framework_failure_, not the old name without the trailing underscore.
 sc_prohibit_framework_failure:

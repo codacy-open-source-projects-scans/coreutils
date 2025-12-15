@@ -59,4 +59,11 @@ EOF
 
 compare exp out || fail=1
 
+# Check that we don't run out of file descriptors when visiting
+# directories recursively.
+mkdir -p $(seq 30 | tr '\n' '/') || framework_failure_
+(ulimit -n 20 && ls -R 1 > out 2> err) || fail=1
+test $(wc -l < out) = 88 || fail=1
+test $(wc -l < err) = 0 || fail=1
+
 Exit $fail

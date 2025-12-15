@@ -1,5 +1,5 @@
 #!/bin/sh
-# Test sort locale ordering
+# Test that tac --separator=SEP works if SEP is not ASCII.
 
 # Copyright (C) 2025 Free Software Foundation, Inc.
 
@@ -17,35 +17,29 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 . "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
-print_ver_ sort ls
+print_ver_ tac printf
 
-check_different_from_C() {
-  test "$(printf '%s\n' "$1" "$2" | LC_ALL=C sort)" != \
-       "$(printf '%s\n' "$1" "$2" | sort)"
-}
-
-check_hard_collate() {
-  # Correlate with ls
-  touch "$1" "$2" || framework_failure_
-  test "$(printf '%s\n' "$1" "$2" | sort)" = "$(ls -1 "$1" "$2")" || fail=1
-
-  if test "$fail" != 1; then
-    check_different_from_C "$1" "$2" ||
-      skip_ "Strings '$1' '$2' sort the same in C and $LC_ALL locales"
-  fi
+check_separator ()
+{
+  env printf "1$12$13$1" > inp || framework_failure_
+  env printf "3$12$11$1\n" > exp || framework_failure_
+  tac --separator="$(env printf -- "$1")" inp > out || fail=1
+  env printf '\n' >> out || framework_failure_
+  compare exp out || fail=1
 }
 
 export LC_ALL=en_US.iso8859-1  # only lowercase form works on macOS 10.15.7
 if test "$(locale charmap 2>/dev/null | sed 's/iso/ISO-/')" = ISO-8859-1; then
-  check_hard_collate 'a_a' 'a b'  # underscore and space considered equal
-  check_hard_collate 'aaa' 'BBB'  # case insensitive ordering
-  check_hard_collate "$(printf 'aa\351')" 'aaf'  # é comes before f
+  check_separator '\xe9'  # é
+  check_separator '\xe9\xea'  # éê
 fi
 
 export LC_ALL=$LOCALE_FR_UTF8
 if test "$(locale charmap 2>/dev/null)" = UTF-8; then
-  check_hard_collate 'aaé' 'aaf'  # é comes before f
-  check_hard_collate 'aéY' "$(printf 'ae\314\201Z')"  # NFC/NFD é are equal
+  check_separator '\u0434'  # д
+  check_separator '\u0434\u0436'  # дж
+  # invalid UTF8|unpaired surrogate|C1 control|noncharacter
+  check_separator '\xC3|\xED\xBA\xAD|\u0089|\xED\xA6\xBF\xED\xBF\xBF'
 fi
 
 Exit $fail

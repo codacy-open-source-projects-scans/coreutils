@@ -206,6 +206,12 @@ cleanup (int sig)
   if (sig == SIGALRM)
     {
       timed_out = 1;
+      /* In case there is an issue with close_stdout,
+         update to a more accurate default exit status.
+         For example we might get failed writes with -v with:
+           timeout -v 1 sleep 10 2>&1 | :
+      */
+      initialize_exit_failure (EXIT_TIMEDOUT);
       sig = term_signal;
     }
   if (0 < monitored_pid)
@@ -226,7 +232,7 @@ cleanup (int sig)
       if (verbose)
         {
           char signame[MAX (SIG2STR_MAX, INT_BUFSIZE_BOUND (int))];
-          if (sig2str (sig, signame) != 0)
+          if (sig == 0 || sig2str (sig, signame) != 0)
             snprintf (signame, sizeof signame, "%d", sig);
           error (0, 0, _("sending signal %s to command %s"),
                  signame, quote (command));
@@ -592,6 +598,14 @@ main (int argc, char **argv)
     }
   else if (monitored_pid == 0)  /* child */
     {
+#if HAVE_PRCTL
+      /* Add protection if the parent dies without signalling child.  */
+      prctl (PR_SET_PDEATHSIG, term_signal);
+#endif
+      /* If we're already reparented to init, don't proceed.  */
+      if (getppid () == 1)
+        return EXIT_CANCELED;
+
       /* Restore signal mask for child.  */
       if (sigprocmask (SIG_SETMASK, &orig_set, nullptr) != 0)
         {

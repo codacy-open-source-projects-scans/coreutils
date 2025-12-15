@@ -33,15 +33,30 @@ GNU coreutils NEWS                                    -*- outline -*-
   'tail' now accepts the --debug option, which is currently used to
   detail the --follow implementation being used.
 
+  'du' now supports the short option -A corresponding to the existing long
+  option --apparent-size, for compatibility with FreeBSD.
+
 ** Changes in behavior
 
   'timeout' now honors ignored signals and will not propagate them.  E.g.,
   timeout(1) in a shell backgrounded job, will not terminate upon receiving
   SIGINT or SIGQUIT, as these are ignored by default in shell background jobs.
 
+  'timeout -v -s 0' now prints the signal number 0 instead of EXIT.
+
 ** Improvements
 
+  The multi-call binary built with configure --enable-single-binary
+  is reduced in size by 3.2% through the more efficient reuse of the cksum
+  utility by the md5sum and sha*sum utilities.
+
   csplit, ls, and sort, now handle a more complete set of terminating signals.
+
+  'pinky' will now exit immediately upon receiving a write error, which is
+  significant when reading large plan or project files.
+
+  'timeout' on Linux will always terminate the child in the case where the
+  timeout process itself dies, like when it receives a KILL signal for example.
 
 ** Build-related
 
@@ -6361,8 +6376,6 @@ point at which the packages merged to form the coreutils:
 * who once again prints whatever host information it has, even without --lookup
 
 ========================================================================
-For older NEWS entries for the fileutils, textutils, and sh-utils
-packages, see ./old/*/NEWS.
 
   This package began as the union of the following:
   textutils-2.1, fileutils-4.1.11, sh-utils-2.0.15.

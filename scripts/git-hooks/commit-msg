@@ -24,7 +24,7 @@ my @valid = qw(
     sum sync tac tail tee test timeout touch tr true truncate tsort
     tty uname unexpand uniq unlink uptime users vdir wc who whoami yes
 
-    all copy gnulib tests maint doc build scripts sha\*sum digest
+    all copy gnulib tests maint doc build scripts sha\*sum
     );
 my $v_or = join '|', @valid;
 my $valid_regex = qr/^(?:$v_or)$/;
@@ -49,7 +49,7 @@ sub re_edit($)
 
   warn "Interrupt (Ctrl-C) to abort...\n";
 
-  system 'sh', '-c', "$editor $log_file";
+  system 'sh', '-c', "$editor $log_file </dev/tty >/dev/tty 2>&1";
   ($? & 127) || ($? >> 8)
     and die "$ME: $log_file: the editor ($editor) failed, aborting\n";
 }
