@@ -560,7 +560,7 @@ This manual was originally derived from the Unix man pages in the
 distributions, which were written by David MacKenzie and updated by Jim
 Meyering.  What you are reading now is the authoritative documentation
 for these utilities; the man pages are no longer being maintained.  The
-original @command{fmt} man page was written by Ross Paterson.  Fran@,{c}ois
+original @command{fmt} man page was written by Ross Paterson.  François
 Pinard did the initial conversion to Texinfo format.  Karl Berry did the
 indexing, some reorganization, and editing of the results.  Brian
 Youmans of the Free Software Foundation office staff combined the
@@ -1836,6 +1836,11 @@ I.e., input and output items are delimited with ASCII NUL.
 
 On systems like MS-DOS that distinguish between text and binary files,
 @command{tac} reads and writes in binary mode.
+
+@vindex TMPDIR
+Non-seekable input is buffered to @env{$TMPDIR}, defaulting to @file{/tmp},
+if the @env{TMPDIR} environment variable is not set
+or the location is not available.
 
 @exitstatus
 
@@ -3346,10 +3351,13 @@ are not split even if they overlap a partition, the files written
 can be larger or smaller than the partition size, and even empty
 if a line/record is so long as to completely overlap the partition.
 
+@vindex TMPDIR
 When the input is a pipe or some other special file where the size
 cannot easily be determined, there is no trouble for @samp{r} mode
-because the size of the input is irrelevant.  For other modes, such an
-input is first copied to a temporary to determine its size.
+because the size of the input is irrelevant.  For other modes,
+such an input's size is determined by first copying to @env{$TMPDIR},
+or @file{/tmp} if the @env{TMPDIR} environment variable is not set
+or the location is not available.
 
 @optItem{split,-a,@w{ }@var{length}}
 @optItemx{split,--suffix-length,=@var{length}}
@@ -6901,7 +6909,7 @@ The interpretation of @var{string1} and @var{string2} depends on locale.
 GNU @command{tr} fully supports only safe single-byte locales,
 where each possible input byte represents a single character.
 Unfortunately, this means GNU @command{tr} will not handle commands
-like @samp{tr @"o @L{}} the way you might expect,
+like @samp{tr ö Ł} the way you might expect,
 since (assuming a UTF-8 encoding) this is equivalent to
 @samp{tr '\303\266' '\305\201'} and GNU @command{tr} will
 simply transliterate all @samp{\303} bytes to @samp{\305} bytes, etc.
@@ -8044,7 +8052,7 @@ eval $(dircolors -p | perl -pe \
 and on a @code{dirent.d_type}-capable file system, @command{ls}
 will perform only one @code{stat} call per command line argument.
 
-@optItem{ls,F,}
+@optItem{ls,-F,}
 @optItemx{ls,--classify,[=@var{when}]}
 @itemx --indicator-style=classify
 @opindex --indicator-style
@@ -8302,8 +8310,8 @@ ls -l --time-style="locale"
 Other locales behave differently.  For example, in a German locale,
 @option{--time-style="locale"} might be equivalent to
 @option{--time-style="+%e. %b %Y $newline%e. %b %H:%M"}
-and might generate timestamps like @samp{30. M@"ar 2020@ } and
-@samp{30. M@"ar 23:45}.
+and might generate timestamps like @samp{30. Mär 2020@ } and
+@samp{30. Mär 23:45}.
 
 @item posix-@var{style}
 @vindex LC_TIME
@@ -13794,27 +13802,27 @@ you often want to verify its signature or checksum right away.
 The inefficient way to do it is simply:
 
 @example
-wget https://example.com/some.iso && sha1sum some.iso
+wget https://example.com/some.iso && cksum -a sha2 -l 256 some.iso
 @end example
 
 One problem with the above is that it makes you wait for the
-download to complete before starting the time-consuming SHA1 computation.
-Perhaps even more importantly, the above requires reading
+download to complete before starting the time-consuming SHA-256
+computation.  Perhaps even more importantly, the above requires reading
 the DVD image a second time (the first was from the network).
 
 The efficient way to do it is to interleave the download
-and SHA1 computation.  Then, you'll get the checksum for
+and SHA-256 computation.  Then, you'll get the checksum for
 free, because the entire process parallelizes so well:
 
 @example
 # slightly contrived, to demonstrate process substitution
 wget -O - https://example.com/dvd.iso \
-  | tee >(sha1sum > dvd.sha1) > dvd.iso
+  | tee >(cksum -a sha2 -l 256 > dvd.sha256) > dvd.iso
 @end example
 
 That makes @command{tee} write not just to the expected output file,
-but also to a pipe running @command{sha1sum} and saving the final
-checksum in a file named @file{dvd.sha1}.
+but also to a pipe running @command{cksum} and saving the final
+checksum in a file named @file{dvd.sha256}.
 
 However, this example relies on a feature of modern shells
 called @dfn{process substitution}
@@ -13835,17 +13843,17 @@ a more conventional and portable use of @command{tee} is even better:
 
 @example
 wget -O - https://example.com/dvd.iso \
-  | tee dvd.iso | sha1sum > dvd.sha1
+  | tee dvd.iso | cksum -a sha2 -l 256 > dvd.sha256
 @end example
 
 You can extend this example to make @command{tee} write to two processes,
-computing MD5 and SHA1 checksums in parallel.  In this case,
+computing SHA-256 and SHA3-256 checksums in parallel.  In this case,
 process substitution is required:
 
 @example
 wget -O - https://example.com/dvd.iso \
-  | tee >(sha1sum > dvd.sha1) \
-        >(md5sum > dvd.md5) \
+  | tee >(cksum -a sha2 -l 256 > dvd.sha256) \
+        >(cksum -a sha3 -l 256 > dvd.sha3) \
   > dvd.iso
 @end example
 
@@ -13906,7 +13914,7 @@ PIPE_BUF size at a time), that's possible with a construct like:
 @example
 tardir=your-pkg-M.N
 tar chof - "$tardir" \
-  | tee >(md5sum --tag) > >(sha256sum --tag) \
+  | tee >(cksum -a sha2 -l 256) > >(cksum -a sha3 -l 256) \
   | sort | gpg --clearsign > your-pkg-M.N.tar.sig
 @end example
 
