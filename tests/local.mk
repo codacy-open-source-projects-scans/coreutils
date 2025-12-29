@@ -180,6 +180,7 @@ all_tests =					\
   tests/cp/link-heap.sh				\
   tests/cp/no-ctx.sh				\
   tests/tty/tty-eof.pl				\
+  tests/misc/io-errors.sh			\
   tests/misc/read-errors.sh			\
   tests/misc/write-errors.sh			\
   tests/tail/basic-seek.sh			\
@@ -444,6 +445,7 @@ all_tests =					\
   tests/split/record-sep.sh			\
   tests/split/numeric.sh			\
   tests/split/guard-input.sh			\
+  tests/split/split-io-err.sh			\
   tests/stat/stat-birthtime.sh			\
   tests/stat/stat-fmt.sh			\
   tests/stat/stat-hyphen.sh			\
@@ -583,6 +585,7 @@ all_tests =					\
   tests/dd/ascii.sh				\
   tests/dd/conv-case.sh				\
   tests/dd/direct.sh				\
+  tests/dd/fail-ftruncate-fstat.sh		\
   tests/dd/misc.sh				\
   tests/dd/no-allocate.sh			\
   tests/dd/nocache.sh				\
