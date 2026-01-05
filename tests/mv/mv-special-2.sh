@@ -1,7 +1,7 @@
 #!/bin/sh
 # Ensure that mv works with non standard copies across file systems
 
-# Copyright (C) 2025 Free Software Foundation, Inc.
+# Copyright (C) 2025-2026 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -58,6 +58,12 @@ ln -nsf blah blah   || framework_failure_
 mv --verbose blah xdev &&
 returns_ 1 test -L blah &&
 test -L xdev/blah || fail=1
+
+# Test moving a broken symlink to another file system
+ln -nsf nonexistent broken_symlink || framework_failure_
+mv --verbose broken_symlink xdev &&
+returns_ 1 test -L broken_symlink &&
+test -L xdev/broken_symlink || fail=1
 
 if python -c "import socket as s; s.socket(s.AF_UNIX).bind('test.sock')" &&
    test -S 'test.sock'; then

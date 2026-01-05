@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in -*-Makefile-*-.
 
-## Copyright (C) 2007-2025 Free Software Foundation, Inc.
+## Copyright (C) 2007-2026 Free Software Foundation, Inc.
 
 ## This program is free software: you can redistribute it and/or modify
 ## it under the terms of the GNU General Public License as published by
@@ -127,6 +127,7 @@ all_root_tests =				\
   tests/ls/no-cap.sh				\
   tests/ls/nameless-uid.sh			\
   tests/nproc/nproc-quota.sh			\
+  tests/nproc/nproc-quota-systemd.sh			\
   tests/chcon/chcon.sh				\
   tests/chroot/chroot-credentials.sh		\
   tests/misc/selinux.sh				\
@@ -509,6 +510,7 @@ all_tests =					\
   tests/chmod/ignore-symlink.sh			\
   tests/chmod/inaccessible.sh			\
   tests/chmod/octal.sh				\
+  tests/chmod/partial-fail.sh			\
   tests/chmod/setgid.sh				\
   tests/chmod/silent.sh				\
   tests/chmod/thru-dangling.sh			\
@@ -580,6 +582,7 @@ all_tests =					\
   tests/df/unreadable.sh			\
   tests/df/total-unprocessed.sh			\
   tests/df/no-mtab-status.sh			\
+  tests/df/no-mtab-status-masked-proc.sh			\
   tests/df/skip-duplicates.sh			\
   tests/df/skip-rootfs.sh			\
   tests/dd/ascii.sh				\

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Ensure we handle i/o errors correctly in split via /dev/full
 
-# Copyright (C) 2025 Free Software Foundation, Inc.
+# Copyright (C) 2025-2026 Free Software Foundation, Inc.
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -37,5 +37,11 @@ test -e xab && fail=1
 
 # Ensure we got the expected error message
 compare exp err || fail=1
+
+rm xaa || framework_failure_
+# Similar for directory
+mkdir xaa || framework_failure_
+seq 2 | returns_ 1 split -b 1 2 || fail=1
+test -d xaa || fail=1
 
 Exit $fail
