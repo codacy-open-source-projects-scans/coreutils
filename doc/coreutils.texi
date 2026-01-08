@@ -5726,6 +5726,12 @@ Output format is further controlled by the following options.
 Select the size of the minimum white space gap between the fields on the
 output line.
 
+@optItem{ptx,-t,}
+@optItemx{ptx,--typeset-mode,}
+Prepare the output for a phototypesetter.
+I.e., change the default output width from 72 to 100 columns.
+This is equivalent to @option{--width=100}.
+
 @optItem{ptx,-w,@w{ }@var{number}}
 @optItemx{ptx,--width,=@var{number}}
 Select the maximum output width of each final line.  If references are
@@ -7068,6 +7074,9 @@ which is of no particular use.
 
 @end table
 
+Since @samp{[:@var{class}:]} and @samp{[=@var{c}=]} syntax
+are similar to shell globbing syntax, all such class arguments should
+be quoted appropriately, when running @command{tr} from the shell.
 
 @node Translating
 @subsection Translating
