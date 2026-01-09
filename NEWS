@@ -53,6 +53,9 @@ GNU coreutils NEWS                                    -*- outline -*-
 
 ** Changes in behavior
 
+  'fmt' -w,--width no longer includes '\n' in the width of a line.
+  I.e., the specified width is interpreted to be an _inclusive_ maximum.
+
   'ptx' -t is no longer a no-op, and now sets the default width to 100 columns.
 
   'timeout' now honors ignored signals and will not propagate them.  E.g.,
@@ -66,6 +69,9 @@ GNU coreutils NEWS                                    -*- outline -*-
   The multi-call binary built with configure --enable-single-binary
   is reduced in size by 3.2% through the more efficient reuse of the cksum
   utility by the md5sum and sha*sum utilities.
+
+  'cksum' now validates its options more consistently.
+  E.g., `cksum --text --tag` now fails like `cksum --tag --text` already did.
 
   csplit, ls, and sort, now handle a more complete set of terminating signals.
 
