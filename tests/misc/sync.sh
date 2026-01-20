@@ -38,6 +38,14 @@ sync file || fail=1
 # Ensure multiple args are processed and diagnosed
 returns_ 1 sync file nofile || fail=1
 
+# Ensure all arguments a processed even if one results in an error
+returns_ 1 sync nofile1 file nofile2 2>err || fail=1
+cat <<\EOF > exp || framework_failure_
+sync: error opening 'nofile1': No such file or directory
+sync: error opening 'nofile2': No such file or directory
+EOF
+compare exp err || fail=1
+
 # Ensure inaccessible dirs give an appropriate error
 mkdir norw || framework_failure_
 chmod 0 norw || framework_failure_
@@ -52,7 +60,10 @@ fi
 if test "$fail" != '1'; then
   # Ensure a fifo doesn't block
   mkfifo_or_skip_ fifo
-  returns_ 124 timeout 10 sync fifo && fail=1
+  for opt in '' '-f' '-d'; do
+    test "$opt" = '-f' && test "$RUN_EXPENSIVE_TESTS" != yes && continue
+    returns_ 124 timeout 10 sync $opt fifo && fail=1
+  done
 fi
 
 Exit $fail

@@ -17,8 +17,6 @@
 # Used in maint.mk's web-manual rule
 manual_title = Core GNU utilities
 
-# html post processing
-export MAKEINFO = $(abs_top_srcdir)/build-aux/makeinfo-wrapper.sh
 # Don't create node redirection files for each anchor
 gendocs_options_ = --common --no-node-files
 
@@ -524,12 +522,6 @@ sc_prohibit_exit_write_error:
 	@prohibit='error.*EXIT_FAILURE.*write error' \
 	in_vc_files='\.c$$' \
 	halt='Use write_error() instead' \
-	  $(_sc_search_regexp)
-
-sc_prohibit_NULL:
-	@prohibit='$(begword)NULL$(endword)'				\
-	in_vc_files='\.[ch]$$'						\
-	halt='use nullptr instead'					\
 	  $(_sc_search_regexp)
 
 sc_prohibit_bare_set:

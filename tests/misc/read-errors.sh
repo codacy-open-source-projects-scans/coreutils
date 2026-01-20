@@ -17,6 +17,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 . "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
+uses_strace_
 
 ! cat . >/dev/null 2>&1 || skip_ "Need unreadable directories"
 
@@ -40,6 +41,7 @@ cksum -a sha3 -l 384 .
 cksum -a sha3 -l 512 .
 cksum -a sm3 .
 cksum -a sysv .
+cksum -a md5 /dev/null | sed 's|/dev/null|.|' | cksum --check
 comm . .
 csplit . 1
 cut -c1 .
@@ -96,5 +98,29 @@ join all_readers built_programs > built_readers || framework_failure_
 while read reader; do
   eval $reader >/dev/null && { fail=1; echo "$reader: exited with 0" >&2; }
 done < built_readers
+
+
+expected_failure_status_sort=2
+
+# Ensure read is called, otherwise it's a layering violation.
+# Also ensure a read error is diagnosed appropriately.
+if strace -o /dev/null -P _ -e '/read,splice' -e fault=all:error=EIO true; then
+  # Get EIO error message independently from utils
+  strace -o /dev/null -P /dev/null -e '/read,splice' -e fault=all:error=EIO \
+   $SHELL -c 'read < /dev/null' 2>&1 |
+    sed -e 's/\[/: /' -e 's/\]//' -e 's/.*: //' > io.err
+  strerror_eio="$(cat io.err)" && test -n "$strerror_eio" || framework_failure_
+
+  while read reader; do
+    cmd=$(printf '%s\n' "$reader" | cut -d ' ' -f1) || framework_failure_
+    eval "expected=\$expected_failure_status_$cmd"
+    test x$expected = x && expected=1
+    returns_ $expected \
+     strace -f -o /dev/null -P . -e '/read,splice' -e fault=all:error=EIO \
+     $SHELL -c "$reader" 2>err || fail=1
+    grep -F "$strerror_eio" err >/dev/null || { cat err; fail=1; }
+  done < built_readers
+fi
+
 
 Exit $fail

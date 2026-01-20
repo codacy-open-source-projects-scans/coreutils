@@ -27,6 +27,7 @@
 #include "argmatch.h"
 #include "c-ctype.h"
 #include "fadvise.h"
+#include "octhexdigits.h"
 #include "quote.h"
 #include "read-file.h"
 #include "stdio--.h"
@@ -42,11 +43,6 @@
 
 /* Number of possible characters in a byte.  */
 #define CHAR_SET_SIZE 256
-
-#define ISODIGIT(C) ((C) >= '0' && (C) <= '7')
-#define HEXTOBIN(C) ((C) >= 'a' && (C) <= 'f' ? (C)-'a'+10 \
-                     : (C) >= 'A' && (C) <= 'F' ? (C)-'A'+10 : (C)-'0')
-#define OCTTOBIN(C) ((C) - '0')
 
 /* Debugging the memory allocator.  */
 
@@ -85,9 +81,9 @@ static enum Format output_format = UNKNOWN_FORMAT;
                                 /* output format */
 
 static bool ignore_case = false;	/* fold lower to upper for sorting */
-static char const *break_file = nullptr; /* name of the 'Break chars' file */
-static char const *only_file = nullptr;	/* name of the 'Only words' file */
-static char const *ignore_file = nullptr; /* name of the 'Ignore words' file */
+static char const *break_file = NULL; /* name of the 'Break chars' file */
+static char const *only_file = NULL;	/* name of the 'Only words' file */
+static char const *ignore_file = NULL; /* name of the 'Ignore words' file */
 
 /* Options that use regular expressions.  */
 struct regex_data
@@ -186,7 +182,7 @@ static BLOCK *text_buffers;	/* files to study */
     {									\
       regoff_t count;							\
       count = re_match (&word_regex.pattern, cursor, limit - cursor,	\
-                        0, nullptr);					\
+                        0, NULL);					\
       if (count == -2)							\
         matcher_error ();						\
       cursor += count == -1 ? 1 : count;				\
@@ -314,7 +310,7 @@ unescape_string (char *string)
               for (length = 0, string++;
                    length < 3 && c_isxdigit (*string);
                    length++, string++)
-                value = value * 16 + HEXTOBIN (*string);
+                value = value * 16 + fromhex (*string);
               if (length == 0)
                 {
                   *cursor++ = '\\';
@@ -327,9 +323,9 @@ unescape_string (char *string)
             case '0':		/* \0ooo escape, 3 chars maximum */
               value = 0;
               for (length = 0, string++;
-                   length < 3 && ISODIGIT (*string);
+                   length < 3 && isoct (*string);
                    length++, string++)
-                value = value * 8 + OCTTOBIN (*string);
+                value = value * 8 + fromoct (*string);
               *cursor++ = value;
               break;
 
@@ -401,10 +397,10 @@ compile_regex (struct regex_data *regex)
   char const *string = regex->string;
   char const *message;
 
-  pattern->buffer = nullptr;
+  pattern->buffer = NULL;
   pattern->allocated = 0;
   pattern->fastmap = regex->fastmap;
-  pattern->translate = ignore_case ? folded_chars : nullptr;
+  pattern->translate = ignore_case ? folded_chars : NULL;
 
   message = re_compile_pattern (string, strlen (string), pattern);
   if (message)
@@ -441,7 +437,7 @@ initialize_regex (void)
   if (context_regex.string)
     {
       if (!*context_regex.string)
-        context_regex.string = nullptr;
+        context_regex.string = NULL;
     }
   else if (gnu_extensions && !input_reference)
     context_regex.string = "[.?!][]\"')}]*\\($\\|\t\\|  \\)[ \t\n]*";
@@ -674,7 +670,7 @@ digest_word_file (char const *file_name, WORD_TABLE *table)
 
   swallow_file_in_memory (file_name, &file_contents);
 
-  table->start = nullptr;
+  table->start = NULL;
   table->alloc = 0;
   table->length = 0;
 
@@ -1122,7 +1118,7 @@ fix_output_parameters (void)
   if (truncation_string && *truncation_string)
     truncation_string_length = strlen (truncation_string);
   else
-    truncation_string = nullptr;
+    truncation_string = NULL;
 
   if (gnu_extensions)
     {
@@ -1337,8 +1333,8 @@ define_all_fields (OCCURS *occurs)
 
       /* No place left for a tail field.  */
 
-      tail.start = nullptr;
-      tail.end = nullptr;
+      tail.start = NULL;
+      tail.end = NULL;
       tail_truncation = false;
     }
 
@@ -1376,8 +1372,8 @@ define_all_fields (OCCURS *occurs)
 
       /* No place left for a head field.  */
 
-      head.start = nullptr;
-      head.end = nullptr;
+      head.start = NULL;
+      head.end = NULL;
       head_truncation = false;
     }
 
@@ -1615,12 +1611,12 @@ generate_all_output (void)
      line contexts or references are not used, in which case these variables
      would never be computed.  */
 
-  tail.start = nullptr;
-  tail.end = nullptr;
+  tail.start = NULL;
+  tail.end = NULL;
   tail_truncation = false;
 
-  head.start = nullptr;
-  head.end = nullptr;
+  head.start = NULL;
+  head.end = NULL;
   head_truncation = false;
 
   /* Loop over all keyword occurrences.  */
@@ -1725,33 +1721,40 @@ Output a permuted index, including context, of the words in the input files.\n\
 | strings, then launch execution.				        |
 `----------------------------------------------------------------------*/
 
+/* For long options that have no equivalent short option, use a
+   non-character as a pseudo short option, starting with CHAR_MAX + 1.  */
+enum
+{
+  FORMAT_OPTION = CHAR_MAX + 1
+};
+
 /* Long options equivalences.  */
 static struct option const long_options[] =
 {
-  {"auto-reference", no_argument, nullptr, 'A'},
-  {"break-file", required_argument, nullptr, 'b'},
-  {"flag-truncation", required_argument, nullptr, 'F'},
-  {"ignore-case", no_argument, nullptr, 'f'},
-  {"gap-size", required_argument, nullptr, 'g'},
-  {"ignore-file", required_argument, nullptr, 'i'},
-  {"macro-name", required_argument, nullptr, 'M'},
-  {"only-file", required_argument, nullptr, 'o'},
-  {"references", no_argument, nullptr, 'r'},
-  {"right-side-refs", no_argument, nullptr, 'R'},
-  {"format", required_argument, nullptr, 10},
-  {"sentence-regexp", required_argument, nullptr, 'S'},
-  {"traditional", no_argument, nullptr, 'G'},
-  {"typeset-mode", no_argument, nullptr, 't'},
-  {"width", required_argument, nullptr, 'w'},
-  {"word-regexp", required_argument, nullptr, 'W'},
+  {"auto-reference", no_argument, NULL, 'A'},
+  {"break-file", required_argument, NULL, 'b'},
+  {"flag-truncation", required_argument, NULL, 'F'},
+  {"ignore-case", no_argument, NULL, 'f'},
+  {"gap-size", required_argument, NULL, 'g'},
+  {"ignore-file", required_argument, NULL, 'i'},
+  {"macro-name", required_argument, NULL, 'M'},
+  {"only-file", required_argument, NULL, 'o'},
+  {"references", no_argument, NULL, 'r'},
+  {"right-side-refs", no_argument, NULL, 'R'},
+  {"format", required_argument, NULL, FORMAT_OPTION},
+  {"sentence-regexp", required_argument, NULL, 'S'},
+  {"traditional", no_argument, NULL, 'G'},
+  {"typeset-mode", no_argument, NULL, 't'},
+  {"width", required_argument, NULL, 'w'},
+  {"word-regexp", required_argument, NULL, 'W'},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
-  {nullptr, 0, nullptr, 0},
+  {NULL, 0, NULL, 0},
 };
 
 static char const *const format_args[] =
 {
-  "roff", "tex", nullptr
+  "roff", "tex", NULL
 };
 
 static enum Format const format_vals[] =
@@ -1776,7 +1779,7 @@ main (int argc, char **argv)
   atexit (close_stdout);
 
   while (optchar = getopt_long (argc, argv, "AF:GM:ORS:TW:b:i:fg:o:trw:",
-                                long_options, nullptr),
+                                long_options, NULL),
          optchar != EOF)
     {
       switch (optchar)
@@ -1799,7 +1802,7 @@ main (int argc, char **argv)
         case 'g':
           {
             intmax_t tmp;
-            if (! (xstrtoimax (optarg, nullptr, 0, &tmp, "") == LONGINT_OK
+            if (! (xstrtoimax (optarg, NULL, 0, &tmp, "") == LONGINT_OK
                    && 0 < tmp && tmp <= IDX_MAX))
               error (EXIT_FAILURE, 0, _("invalid gap width: %s"),
                      quote (optarg));
@@ -1827,7 +1830,7 @@ main (int argc, char **argv)
         case 'w':
           {
             intmax_t tmp;
-            if (! (xstrtoimax (optarg, nullptr, 0, &tmp, "") == LONGINT_OK
+            if (! (xstrtoimax (optarg, NULL, 0, &tmp, "") == LONGINT_OK
                    && 0 < tmp && tmp <= IDX_MAX))
               error (EXIT_FAILURE, 0, _("invalid line width: %s"),
                      quote (optarg));
@@ -1869,10 +1872,10 @@ main (int argc, char **argv)
           word_regex.string = optarg;
           unescape_string (optarg);
           if (!*word_regex.string)
-            word_regex.string = nullptr;
+            word_regex.string = NULL;
           break;
 
-        case 10:
+        case FORMAT_OPTION:
           output_format = XARGMATCH ("--format", optarg,
                                      format_args, format_vals);
           break;
@@ -1899,7 +1902,7 @@ main (int argc, char **argv)
       file_line_count = xmalloc (sizeof *file_line_count);
       text_buffers =    xmalloc (sizeof *text_buffers);
       number_input_files = 1;
-      input_file_name[0] = nullptr;
+      input_file_name[0] = NULL;
     }
   else if (gnu_extensions)
     {
@@ -1911,7 +1914,7 @@ main (int argc, char **argv)
       for (file_index = 0; file_index < number_input_files; file_index++)
         {
           if (!*argv[optind] || streq (argv[optind], "-"))
-            input_file_name[file_index] = nullptr;
+            input_file_name[file_index] = NULL;
           else
             input_file_name[file_index] = argv[optind];
           optind++;
@@ -1927,7 +1930,7 @@ main (int argc, char **argv)
       file_line_count = xmalloc (sizeof *file_line_count);
       text_buffers    = xmalloc (sizeof *text_buffers);
       if (!*argv[optind] || streq (argv[optind], "-"))
-        input_file_name[0] = nullptr;
+        input_file_name[0] = NULL;
       else
         input_file_name[0] = argv[optind];
       optind++;
@@ -1973,14 +1976,14 @@ main (int argc, char **argv)
     {
       digest_word_file (ignore_file, &ignore_table);
       if (ignore_table.length == 0)
-        ignore_file = nullptr;
+        ignore_file = NULL;
     }
 
   if (only_file)
     {
       digest_word_file (only_file, &only_table);
       if (only_table.length == 0)
-        only_file = nullptr;
+        only_file = NULL;
     }
 
   /* Prepare to study all the input files.  */
