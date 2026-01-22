@@ -50,6 +50,7 @@ sub get_option_value;
 sub convert_option;
 sub fix_italic_spacing;
 sub set_indent;
+sub visual_length;
 
 my $version_info = enc_user sprintf _(<<'EOT'), $this_program, $this_version;
 GNU %s %s
@@ -534,15 +535,15 @@ while (length)
     my $content = '';
 
     # Option with description.
-    if (s/^( {1,10}([+-]\S.*?))(?:(  +(?!-))|\n( {20,}))(\S.*)\n//)
+    if (s/^( {1,10}([+-]\S.*?))(?:(  +(?!-))|\n( {7,}))(\S.*)\n//)
     {
 	$matched .= $& if %append_match;
-	$indent = set_indent length ($4 || "$1$3");
+	$indent = set_indent visual_length ($4 || "$1$3");
 	$content = ".TP\n\x84$2\n\x84$5\n";
 	unless ($4)
 	{
 	    # Indent may be different on second line.
-	    $indent = set_indent length $& if /^ {20,}/;
+	    $indent = set_indent visual_length $& if /^ {20,}/;
 	}
     }
 
@@ -558,7 +559,7 @@ while (length)
     elsif (s/^( +(\S.*?)  +)(\S.*)\n//)
     {
 	$matched .= $& if %append_match;
-	$indent = set_indent length $1;
+	$indent = set_indent visual_length $1;
 	$content = ".TP\n\x84$2\n\x84$3\n";
     }
 
@@ -566,7 +567,7 @@ while (length)
     elsif (s/^( +)(\S.*)\n//)
     {
 	$matched .= $& if %append_match;
-	$indent = set_indent length $1;
+	$indent = set_indent visual_length $1;
 	$content = ".IP\n\x84$2\n";
     }
 
@@ -724,6 +725,19 @@ my @post = (_('ENVIRONMENT'), _('FILES'), _('AUTHOR'),
     _('REPORTING BUGS'), _('COPYRIGHT'), _('SEE ALSO'));
 my %filter = map { $_ => 1 } @pre, @post;
 
+# Global storage for OSC 8 hyperlink URLs
+our @hyperlink_urls;
+
+# Helper to convert hyperlink markers to roff \X escapes
+sub convert_hyperlink {
+    my ($dashes, $idx, $text) = @_;
+    my $url = $hyperlink_urls[$idx];
+    my $full = $dashes . $text;
+    $full =~ s/\\f[BIRP]//g;
+    $full = "\\fB$full\\fP" if $opt_bold_refs;
+    return "\\X'tty: link $url'$full\\X'tty: link'";
+}
+
 # Output content.
 my %done;
 for my $sect (@pre, (grep !$filter{$_}, @sections), @post)
@@ -750,6 +764,10 @@ for my $sect (@pre, (grep !$filter{$_}, @sections), @post)
 	    s/\x81/\\&'/g;
 	    s/\x82/\\e/g;
 	    s/\x83/\\-/g;
+
+	    # Convert hyperlink markers to roff \X escape sequences
+	    s{((?:(?:\\f.)?\\-(?:\\-)?(?:\\f.)?)?)\x01(\d+)\x02(.*?)\x03}
+	     {convert_hyperlink($1, $2, $3)}gse;
 
 	    # Convert some latin1 chars to troff equivalents.
 	    s/\xa0/\\ /g;  # non-breaking space
@@ -793,6 +811,23 @@ sub get_option_value
 	kark $err, $this_program, $opt, $prog, $extra;
     }
 
+    # Strip ANSI SGR formatting codes (colors, bold, etc.)
+    $value =~ s/\x1b\[[0-9;]*m//g;
+
+    # Convert OSC 8 hyperlinks to markers placed after any leading dashes
+    # This preserves help2man's option detection (which looks for /^  +[-+]/)
+    # Support both BEL (\x07) and ST (\x1b\) terminators
+    $value =~ s/
+        \x1b\]8;;([^\x07\x1b]*)(?:\x07|\x1b\\)  # opening OSC 8 with URL
+        (--?)?(.*?)                             # optional dashes and link text
+        \x1b\]8;;(?:\x07|\x1b\\)                # closing OSC 8
+    /{
+        my $idx = scalar @hyperlink_urls;
+        push @hyperlink_urls, $1;
+        my $dashes = $2 || "";
+        "$dashes\x01$idx\x02$3\x03";
+    }/gsex;
+
     $value;
 }
 
@@ -834,4 +869,14 @@ sub set_indent
     my $i = $_[0];
     $i .= ',' . ($_[0] + 4) if $loose_indent;
     return $i;
+}
+
+# Return visual length of a string, ignoring hyperlink markers.
+# Markers are \x01<digits>\x02 (opening) and \x03 (closing).
+sub visual_length
+{
+    local $_ = shift;
+    s/\x01\d+\x02//g;
+    s/\x03//g;
+    return length;
 }

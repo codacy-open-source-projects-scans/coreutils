@@ -54,6 +54,10 @@ GNU coreutils NEWS                                    -*- outline -*-
   This augments the existing "symlinks" and "shebangs" modes already
   supported by the --enable-single-binary option.
 
+  'stat and 'tail' now know about the "guest-memfd" file system type.
+  stat -f -c%T now reports the file system type,
+  and tail -f uses polling for this file system.
+
   'tail' now accepts the --debug option, which is currently used to
   detail the --follow implementation being used.
 
@@ -62,8 +66,17 @@ GNU coreutils NEWS                                    -*- outline -*-
 
 ** Changes in behavior
 
+  all commands now markup option names in --help and man pages,
+  with bold attributes, and hyperlinks into the online manual on gnu.org.
+  The links can be configured with the --enable-manual-url configure option,
+  and the bold highlighting with --disable-bold-man-page-references.
+  At runtime all markup can be disabled by setting the HELP_NO_MARKUP env var.
+
   'fmt' -w,--width no longer includes '\n' in the width of a line.
   I.e., the specified width is interpreted to be an _inclusive_ maximum.
+
+  'ls --hyperlink' now uses more standard format hyperlinks.
+  'ESC\' (ST) is now used as a delimiter, instead of '\a' (BEL).
 
   'ptx' -t is no longer a no-op, and now sets the default width to 100 columns.
 

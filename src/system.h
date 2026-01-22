@@ -20,6 +20,8 @@
 
 #include <alloca.h>
 
+#include <ctype.h>
+
 #include <sys/stat.h>
 
 /* Commonly used file permission combination.  */
@@ -335,9 +337,9 @@ enum
 "for details about the options it supports.\n")
 
 #define HELP_OPTION_DESCRIPTION \
-  _("      --help        display this help and exit\n")
+  _("      --help\n         display this help and exit\n")
 #define VERSION_OPTION_DESCRIPTION \
-  _("      --version     output version information and exit\n")
+  _("      --version\n         output version information and exit\n")
 
 #include "closein.h"
 #include "closeout.h"
@@ -536,6 +538,124 @@ is_nul (void const *buf, size_t length)
 #define DECIMAL_DIGIT_ACCUMULATE(Accum, Digit_val)			\
   (!ckd_mul (&(Accum), Accum, 10) && !ckd_add (&(Accum), Accum, Digit_val))
 
+
+/* Output --option descriptions;
+   formatted with ANSI format and hyperlink codes.
+   Any postprocessors like help2man etc. are expected to handle this,
+   though it can be disabled in edge cases with the HELP_NO_MARKUP env var.  */
+
+#define oputs(option) oputs_ (PROGRAM_NAME, option)
+static inline void
+oputs_ (MAYBE_UNUSED char const* program, char const *option)
+{
+  static int help_no_sgr =
+#if ! defined MANUAL_URL && ! defined BOLD_MAN_REFS
+    1;   /* Disable.  */
+#else
+    -1;  /* Lookup.  */
+#endif
+  if (help_no_sgr == 1
+      || (help_no_sgr == -1 && (help_no_sgr = !!getenv ("HELP_NO_MARKUP"))))
+    {
+      fputs (option, stdout);
+      return;
+    }
+
+  char const* first_word = option + strspn (option, " \t\n");
+  char const *option_text = strchr (option, '-');
+  if (!option_text)
+    option_text = first_word;  /* for dd option syntax.  */
+  size_t anchor_len = strcspn (option_text, ",=[ \n");
+
+  /* Set highlighted text up to spacing after the full option text.
+     Any single space is included in highlighted text,
+     double space or newline terminates the option text.  */
+  char const *desc_text = option_text + anchor_len;
+  while (*desc_text && *desc_text != '\n'
+         && (! isspace (*desc_text) || ! isspace (*(desc_text + 1))))
+    desc_text++;
+
+  /* write spaces before option text. */
+  fwrite (option, 1, first_word - option, stdout);
+
+  /* write option text.  */
+#ifdef MANUAL_URL
+  char const *url_program =   streq (program, "[") ? "test"
+                            : streq (program, "b2sum") ? "cksum"
+                            : streq (program, "md5sum") ? "cksum"
+                            : streq (program, "sha1sum") ? "cksum"
+                            : streq (program, "sha224sum") ? "cksum"
+                            : streq (program, "sha256sum") ? "cksum"
+                            : streq (program, "sha384sum") ? "cksum"
+                            : streq (program, "sha512sum") ? "cksum"
+                            : program;
+  /* Note we don't add the hostname to the links below, because
+     it's unused with http:// links and not usually useful with file:// links.
+     Also there is the possibility that local (hostname agnostic) links
+     would work if remotely accessing a similar system to the local one.  */
+  if (STREQ_LEN (option_text, "--help", 6)
+      || STREQ_LEN (option_text, "--version", 9))
+    {
+      /* We don't have --help and --version links for each command,
+         and they wouldn't be useful to reference anyway.
+         Instead use these to reference the single node manual.  */
+      printf ("\033]8;;%s%s#%s%.*s", PACKAGE_URL,
+              url_program, url_program, (int) anchor_len, option_text);
+    }
+  else
+    {
+      /* The single node manual doesn't work for ls, cksum, md5sum, sha*sum,
+         so we link to the full manual.  */
+      printf ("\033]8;;%s#%s%.*s", MANUAL_URL, url_program,
+              (int) anchor_len, option_text);
+    }
+  fputs ("\033\\", stdout);
+#endif
+#ifdef BOLD_MAN_REFS
+  /* Note help2man strips this and will reinstate with --bold-refs.  */
+  fputs ("\033[1m", stdout);
+#endif
+  /* first_word != option_text for test(1).  */
+  fwrite (first_word, 1, desc_text - first_word, stdout);
+#ifdef BOLD_MAN_REFS
+  fputs ("\033[0m", stdout);
+#endif
+#ifdef MANUAL_URL
+  fputs ("\033]8;;\033\\", stdout);
+#endif
+
+  /* write description.  */
+  fputs (desc_text, stdout);
+}
+
+/* If required and possible,
+   call oputs with printf formatted message.  */
+
+#define oprintf(...) oprintf_ (PROGRAM_NAME, __VA_ARGS__)
+ATTRIBUTE_FORMAT ((printf, 2, 3))
+static inline void
+oprintf_ (char const* program, char const *message, ...)
+{
+  va_list args;
+  char *buf;
+  int buflen = -1;
+
+#if defined MANUAL_URL || defined BOLD_MAN_REFS
+  va_start (args, message);
+  buflen = vasprintf (&buf, message, args);
+  va_end (args);
+#endif
+
+  if (buflen < 0)
+    {
+      vprintf (message, args);
+      return;
+    }
+
+  oputs_ (program, buf);
+  free (buf);
+}
+
 static inline void
 emit_stdin_note (void)
 {
@@ -606,8 +726,10 @@ the VERSION_CONTROL environment variable.  Here are the values:\n\
 "), stdout);
 }
 
+#define emit_symlink_recurse_options(default_opt) \
+ emit_symlink_recurse_options_ (PROGRAM_NAME, default_opt)
 static inline void
-emit_symlink_recurse_options (char const *default_opt)
+emit_symlink_recurse_options_ (char const* program, char const *default_opt)
 {
       printf (_("\
 \n\
@@ -615,13 +737,20 @@ The following options modify how a hierarchy is traversed when the -R\n\
 option is also specified.  If more than one is specified, only the final\n\
 one takes effect. %s is the default.\n\
 \n\
-  -H                     if a command line argument is a symbolic link\n\
-                         to a directory, traverse it\n\
-  -L                     traverse every symbolic link to a directory\n\
-                         encountered\n\
-  -P                     do not traverse any symbolic links\n\
-\n\
 "), default_opt);
+      oputs_ (program, _("\
+  -H\n\
+         if a command line argument is a symlink to a directory, traverse it\n\
+"));
+      oputs_ (program, _("\
+  -L\n\
+         traverse every symbolic link to a directory encountered\n\
+"));
+      oputs_ (program, _("\
+  -P\n\
+         do not traverse any symbolic links\n\
+\n\
+"));
 }
 
 static inline void

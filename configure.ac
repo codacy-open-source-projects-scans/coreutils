@@ -138,8 +138,8 @@ AM_CONDITIONAL([SINGLE_BINARY_HARD], [test "$gl_single_binary" == hardlinks])
 
 AC_ARG_ENABLE([bold-man-page-references],
   [AS_HELP_STRING([--disable-bold-man-page-references],
-     [When generating man pages, do not apply bold style around any
-      references like name(1) etc.])],
+     [When generating man pages, or displaying --help, do not apply bold style
+      around any references like name(1) or --option references etc.])],
   [gl_bold_manpages=yes ;
    case $enableval in
      no|yes) gl_bold_manpages=$enableval ;;
@@ -148,7 +148,30 @@ AC_ARG_ENABLE([bold-man-page-references],
    esac],
   [gl_bold_manpages=yes]
 )
+if test "$gl_bold_manpages" != no; then
+  AC_DEFINE([BOLD_MAN_REFS], [1], [Whether to markup references as bold])
+fi
 AM_CONDITIONAL([BOLD_MAN_REFS], [test "$gl_bold_manpages" != no])
+
+AC_ARG_ENABLE([manual-url],
+  [AS_HELP_STRING([--enable-manual-url@<:@=<url>@:>@],
+     [When generating man pages, or displaying --help, generate hyperlinks
+      from each "--option" to <url>@%:@command-option.  A local file is
+      supported through a file:// URL.  The default URL used is:
+      $PACKAGE_URL/manual/$PACKAGE.html.])],
+  [case $enableval in
+     yes) gl_manual_url=default ;;
+     no) gl_manual_url='' ;;
+     *)  gl_manual_url="$enableval" ;;
+   esac],
+  [gl_manual_url=default]
+)
+if test x"$gl_manual_url" != x; then
+  if test "$gl_manual_url" = default; then
+    gl_manual_url=${PACKAGE_URL}manual/$PACKAGE.html
+  fi
+  AC_DEFINE_UNQUOTED([MANUAL_URL], ["$gl_manual_url"], [URL for full manual])
+fi
 
 AC_ARG_ENABLE([gcc-warnings],
   [AS_HELP_STRING([--enable-gcc-warnings@<:@=TYPE@:>@],

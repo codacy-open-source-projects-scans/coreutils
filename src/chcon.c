@@ -364,46 +364,54 @@ With --reference, change the security context of each FILE to that of RFILE.\n\
 
       emit_mandatory_arg_note ();
 
-      fputs (_("\
-      --dereference      affect the referent of each symbolic link (this is\n\
-                         the default), rather than the symbolic link itself\n\
-  -h, --no-dereference   affect symbolic links instead of any referenced file\n\
-"), stdout);
-      fputs (_("\
-  -u, --user=USER        set user USER in the target security context\n\
-  -r, --role=ROLE        set role ROLE in the target security context\n\
-  -t, --type=TYPE        set type TYPE in the target security context\n\
-  -l, --range=RANGE      set range RANGE in the target security context\n\
-"), stdout);
-      fputs (_("\
-      --no-preserve-root  do not treat '/' specially (the default)\n\
-      --preserve-root    fail to operate recursively on '/'\n\
-"), stdout);
-      fputs (_("\
-      --reference=RFILE  use RFILE's security context rather than specifying\n\
-                         a CONTEXT value\n\
-"), stdout);
-      fputs (_("\
-  -R, --recursive        operate on files and directories recursively\n\
-"), stdout);
-      fputs (_("\
-  -v, --verbose          output a diagnostic for every file processed\n\
-"), stdout);
-      fputs (_("\
-\n\
-The following options modify how a hierarchy is traversed when the -R\n\
-option is also specified.  If more than one is specified, only the final\n\
-one takes effect.\n\
-\n\
-  -H                     if a command line argument is a symbolic link\n\
-                         to a directory, traverse it\n\
-  -L                     traverse every symbolic link to a directory\n\
-                         encountered\n\
-  -P                     do not traverse any symbolic links (default)\n\
-\n\
-"), stdout);
-      fputs (HELP_OPTION_DESCRIPTION, stdout);
-      fputs (VERSION_OPTION_DESCRIPTION, stdout);
+      oputs (_("\
+      --dereference\n\
+         affect the referent of each symbolic link (this is\n\
+         the default), rather than the symbolic link itself\n\
+"));
+      oputs (_("\
+  -h, --no-dereference\n\
+         affect symbolic links instead of any referenced file\n\
+"));
+      oputs (_("\
+  -u, --user=USER\n\
+         set user USER in the target security context\n\
+"));
+      oputs (_("\
+  -r, --role=ROLE\n\
+         set role ROLE in the target security context\n\
+"));
+      oputs (_("\
+  -t, --type=TYPE\n\
+         set type TYPE in the target security context\n\
+"));
+      oputs (_("\
+  -l, --range=RANGE\n\
+         set range RANGE in the target security context\n\
+"));
+      oputs (_("\
+      --no-preserve-root\n\
+         do not treat '/' specially (the default)\n\
+"));
+      oputs (_("\
+      --preserve-root\n\
+         fail to operate recursively on '/'\n\
+"));
+      oputs (_("\
+      --reference=RFILE\n\
+         use RFILE's security context rather than specifying a CONTEXT value\n\
+"));
+      oputs (_("\
+  -R, --recursive\n\
+         operate on files and directories recursively\n\
+"));
+      oputs (_("\
+  -v, --verbose\n\
+         output a diagnostic for every file processed\n\
+"));
+      emit_symlink_recurse_options ("-P");
+      oputs (HELP_OPTION_DESCRIPTION);
+      oputs (VERSION_OPTION_DESCRIPTION);
       emit_ancillary_info (PROGRAM_NAME);
     }
   exit (status);

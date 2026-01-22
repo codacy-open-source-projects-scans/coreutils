@@ -764,8 +764,12 @@ these programs, abbreviations of the long options are not always recognized.
 
 @item --help
 @opindex --help
+@vindex HELP_NO_MARKUP
 @cindex help, online
 Print a usage message listing all available options, then exit successfully.
+Help output may be marked up with terminal codes for formatting or
+hyperlinks, which can be disabled by setting the @env{HELP_NO_MARKUP}
+environment variable.
 
 @item --version
 @opindex --version
@@ -2289,6 +2293,8 @@ The program accepts the following options.  Also see @ref{Common options}.
 
 @optAnchor{base32,-w}
 @optAnchor{base32,--wrap}
+@optAnchor{basenc,-w}
+@optAnchor{basenc,--wrap}
 @optItem{base64,-w,@w{ }@var{cols}}
 @optItemx{base64,--wrap,=@var{cols}}
 @cindex wrap data
@@ -2301,6 +2307,8 @@ disable line wrapping altogether.
 
 @optAnchor{base32,-d}
 @optAnchor{base32,--decode}
+@optAnchor{basenc,-d}
+@optAnchor{basenc,--decode}
 @optItem{base64,-d,}
 @optItemx{base64,--decode,}
 @cindex Decode base64 data
@@ -2311,6 +2319,8 @@ output will be the original data.
 
 @optAnchor{base32,-i}
 @optAnchor{base32,--ignore-garbage}
+@optAnchor{basenc,-i}
+@optAnchor{basenc,--ignore-garbage}
 @optItem{base64,-i,}
 @optItemx{base64,--ignore-garbage,}
 @cindex Ignore garbage in base64 stream
@@ -2624,6 +2634,7 @@ is identical.  By default, counting starts with the first page of input
 file (not first page printed).  Line numbering may be altered by @option{-N}
 option.
 
+@optAnchor{pr,-COLS}
 @optItem{pr,-@var{column},}
 @optItemx{pr,--columns,=@var{column}}
 @cindex down columns
@@ -3292,7 +3303,7 @@ Put @var{size} bytes of @var{input} into each output file.
 @multiplierSuffixes{size}
 
 @optItem{split,-C,@w{ }@var{size}}
-@optItemx{split,--lines-bytes,=@var{size}}
+@optItemx{split,--line-bytes,=@var{size}}
 Put into each output file as many complete lines of @var{input} as
 possible without exceeding @var{size} bytes.  Individual lines or records
 longer than @var{size} bytes are broken into multiple files.
@@ -5398,6 +5409,9 @@ Columns are separated by a single TAB character.
 @c FIXME: when there's an option to supply an alternative separator
 @c string, append "by default" to the above sentence.
 
+@optAnchor{comm,-1}
+@optAnchor{comm,-2}
+@optAnchor{comm,-3}
 @opindex -1
 @opindex -2
 @opindex -3
@@ -6304,7 +6318,7 @@ a       b       c
 @end example
 
 @optItem{paste,-d,@w{ }@var{delim-list}}
-@optItemx{paste,--delimiter,=@var{delim-list}}
+@optItemx{paste,--delimiters,=@var{delim-list}}
 Consecutively use the characters in @var{delim-list} instead of
 TAB to separate merged lines.  When @var{delim-list} is
 exhausted, start again at its beginning.
@@ -7315,7 +7329,7 @@ The program accepts the following options.  Also see @ref{Common options}.
 
 @table @samp
 
-@optItem{expand,@w{ }@var{tab1}[@comma{}@var{tab2}]@dots{},}
+@optItem{expand,-t,@w{ }@var{tab1}[@comma{}@var{tab2}]@dots{}}
 @optItemx{expand,--tabs,=@var{tab1}[@comma{}@var{tab2}]@dots{}}
 @cindex tab stops, setting
 If only one tab stop is given, set the tabs @var{tab1} spaces apart
@@ -7381,7 +7395,7 @@ The program accepts the following options.  Also see @ref{Common options}.
 
 @table @samp
 
-@optItem{unexpand,@w{ }@var{tab1}[@comma{}@var{tab2}]@dots{},}
+@optItem{unexpand,-t,@w{ }@var{tab1}[@comma{}@var{tab2}]@dots{}}
 @optItemx{unexpand,--tabs,=@var{tab1}[@comma{}@var{tab2}]@dots{}}
 If only one tab stop is given, set the tabs @var{tab1} columns apart
 instead of the default 8.  Otherwise, set the tabs at columns
@@ -7716,6 +7730,12 @@ Produce long format, but omit owner information.
 Inhibit display of group information in long format.
 (This is the default in some non-GNU versions of @command{ls}, so we
 provide this option for compatibility.)
+
+@optItem{ls,--block-size,=@var{size}}
+@cindex file sizes
+With @option{-l}, scale sizes by @var{size} before printing them
+(@pxref{Block size}).  For example,
+@option{--block-size=G} prints sizes in units of 1,073,741,824 bytes.
 
 @optHumanReadable{ls}
 
@@ -8774,12 +8794,6 @@ This option is independent of the @option{--interactive} or
 This option is ignored when the @option{--no-clobber} or @option{-n} option
 is also used.
 
-@optItem{cp,-H,}
-If a command line argument specifies a symbolic link, then copy the
-file it points to rather than the symbolic link itself.  However,
-copy (preserving its nature) any symbolic link that is encountered
-via recursive traversal.
-
 @optItem{cp,-i,}
 @optItemx{cp,--interactive,}
 When copying a file other than a directory, prompt whether to
@@ -8787,9 +8801,11 @@ overwrite an existing destination file, and fail if the response
 is not affirmative.  The @option{-i} option overrides
 a previous @option{-n} option.
 
-@optItem{cp,-l,}
-@optItemx{cp,--link,}
-Make hard links instead of copies of non-directories.
+@optItem{cp,-H,}
+If a command line argument specifies a symbolic link, then copy the
+file it points to rather than the symbolic link itself.  However,
+copy (preserving its nature) any symbolic link that is encountered
+via recursive traversal.
 
 @optItem{cp,-L,}
 @optItemx{cp,--dereference,}
@@ -8797,6 +8813,23 @@ Follow symbolic links when copying from them.
 With this option, @command{cp} cannot create a symbolic link.
 For example, a symlink (to regular file) in the source tree will be copied to
 a regular file in the destination tree.
+
+@optItem{cp,-P,}
+@optItemx{cp,--no-dereference,}
+@cindex symbolic links, copying
+Copy symbolic links as symbolic links rather than copying the files that
+they point to.  This option affects only symbolic links in the source;
+symbolic links in the destination are always followed if possible.
+
+@optItem{cp,--keep-directory-symlink,}
+Follow existing symlinks to directories when copying.
+Use this option only when the destination directory's contents are trusted,
+as an attacker can place symlinks in the destination
+to cause @command{cp} write to arbitrary target directories.
+
+@optItem{cp,-l,}
+@optItemx{cp,--link,}
+Make hard links instead of copies of non-directories.
 
 @optItem{cp,-n,}
 @optItemx{cp,--no-clobber,}
@@ -8807,13 +8840,6 @@ This option is deprecated due to having a different exit status from
 other platforms.  See also the @option{--update} option which will
 give more control over how to deal with existing files in the destination,
 and over the exit status in particular.
-
-@optItem{cp,-P,}
-@optItemx{cp,--no-dereference,}
-@cindex symbolic links, copying
-Copy symbolic links as symbolic links rather than copying the files that
-they point to.  This option affects only symbolic links in the source;
-symbolic links in the destination are always followed if possible.
 
 @optItem{cp,-p,}
 @optItemx{cp,--preserve,[=@var{attribute_list}]}
@@ -9999,12 +10025,6 @@ option is also specified.
 @optItemx{mv,--verbose,}
 Print the name of each file before moving it.
 
-@optItem{mv,--keep-directory-symlink,}
-Follow existing symlinks to directories when copying.
-Use this option only when the destination directory's contents are trusted,
-as an attacker can place symlinks in the destination
-to cause @command{cp} write to arbitrary target directories.
-
 @optStripTrailingSlashes{mv}
 
 @optBackupSuffix{mv}
@@ -11002,10 +11022,10 @@ as a directory.
 Do not print the output delimiter, when a single @var{file} is specified.
 Print a warning if specified along with multiple @var{file}s.
 
-@optItem{readlink,-s,}
-@optItemx{readlink,-q,}
-@optItemx{readlink,--silent,}
+@optItem{readlink,-q,}
+@optItemx{readlink,-s,}
 @optItemx{readlink,--quiet,}
+@optItemx{readlink,--silent,}
 Suppress most error messages.
 
 @vindex POSIXLY_CORRECT
@@ -11289,10 +11309,8 @@ Do not act on symbolic links themselves but rather on what they point to.
 This is the default when not operating recursively.
 @warnOptDerefWithRec
 
-@item -h
-@itemx --no-dereference
-@opindex -h
-@opindex --no-dereference
+@optItem{\cmd\,-h,}
+@optItemx{\cmd\,--no-dereference,}
 @cindex symbolic links, changing owner
 @findex lchown
 Act on symbolic links themselves instead of what they point to.
@@ -15370,9 +15388,9 @@ The program accepts the following option.  Also see @ref{Common options}.
 
 @table @samp
 
-@optItem{printenv,-s,}
-@optItemx{printenv,--silent,}
-@optItemx{printenv,--quiet,}
+@optItem{tty,-s,}
+@optItemx{tty,--silent,}
+@optItemx{tty,--quiet,}
 Print nothing; only return an exit status.
 
 @end table
@@ -15443,6 +15461,9 @@ The options cause @command{id} to print only part of the above information.
 Also see @ref{Common options}.
 
 @table @samp
+@optItem{id,-a,}
+Ignored; for compatibility with other versions of @command{id}.
+
 @optItem{id,-g,}
 @optItemx{id,--group,}
 Print only the group ID.
@@ -15692,7 +15713,7 @@ Overrides all other options.
 Print the current (and maybe previous) run-level of the init process.
 
 @optItem{who,-s,}
-@optItem{who,--short,}
+@optItemx{who,--short,}
 Ignored; for compatibility with other versions of @command{who}.
 
 @optItem{who,-t,}
@@ -15700,6 +15721,7 @@ Ignored; for compatibility with other versions of @command{who}.
 Print last system clock change.
 
 @optItem{who,-u,}
+@optItemx{who,--users,}
 @cindex idle time
 After the login time, print the number of hours and minutes that the
 user has been idle.  @samp{.} means the user was active in the last minute.
