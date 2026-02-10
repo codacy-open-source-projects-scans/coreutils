@@ -127,7 +127,7 @@ all_root_tests =				\
   tests/ls/no-cap.sh				\
   tests/ls/nameless-uid.sh			\
   tests/nproc/nproc-quota.sh			\
-  tests/nproc/nproc-quota-systemd.sh			\
+  tests/nproc/nproc-quota-systemd.sh		\
   tests/chcon/chcon.sh				\
   tests/chroot/chroot-credentials.sh		\
   tests/misc/selinux.sh				\
@@ -367,7 +367,8 @@ all_tests =					\
   tests/misc/mknod.sh				\
   tests/nice/nice.sh				\
   tests/nice/nice-fail.sh			\
-  tests/misc/nl.sh				\
+  tests/nl/nl.sh				\
+  tests/nl/multibyte.sh				\
   tests/misc/nohup.sh				\
   tests/nproc/nproc-avail.sh			\
   tests/nproc/nproc-positive.sh			\
@@ -522,7 +523,7 @@ all_tests =					\
   tests/chmod/thru-dangling.sh			\
   tests/chmod/umask-x.sh			\
   tests/chmod/usage.sh				\
-  tests/chmod/symlinks.sh				\
+  tests/chmod/symlinks.sh			\
   tests/chown/deref.sh				\
   tests/chown/preserve-root.sh			\
   tests/chown/separator.sh			\
@@ -590,7 +591,7 @@ all_tests =					\
   tests/df/unreadable.sh			\
   tests/df/total-unprocessed.sh			\
   tests/df/no-mtab-status.sh			\
-  tests/df/no-mtab-status-masked-proc.sh			\
+  tests/df/no-mtab-status-masked-proc.sh	\
   tests/df/skip-duplicates.sh			\
   tests/df/skip-rootfs.sh			\
   tests/dd/ascii.sh				\
