@@ -11,12 +11,22 @@ GNU coreutils NEWS                                    -*- outline -*-
   when operating in deep paths longer than twice the system PATH_MAX.
   [bug introduced in coreutils-9.6]
 
+  'stat --printf=%%N' no longer performs unnecessary checks of the QUOTING_STYLE
+  environment variable.
+  [bug introduced in coreutils-8.26]
+
 ** New Features
 
   'date --date' now parses dot delimited dd.mm.yy format common in Europe.
   This is in addition to the already supported mm/dd/yy and yy-mm-dd formats.
 
 ** Improvements
+
+  'df --local' recognises more file system types as remote.
+  Specifically: autofs, ncpfs, smb, smb2, gfs, gfs2, userlandfs.
+
+  'groups' and 'id' will now exit sooner after a write error,
+  which is significant when listing information for many users.
 
   'nl' now supports multi-byte --section-delimiter characters.
 
@@ -30,6 +40,10 @@ GNU coreutils NEWS                                    -*- outline -*-
 
   ./configure --enable-single-binary=hardlinks is now supported on systems
   with dash as the system shell at /bin/sh.
+  [issue introduced in coreutils-9.10]
+
+  The test suite may have failed with a "Hangup" error if run non-interactively.
+  [issue introduced in coreutils-9.10]
 
 
 * Noteworthy changes in release 9.10 (2026-02-04) [stable]

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Make sure all of these programs promptly diagnose write errors.
+# Make sure all of these programs diagnose write errors.
 
 # Copyright (C) 2025-2026 Free Software Foundation, Inc.
 
@@ -44,7 +44,9 @@ fmt foo
 fold foo
 fold -b foo
 fold -c foo
+groups
 head -n1 foo
+id
 join foo foo
 nl foo
 numfmt --invalid=ignore < foo

@@ -184,6 +184,7 @@ all_tests =					\
   tests/tty/tty-eof.pl				\
   tests/misc/io-errors.sh			\
   tests/misc/read-errors.sh			\
+  tests/misc/warning-errors.sh			\
   tests/misc/write-errors.sh			\
   tests/tail/basic-seek.sh			\
   tests/tail/inotify-hash-abuse.sh		\
@@ -282,6 +283,7 @@ all_tests =					\
   tests/od/od-endian.sh				\
   tests/od/od-float.sh				\
   tests/mktemp/bad-unicode.sh			\
+  tests/mktemp/mktemp-misc.sh			\
   tests/mktemp/mktemp.pl			\
   tests/misc/arch.sh				\
   tests/pr/bounded-memory.sh			\
@@ -561,6 +563,7 @@ all_tests =					\
   tests/cp/link-preserve.sh			\
   tests/cp/link-symlink.sh			\
   tests/cp/nfs-removal-race.sh			\
+  tests/cp/non-utf8-name.sh			\
   tests/cp/no-deref-link1.sh			\
   tests/cp/no-deref-link2.sh			\
   tests/cp/no-deref-link3.sh			\
@@ -660,6 +663,7 @@ all_tests =					\
   tests/install/strip-program.sh		\
   tests/install/trap.sh				\
   tests/ln/backup-1.sh				\
+  tests/ln/backup-suffix-traversal.sh		\
   tests/ln/hard-backup.sh			\
   tests/ln/hard-to-sym.sh			\
   tests/ln/misc.sh				\
@@ -692,6 +696,7 @@ all_tests =					\
   tests/ls/w-option.sh				\
   tests/ls/multihardlink.sh			\
   tests/ls/no-arg.sh				\
+  tests/ls/non-utf8-hidden.sh			\
   tests/ls/selinux-segfault.sh			\
   tests/ls/quote-align.sh			\
   tests/ls/size-align.sh			\
