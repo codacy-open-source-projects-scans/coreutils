@@ -4,6 +4,10 @@ GNU coreutils NEWS                                    -*- outline -*-
 
 ** Bug fixes
 
+  'dd' now always diagnoses partial writes correctly upon write failure.
+  Previously it may have indicated that only full writes were performed.
+  [This bug was present in "the beginning".]
+
   'fold' will no longer truncate output when encountering 0xFF bytes.
   [bug introduced in coreutils-9.8]
 
@@ -55,7 +59,7 @@ GNU coreutils NEWS                                    -*- outline -*-
   Neon instructions.
 
   'yes' now uses zero-copy I/O on Linux to significantly increase throughput.
-  E.g., increases from 12GiB/s to 175GiB/s were seen on some systems.
+  E.g., throughput improved 15x from 11.6GiB/s to 175GiB/s on a Power10 system.
 
 ** Build-related
 
