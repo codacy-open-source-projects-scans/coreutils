@@ -294,6 +294,7 @@ all_tests =					\
   tests/chcon/chcon-fail.sh			\
   tests/misc/coreutils.sh			\
   tests/cut/cut.pl				\
+  tests/cut/mb-non-utf8.sh			\
   tests/cut/bounded-memory.sh			\
   tests/cut/cut-huge-range.sh			\
   tests/wc/wc.pl				\
@@ -459,6 +460,7 @@ all_tests =					\
   tests/split/record-sep.sh			\
   tests/split/numeric.sh			\
   tests/split/guard-input.sh			\
+  tests/split/non-utf8.sh			\
   tests/split/split-io-err.sh			\
   tests/stat/stat-birthtime.sh			\
   tests/stat/stat-fmt.sh			\
@@ -675,6 +677,7 @@ all_tests =					\
   tests/ln/hard-backup.sh			\
   tests/ln/hard-to-sym.sh			\
   tests/ln/misc.sh				\
+  tests/ln/non-utf8-src.sh			\
   tests/ln/relative.sh				\
   tests/ln/sf-1.sh				\
   tests/ln/slash-decorated-nonexistent-dest.sh	\
@@ -707,6 +710,7 @@ all_tests =					\
   tests/ls/non-utf8-hidden.sh			\
   tests/ls/selinux-segfault.sh			\
   tests/ls/quote-align.sh			\
+  tests/ls/quoting-utf8.sh			\
   tests/ls/size-align.sh			\
   tests/ls/readdir-mountpoint-inode.sh		\
   tests/ls/recursive.sh				\

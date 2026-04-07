@@ -25,7 +25,9 @@
 
 #include <stdio.h>
 #include <stddef.h>
+#include <unistd.h>
 
+#include "fseterr.h"
 #include "mcel.h"
 #include "idx.h"
 
@@ -47,7 +49,14 @@ typedef struct
   idx_t size;      /* Number of bytes allocated for BUFFER.  */
   idx_t length;    /* Number of bytes with data in BUFFER.  */
   idx_t offset;    /* Current position in BUFFER.  */
+  bool eof;        /* Whether at End Of File.  */
 } mbbuf_t;
+
+MBBUF_INLINE idx_t
+mbbuf_avail (mbbuf_t const *mbbuf)
+{
+  return mbbuf->length - mbbuf->offset;
+}
 
 /* Initialize MBBUF with an allocated BUFFER of SIZE bytes and a file stream
    FP open for reading.  SIZE must be greater than or equal to MCEL_LEN_MAX.
@@ -62,17 +71,19 @@ mbbuf_init (mbbuf_t *mbbuf, char *buffer, idx_t size, FILE *fp)
   mbbuf->size = size;
   mbbuf->length = 0;
   mbbuf->offset = 0;
+  mbbuf->eof = false;
 }
 
-/* Get the next character in the buffer, filling it from FP if necessary.
-   If an invalid multi-byte character is seen, we assume the program wants to
-   fall back to the read byte.  */
-MBBUF_INLINE mcel_t
-mbbuf_get_char (mbbuf_t *mbbuf)
+/* Fill the input buffer with at least MCEL_LEN_MAX bytes if possible.
+   Return the number of bytes available from the current offset.
+   At end of file, MBBUF.EOF is set, and zero will eventually be returned.
+   Note feof() will _NOT_ be set on the MBBUF.FP.  */
+MBBUF_INLINE idx_t
+mbbuf_topup (mbbuf_t *mbbuf)
 {
-  idx_t available = mbbuf->length - mbbuf->offset;
-  /* Check if we need to fill the input buffer.  */
-  if (available < MCEL_LEN_MAX && ! feof (mbbuf->fp))
+  idx_t available = mbbuf_avail (mbbuf);
+
+  if (available < MCEL_LEN_MAX && ! mbbuf->eof)
     {
       idx_t start;
       if (!(0 < available))
@@ -82,11 +93,64 @@ mbbuf_get_char (mbbuf_t *mbbuf)
           memmove (mbbuf->buffer, mbbuf->buffer + mbbuf->offset, available);
           start = available;
         }
-      mbbuf->length = fread (mbbuf->buffer + start, 1, mbbuf->size - start,
-                             mbbuf->fp) + start;
+      ssize_t  read_ret = read (fileno (mbbuf->fp), mbbuf->buffer + start,
+                                mbbuf->size - start);
+      if (read_ret < 0)
+        {
+          fseterr (mbbuf->fp);
+          mbbuf->eof = true;  /* Avoid any more reads().  */
+          mbbuf->length = start;
+        }
+      else
+        {
+          mbbuf->eof = read_ret == 0;
+          mbbuf->length = read_ret + start;
+        }
+
       mbbuf->offset = 0;
-      available = mbbuf->length - mbbuf->offset;
+      available = mbbuf_avail (mbbuf);
     }
+
+  return available;
+}
+
+/* Fill the input buffer enough to scan the next character if possible.
+   Return the number of bytes available from the current offset.  */
+MBBUF_INLINE idx_t
+mbbuf_fill (mbbuf_t *mbbuf)
+{
+  idx_t available = mbbuf_avail (mbbuf);
+
+  if (available == 0)
+    return mbbuf_topup (mbbuf);
+
+  if (available < MCEL_LEN_MAX && ! mbbuf->eof)
+    {
+      mcel_t g = mcel_scan (mbbuf->buffer + mbbuf->offset,
+                            mbbuf->buffer + mbbuf->length);
+      if (g.err)
+        return mbbuf_topup (mbbuf);
+    }
+
+  return available;
+}
+
+/* Consume N bytes from the current buffer.  */
+MBBUF_INLINE void
+mbbuf_advance (mbbuf_t *mbbuf, idx_t n)
+{
+  if (mbbuf_avail (mbbuf) < n)
+    unreachable ();
+  mbbuf->offset += n;
+}
+
+/* Get the next character in the buffer, filling it from FP if necessary.
+   If an invalid multi-byte character is seen, we assume the program wants to
+   fall back to the read byte.  */
+MBBUF_INLINE mcel_t
+mbbuf_get_char (mbbuf_t *mbbuf)
+{
+  idx_t available = mbbuf_fill (mbbuf);
   if (available <= 0)
     return (mcel_t) { .ch = MBBUF_EOF };
   mcel_t g = mcel_scan (mbbuf->buffer + mbbuf->offset,
