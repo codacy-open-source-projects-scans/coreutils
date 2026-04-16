@@ -78,7 +78,7 @@ join all_writers built_programs > built_writers || framework_failure_
 while read writer; do
   # Enforce mem usage limits if possible
   cmd=$(printf '%s\n' "$writer" | cut -d ' ' -f1) || framework_failure_
-  base_mem=$(get_min_ulimit_v_ $cmd --version) \
+  base_mem=$(get_min_ulimit_v_ $SHELL -c "$cmd --version") \
     && ulimit="ulimit -v $(($base_mem+12000))" \
     || skip_ 'unable to determine ulimit -v'
 
@@ -88,6 +88,9 @@ while read writer; do
     "($ulimit && $writer 2>full.err >/dev/full)"
   { test $? = 124 || ! grep "$ENOSPC" full.err >/dev/null; } &&
    { fail=1; cat full.err; echo "$writer: failed to exit" >&2; }
+
+  # https://github.com/ksh93/ksh/issues/741
+  $SHELL -c 'test -n "$KSH_VERSION"' && continue
 
   # Check closed pipe handling
   rm -f pipe.err || framework_failure_
