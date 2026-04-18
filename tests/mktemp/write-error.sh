@@ -1,4 +1,6 @@
 #!/bin/sh
+# Test the behavior of 'mktemp' when it fails to write the file name
+# to standard output.
 
 # Copyright (C) 2026 Free Software Foundation, Inc.
 
@@ -16,18 +18,19 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 . "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
-print_ver_ whoami logname
-skip_if_root_
+print_ver_ mktemp
 
-unshare -U unshare --version || skip_ 'unshare -U is unavailable'
-overflow_uid=$(cat /proc/sys/kernel/overflowuid) ||
- skip_ 'overflow uid is unavailable'
+if ! test -w /dev/full || ! test -c /dev/full; then
+  skip_ '/dev/full is required'
+fi
 
-test "$(unshare -U whoami)" = "$(id -un $overflow_uid)" || fail=1
+mkdir -p a/b || framework_failure_
+returns_ 1 mktemp -p a/b > /dev/full || fail=1
+returns_ 1 mktemp -p a/b -d > /dev/full || fail=1
 
-# The "</dev/null" disables a fallback lookup via utmp/utmpx,
-# that existed in glibc < 2.28 and exists again in glibc >= 2.38.
-returns_ 1 unshare -U logname </dev/null 2>err || fail=1
-test "$(cat err)" = "logname: no login name" || fail=1
+# Check that the directory is empty.
+for file in a/b/*; do
+  test -e "$file" && fail=1
+done
 
 Exit $fail
