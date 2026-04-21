@@ -2,6 +2,9 @@ GNU coreutils NEWS                                    -*- outline -*-
 
 * Noteworthy changes in release ?.? (????-??-??) [?]
 
+
+* Noteworthy changes in release 9.11 (2026-04-20) [stable]
+
 ** Bug fixes
 
   'dd' now always diagnoses partial writes correctly upon write failure.
