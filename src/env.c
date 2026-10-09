@@ -19,14 +19,21 @@
 #include <config.h>
 #include <stdio.h>
 #include <sys/types.h>
+#include <argz.h>
 #include <getopt.h>
 #include <c-ctype.h>
 #include <signal.h>
 
+#include "argmatch.h"  /* argmatch($QUOTING_STYLE).  */
+#include "hash.h"
+#include "hashcode-mem.h"
 #include "system.h"
 #include "operand2sig.h"
+#include "printenv.h"
 #include "quote.h"
+#include "read-file.h"
 #include "sig2str.h"
+#include "xbinary-io.h"
 
 /* The official name of this program (e.g., no 'g' prefix).  */
 #define PROGRAM_NAME "env"
@@ -41,12 +48,28 @@ static char const **usvars;
 static idx_t usvars_alloc;
 static idx_t usvars_used;
 
+/* Storage for entries read by --env0-from.  */
+static char *env0_from_buffer;
+
+/* An environment vector managed directly to preserve raw entries.  */
+struct env_vector
+{
+  char **variable;
+  idx_t used;
+  idx_t allocated;
+};
+
 /* Annotate the output with extra info to aid the user.  */
 static bool dev_debug;
+#define vmsg devmsg
 
 /* Buffer and length of extracted envvars in -S strings.  */
 static char *varname;
 static idx_t vnlen;
+
+/* On mingw, winbase.h defines this to zero.  Undefine it so we can use it
+   in the enum.  */
+#undef IGNORE
 
 /* Possible actions on each signal.  */
 enum SIGNAL_MODE {
@@ -79,16 +102,19 @@ static char const shortopts[] = "+a:C:iS:u:v0" C_ISSPACE_CHARS;
    non-character as a pseudo short option, starting with CHAR_MAX + 1.  */
 enum
 {
-  DEFAULT_SIGNAL_OPTION = CHAR_MAX + 1,
+  ENV0_FROM_OPTION = CHAR_MAX + 1,
+  DEFAULT_SIGNAL_OPTION,
   IGNORE_SIGNAL_OPTION,
   BLOCK_SIGNAL_OPTION,
   LIST_SIGNAL_HANDLING_OPTION,
+  QUOTING_STYLE_OPTION,
 };
 
 static struct option const longopts[] =
 {
   {"argv0", required_argument, NULL, 'a'},
   {"ignore-environment", no_argument, NULL, 'i'},
+  {"env0-from", required_argument, NULL, ENV0_FROM_OPTION},
   {"null", no_argument, NULL, '0'},
   {"unset", required_argument, NULL, 'u'},
   {"chdir", required_argument, NULL, 'C'},
@@ -97,6 +123,7 @@ static struct option const longopts[] =
   {"block-signal",   optional_argument, NULL, BLOCK_SIGNAL_OPTION},
   {"list-signal-handling", no_argument, NULL,  LIST_SIGNAL_HANDLING_OPTION},
   {"debug", no_argument, NULL, 'v'},
+  {"quoting-style", required_argument, NULL, QUOTING_STYLE_OPTION},
   {"split-string", required_argument, NULL, 'S'},
   {GETOPT_HELP_OPTION_DECL},
   {GETOPT_VERSION_OPTION_DECL},
@@ -128,6 +155,10 @@ Set each NAME to VALUE in the environment and run COMMAND.\n\
          start with an empty environment\n\
 "));
       oputs (_("\
+      --env0-from=FILE\n\
+         read NUL-delimited environment entries from FILE\n\
+"));
+      oputs (_("\
   -0, --null\n\
          end each output line with NUL, not newline\n\
 "));
@@ -138,6 +169,12 @@ Set each NAME to VALUE in the environment and run COMMAND.\n\
       oputs (_("\
   -C, --chdir=DIR\n\
          change working directory to DIR\n\
+"));
+      oputs (_("\
+      --quoting-style=WORD\n\
+         use quoting style WORD for names and values:\n\
+           literal, locale, shell, shell-always,\n\
+           shell-escape, shell-escape-always, c, escape\n\
 "));
       oputs (_("\
   -S, --split-string=S\n\
@@ -195,12 +232,242 @@ unset_envvars (void)
 {
   for (idx_t i = 0; i < usvars_used; ++i)
     {
-      devmsg ("unset:    %s\n", usvars[i]);
+      vmsg (_("unsetting: %s\n"), quote (usvars[i]));
 
       if (unsetenv (usvars[i]))
         error (EXIT_CANCELED, errno, _("cannot unset %s"),
                quote (usvars[i]));
     }
+}
+
+/* Return true if ENTRY is an assignment whose name is NAME.  */
+static bool
+entry_has_name (char const *entry, char const *name, idx_t name_length)
+{
+  char const *eq = strchr (entry, '=');
+  return (eq && eq - entry == name_length
+          && memeq (entry, name, name_length));
+}
+
+#if ! defined _WIN32 || defined __CYGWIN__
+/* Hash an environment vector slot by the name in its assignment.  */
+static size_t
+env_vector_slot_hash (void const *x, size_t table_size)
+{
+  char *const *slot = x;
+  char const *entry = *slot;
+  char const *eq = strchr (entry, '=');
+  return hash_pjw_bare (entry, eq - entry) % table_size;
+}
+
+static bool
+env_vector_slot_compare (void const *x, void const *y)
+{
+  char const *a = * (char *const *) x;
+  char const *b = * (char *const *) y;
+  char const *b_eq = strchr (b, '=');
+  return entry_has_name (a, b, b_eq - b);
+}
+#endif
+
+/* Remove the requested variables from ENV,
+   directly, preserving other raw entries.  */
+static void
+unset_envvars_in_vector (struct env_vector *env)
+{
+  for (idx_t i = 0; i < usvars_used; ++i)
+    {
+      char const *name = usvars[i];
+      vmsg (_("unsetting: %s\n"), quote (name));
+
+      if (! *name || strchr (name, '='))
+        error (EXIT_CANCELED, EINVAL, _("cannot unset %s"), quoteaf (name));
+
+      idx_t name_length = strlen (name);
+      idx_t dest = 0;
+      for (idx_t source = 0; source < env->used; ++source)
+        if (! entry_has_name (env->variable[source], name, name_length))
+          env->variable[dest++] = env->variable[source];
+
+      env->used = dest;
+      env->variable[dest] = NULL;
+    }
+}
+
+/* Add ASSIGNMENT to the environment.  EQ points to its '=' byte.  */
+static void
+set_envvar (char *assignment, char *eq)
+{
+  vmsg (_("setting:   %s\n"), quote (assignment));
+
+  if (putenv (assignment))
+    {
+      *eq = '\0';
+      error (EXIT_CANCELED, errno, _("cannot set %s"), quote (assignment));
+    }
+}
+
+/* Add ASSIGNMENT to ENV directly, preserving other raw entries.
+   EQ points to its '=' byte.  Replace the first existing assignment
+   with the same name, as putenv does, or append ASSIGNMENT if none.  */
+static void
+set_envvar_in_vector (struct env_vector *env, char *assignment, char *eq)
+{
+  vmsg (_("setting:   %s\n"), quote (assignment));
+
+  idx_t name_length = eq - assignment;
+  for (idx_t i = 0; i < env->used; ++i)
+    if (entry_has_name (env->variable[i], assignment, name_length))
+      {
+        env->variable[i] = assignment;
+        return;
+      }
+
+  if (env->used + 1 == env->allocated)
+    {
+      env->variable = xpalloc (env->variable, &env->allocated, 1, -1,
+                               sizeof *env->variable);
+      environ = env->variable;
+    }
+
+  env->variable[env->used++] = assignment;
+  env->variable[env->used] = NULL;
+}
+
+/* Read the NUL-delimited environment entries in FILE.  */
+static size_t
+read_env_file (char const *file)
+{
+  size_t size;
+  if (streq (file, "-"))
+    {
+      xset_binary_mode (STDIN_FILENO, O_BINARY);
+      env0_from_buffer = fread_file (stdin, RF_BINARY, &size);
+    }
+  else
+    env0_from_buffer = read_file (file, RF_BINARY, &size);
+
+  if (! env0_from_buffer)
+    error (EXIT_CANCELED, errno, _("cannot read %s"), quoteaf (file));
+  if (size && env0_from_buffer[size - 1] != '\0')
+    error (EXIT_CANCELED, 0, _("%s: file must end with a NUL byte"),
+           quotef (file));
+
+  return size;
+}
+
+/* Merge the NUL-delimited entries in FILE into the environment.
+   Return true if ENV now owns the environment vector.  */
+static bool
+set_envvars_from_file (struct env_vector *env, char const *file)
+{
+  size_t size = read_env_file (file);
+
+#if defined _WIN32 && ! defined __CYGWIN__
+  (void) env;
+  /* On native Windows, _putenv keeps _environ, _wenviron, and the process
+     environment block synchronized.  Replacing environ directly would
+     conflict with its ownership of those data structures.  */
+  char *assignment = NULL;
+  while ((assignment = argz_next (env0_from_buffer, size, assignment)))
+    {
+      char *eq = strchr (assignment, '=');
+      if (! eq)
+        error (EXIT_CANCELED, 0,
+               _("invalid variable specification %s in %s"),
+               quoteaf_n (0, assignment), quoteaf_n (1, file));
+
+      set_envvar (assignment, eq);
+    }
+  return false;
+#else
+  /* Construct and index the merged vector, rather than making putenv
+     repeatedly scan the growing environment for every assignment.  */
+  idx_t file_count = argz_count (env0_from_buffer, size);
+
+  if (file_count == 0)
+    return false;
+
+  idx_t inherited_count = 0;
+  while (environ[inherited_count])
+    ++inherited_count;
+
+  if (IDX_MAX - inherited_count <= file_count)
+    xalloc_die ();
+  idx_t max_count = inherited_count + file_count;
+  char **merged = xnmalloc (max_count + 1, sizeof *merged);
+  memcpy (merged, environ, inherited_count * sizeof *merged);
+  merged[inherited_count] = NULL;
+
+  Hash_table *slot_table
+    = hash_initialize (max_count, NULL, env_vector_slot_hash,
+                       env_vector_slot_compare, NULL);
+  if (! slot_table)
+    xalloc_die ();
+
+  /* Index only the first occurrence of each inherited name, matching
+     putenv's replacement of the first such entry.  */
+  for (idx_t i = 0; i < inherited_count; ++i)
+    {
+      char *eq = strchr (merged[i], '=');
+      if (! eq)
+        continue;
+
+      if (! hash_insert (slot_table, &merged[i]))
+        xalloc_die ();
+    }
+
+  idx_t merged_count = inherited_count;
+  char *assignment = NULL;
+  while ((assignment = argz_next (env0_from_buffer, size, assignment)))
+    {
+      char *eq = strchr (assignment, '=');
+      if (! eq)
+        {
+          vmsg (_("adding:    %s\n"), quote (assignment));
+          merged[merged_count++] = assignment;
+        }
+      else
+        {
+          vmsg (_("setting:   %s\n"), quote (assignment));
+
+          char **slot = hash_lookup (slot_table, &assignment);
+          if (slot)
+            *slot = assignment;
+          else
+            {
+              merged[merged_count] = assignment;
+              if (! hash_insert (slot_table, &merged[merged_count]))
+                xalloc_die ();
+              ++merged_count;
+            }
+        }
+    }
+
+  merged[merged_count] = NULL;
+  env->variable = merged;
+  env->used = merged_count;
+  env->allocated = max_count + 1;
+  environ = merged;
+  hash_free (slot_table);
+  return true;
+#endif
+}
+
+/* Replace the environment with the NUL-delimited entries in FILE,
+   preserving the entries byte-for-byte and in their original order.  */
+static void
+set_raw_environment_from_file (struct env_vector *env,
+                               char const *file)
+{
+  size_t size = read_env_file (file);
+  idx_t entry_count = argz_count (env0_from_buffer, size);
+
+  env->allocated = entry_count + 1;
+  env->variable = xnmalloc (env->allocated, sizeof *env->variable);
+  argz_extract (env0_from_buffer, size, env->variable);
+  env->used = entry_count;
+  environ = env->variable;
 }
 
 /* Return a pointer to the end of a valid ${VARNAME} string, or NULL.
@@ -304,7 +571,7 @@ splitbuf_append_byte (struct splitbuf *ss, char c)
   if (ss->half_alloc * sizeof *ss->argv <= string_bytes)
     splitbuf_grow (ss);
   ((char *) (ss->argv + ss->half_alloc))[string_bytes] = c;
-  ss->argv[ss->argc] = (char *) (intptr_t) (string_bytes + 1);
+  ss->argv[ss->argc] = (char *) (intptr_t) {string_bytes + 1};
 }
 
 /* If SS's most recent character was a separator, finish off its
@@ -475,12 +742,12 @@ build_argv (char const *str, int extra_argc, int *argc)
             if (v)
               {
                 check_start_new_arg (&ss);
-                devmsg ("expanding ${%s} into %s\n", n, quote (v));
+                vmsg (_("expanding ${%s} into %s\n"), n, quote (v));
                 for (; *v; v++)
                   splitbuf_append_byte (&ss, *v);
               }
             else
-              devmsg ("replacing ${%s} with null string\n", n);
+              vmsg (_("replacing ${%s} with empty string\n"), n);
 
             str = strchr (str, '}') + 1;
             continue;
@@ -535,10 +802,10 @@ parse_split_string (char const *str, int *orig_optind,
   /* Print parsed arguments.  */
   if (dev_debug && 1 < newargc)
     {
-      devmsg ("split -S:  %s\n", quote (str));
-      devmsg (" into:    %s\n", quote (newargv[1]));
+      vmsg (_("split -S:  %s\n"), quote (str));
+      vmsg (_(" into:     %s\n"), quote (newargv[1]));
       for (int i = 2; i < newargc; i++)
-        devmsg ("     &    %s\n", quote (newargv[i]));
+        vmsg (_("     &     %s\n"), quote (newargv[i]));
     }
 
   /* Add remaining arguments and terminating null from the original
@@ -621,10 +888,10 @@ reset_signal_handlers (void)
           char signame[SIG2STR_MAX];
           if (sig2str (i, signame) != 0)
             snprintf (signame, sizeof signame, "SIG%d", i);
-          devmsg ("Reset signal %s (%d) to %s%s\n",
+          vmsg (_("Reset signal %s (%d) to %s%s\n"),
                   signame, i,
                   set_to_default ? "DEFAULT" : "IGNORE",
-                  sig_err ? " (failure ignored)" : "");
+                  sig_err ? _(" (failure ignored)") : "");
         }
     }
 }
@@ -710,7 +977,7 @@ set_signal_proc_mask (void)
           char signame[SIG2STR_MAX];
           if (sig2str (i, signame) != 0)
             snprintf (signame, sizeof signame, "SIG%d", i);
-          devmsg ("signal %s (%d) mask set to %s\n",
+          vmsg (_("signal %s (%d) mask set to %s\n"),
                   signame, i, debug_act);
         }
     }
@@ -763,8 +1030,15 @@ main (int argc, char **argv)
 {
   bool ignore_environment = false;
   bool opt_nul_terminate_output = false;
+  int quoting_style_opt = -1;
   char const *newdir = NULL;
+  char const *env0_from_file = NULL;
   char *argv0 = NULL;
+  struct env_vector env_vector;
+#ifdef lint
+  memset (&env_vector, 0, sizeof env_vector);
+  char **initial_environ = environ;
+#endif
 
   initialize_main (&argc, &argv);
   set_program_name (argv[0]);
@@ -796,6 +1070,10 @@ main (int argc, char **argv)
           break;
         case '0':
           opt_nul_terminate_output = true;
+          quoting_style_opt = literal_quoting_style;
+          break;
+        case ENV0_FROM_OPTION:
+          env0_from_file = optarg;
           break;
         case DEFAULT_SIGNAL_OPTION:
           parse_signal_action_params (optarg, true);
@@ -810,6 +1088,11 @@ main (int argc, char **argv)
         case LIST_SIGNAL_HANDLING_OPTION:
           report_signal_handling = true;
           break;
+        case QUOTING_STYLE_OPTION:
+          quoting_style_opt = XARGMATCH ("--quoting-style", optarg,
+                                         quoting_style_args,
+                                         quoting_style_vals);
+          break;
         case 'C':
           newdir = optarg;
           break;
@@ -821,9 +1104,12 @@ main (int argc, char **argv)
              incorrect shebang usage with extraneous space, e.g.:
                 #!/usr/bin/env -i command
              In which case argv[1] == "-i command".  */
-          error (0, 0, _("invalid option -- '%c'"), optc);
-          error (0, 0, _("use -[v]S to pass options in shebang lines"));
-          usage (EXIT_CANCELED);
+          {
+            char c = optc;
+            error (0, 0, _("invalid option -- %s"), quote_mem (&c, 1));
+            error (0, 0, _("use -[v]S to pass options in shebang lines"));
+            usage (EXIT_CANCELED);
+          }
 
         case_GETOPT_HELP_CHAR;
         case_GETOPT_VERSION_CHAR (PROGRAM_NAME, AUTHORS);
@@ -838,26 +1124,61 @@ main (int argc, char **argv)
       ++optind;
     }
 
-  if (ignore_environment)
+  bool quote_output = false;
+  int qs = quoting_style_opt;
+  if (qs < 0 && isatty (STDOUT_FILENO))
     {
-      devmsg ("cleaning environ\n");
+      /* Get the value from $QUOTING_STYLE before unsetting env vars.  */
+      qs = getenv_quoting_style ();
+      if (qs < 0)
+        qs = shell_escape_quoting_style;
+    }
+  if (0 <= qs && qs != literal_quoting_style)
+    {
+      set_quoting_style (NULL, qs);
+      quote_output = true;
+    }
+
+  bool env_vector_active = false;
+  if (ignore_environment && env0_from_file)
+    {
+      vmsg (_("clearing environment\n"));
+      set_raw_environment_from_file (&env_vector, env0_from_file);
+      env_vector_active = true;
+    }
+  else if (ignore_environment)
+    {
+      vmsg (_("clearing environment\n"));
+#if defined _WIN32 && ! defined __CYGWIN__
       static char *dummy_environ[] = { NULL };
       environ = dummy_environ;
+#else
+      env_vector.variable = xnmalloc (1, sizeof *env_vector.variable);
+      env_vector.variable[0] = NULL;
+      env_vector.used = 0;
+      env_vector.allocated = 1;
+      environ = env_vector.variable;
+      env_vector_active = true;
+#endif
     }
-  else
-    unset_envvars ();
+  else if (env0_from_file)
+    env_vector_active = set_envvars_from_file (&env_vector, env0_from_file);
+
+  if (! ignore_environment || env0_from_file)
+    {
+      if (env_vector_active)
+        unset_envvars_in_vector (&env_vector);
+      else
+        unset_envvars ();
+    }
 
   char *eq;
   while (optind < argc && (eq = strchr (argv[optind], '=')))
     {
-      devmsg ("setenv:   %s\n", argv[optind]);
-
-      if (putenv (argv[optind]))
-        {
-          *eq = '\0';
-          error (EXIT_CANCELED, errno, _("cannot set %s"),
-                 quote (argv[optind]));
-        }
+      if (env_vector_active)
+        set_envvar_in_vector (&env_vector, argv[optind], eq);
+      else
+        set_envvar (argv[optind], eq);
       optind++;
     }
 
@@ -883,12 +1204,22 @@ main (int argc, char **argv)
 
   if (! program_specified)
     {
+      char const terminator = opt_nul_terminate_output ? '\0' : '\n';
+
+      if (opt_nul_terminate_output)
+        xset_binary_mode (STDOUT_FILENO, O_BINARY);
+
       /* Print the environment and exit.  */
       for (char *const *e = environ; *e; ++e)
+        print_envvar (*e, terminator, quote_output);
+#ifdef lint
+      if (env_vector_active)
         {
-          fputs (*e, stdout);
-          putchar (opt_nul_terminate_output ? '\0' : '\n');
+          environ = initial_environ;
+          free (env_vector.variable);
+          free (env0_from_buffer);
         }
+#endif
       return EXIT_SUCCESS;
     }
 
@@ -901,7 +1232,7 @@ main (int argc, char **argv)
 
   if (newdir)
     {
-      devmsg ("chdir:    %s\n", quoteaf (newdir));
+      vmsg (_("change dir: %s\n"), quote (newdir));
 
       if (chdir (newdir) != 0)
         error (EXIT_CANCELED, errno, _("cannot change directory to %s"),
@@ -911,15 +1242,15 @@ main (int argc, char **argv)
   char *program = argv[optind];
   if (argv0)
     {
-      devmsg ("argv0:     %s\n", quoteaf (argv0));
+      vmsg ("argv0:     %s\n", quote (argv0));
       argv[optind] = argv0;
     }
 
   if (dev_debug)
     {
-      devmsg ("executing: %s\n", program);
+      vmsg (_("executing: %s\n"), quote (program));
       for (int i=optind; i<argc; ++i)
-        devmsg ("   arg[%d]= %s\n", i-optind, quote (argv[i]));
+        vmsg ("   arg[%d]= %s\n", i-optind, quote (argv[i]));
     }
 
   execvp (program, &argv[optind]);

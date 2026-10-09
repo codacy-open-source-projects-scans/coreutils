@@ -83,6 +83,11 @@
 # define ENODATA (-1)
 #endif
 
+/* Return true if ERRNUM indicates that a file disappeared during a
+   directory traversal.  */
+static inline bool
+ignorable_traversal_errno (int errnum) { return errnum == ENOENT; }
+
 #include <stdlib.h>
 #include "version.h"
 
@@ -162,12 +167,19 @@ c32isnbspace (char32_t wc)
 
 ATTRIBUTE_PURE
 static inline int
-c32isvertspace (char32_t wc)
+c32isnewline (char32_t wc)
 {
-  return    wc == 0x000A || wc == 0x000B || wc == 0x000C || wc == 0x000D
-         || wc == 0x2028 || wc == 0x2029;
+  return wc == 0x000A || wc == 0x0085 || wc == 0x2028 || wc == 0x2029;
 }
 
+ATTRIBUTE_PURE
+static inline int
+c32isvertspace (char32_t wc)
+{
+  /* 000D is backwards as opposed to vertical,
+     but that's fine for this grouping.  */
+  return c32isnewline (wc) || wc == 0x000B || wc == 0x000C || wc == 0x000D;
+}
 
 /* c32isblank() is too variable on non GLIBC platforms.
    E.g., does not include \u3000 ideographic space on musl.
@@ -182,20 +194,6 @@ c32issep (char32_t wc)
 #else
   return c32isspace (wc) && ! c32isvertspace (wc) && ! c32isnbspace (wc);
 #endif
-}
-
-/* Return true if the current charset is UTF-8.  */
-static inline bool
-is_utf8_charset (void)
-{
-  static int is_utf8 = -1;
-  if (is_utf8 == -1)
-    {
-      char32_t w;
-      mbstate_t mbs; mbszero (&mbs);
-      is_utf8 = mbrtoc32 (&w, "\xe2\x9f\xb8", 3, &mbs) == 3 && w == 0x27F8;
-    }
-  return is_utf8;
 }
 
 #include <locale.h>
@@ -729,7 +727,9 @@ oprintf_ (char const *program, char const *message, ...)
 
   if (buflen < 0)
     {
+      va_start (args, message);
       vprintf (message, args);
+      va_end (args);
       return;
     }
 
@@ -997,8 +997,32 @@ is_ENOTSUP (int err)
 #define quoteaf_n(n, arg) \
   quotearg_n_style (n, shell_escape_always_quoting_style, arg)
 
+/* Equivalent to quotearg(), but explicit to avoid syntax checks.  */
+#define quoteN(x) quotearg_style (get_quoting_style (NULL), x)
+#define quoteN_mem(x, size)                                     \
+  quotearg_style_mem (get_quoting_style (NULL), x, size)
+
+#ifdef ARGMATCH
+/* Return the quoting style specified by the environment variable
+   QUOTING_STYLE if set and valid, -1 otherwise.  */
+static inline int
+getenv_quoting_style (void)
+{
+  char const *q_style = getenv ("QUOTING_STYLE");
+  if (!q_style)
+    return -1;
+
+  int i = ARGMATCH (q_style, quoting_style_args, quoting_style_vals);
+  if (i < 0)
+    {
+      error (0, 0, _("ignoring invalid value of environment "
+                     "variable QUOTING_STYLE: %s"), quote (q_style));
+      return -1;
+    }
+  return quoting_style_vals[i];
+}
+
 /* Used instead of XARGMATCH() to provide a custom error message.  */
-#ifdef XARGMATCH
 static inline ptrdiff_t
 x_timestyle_match (char const * style, bool allow_posix,
                    char const *const * timestyle_args,
@@ -1007,7 +1031,7 @@ x_timestyle_match (char const * style, bool allow_posix,
                    int fail_status)
 {
   ptrdiff_t res = argmatch (style, timestyle_args,
-                            (char const *) timestyle_types,
+                            timestyle_types,
                             timestyle_types_size);
   if (res < 0)
     {

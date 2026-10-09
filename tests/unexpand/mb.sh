@@ -17,8 +17,10 @@
 
 . "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
 print_ver_ unexpand printf
+getlimits_
 
-test "$LOCALE_FR_UTF8" != none || skip_ "French UTF-8 locale not available"
+{ test -z "$LOCALE_FR_UTF8" || test "$LOCALE_FR_UTF8" = none; } &&
+  skip_ 'French UTF-8 locale not available'
 export LC_ALL="$LOCALE_FR_UTF8"
 
 #input containing multibyte characters
@@ -160,5 +162,30 @@ EOF
 
 unexpand -a ./in ./in > out || fail=1
 compare exp out > /dev/null 2>&1 || fail=1
+
+# Ensure overflow is handed gracefully
+# coreutils v9.11 induced a buffer overflow with mb_mul=4 (or 16).
+for mb_mul in 4 6; do
+  printf '   \n' | unexpand -t $(expr $SIZE_MAX / $mb_mul + 1) 2>err; ret=$?
+  test "$ret" = 1 || test "$ret" = 0 || { cat err; fail=1; }
+done
+
+# A blank whose display width exceeds the tab distance must not overrun
+# the pending-blank buffer.  With -t1 every column is a tab stop, so a
+# width-2 ideographic space steps over the stop without landing on it;
+# the run of blanks then grew pending_blank without bound.
+ideo_space=$(env printf '\u3000')
+{ yes "$ideo_space" | head -n 40000 | tr -d '\n'; echo; } |
+  unexpand -t1 >out 2>err; ret=$?
+test "$ret" = 0 || { cat err; fail=1; }
+
+# Ensure U+0085 is not treated as a separator,
+# and also no buffer overflows (where wcwidth() is -1) as per:
+# https://github.com/coreutils/coreutils/pull/361
+next_line=$(env printf '\u0085')
+yes "$next_line" | head -n 40000 | { tr -d '\n'; echo; } >next_lines ||
+  framework_failure_
+unexpand -t1 <next_lines >out || fail=1
+compare out next_lines || fail=1
 
 Exit $fail

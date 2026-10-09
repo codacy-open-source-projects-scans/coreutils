@@ -18,6 +18,7 @@
 
 . "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
 print_ver_ realpath
+getlimits_
 
 stat_single=$(stat -c %d:%i /) || framework_failure_
 stat_double=$(stat -c %d:%i //) || framework_failure_
@@ -56,6 +57,22 @@ realpath -e -E --relative-to=dir1/f --relative-base=. . || fail=1
 # Note NUL params are unconditionally rejected by canonicalize_filename_mode
 returns_ 1 realpath -m '' || fail=1
 returns_ 1 realpath --relative-base= --relative-to=. . || fail=1
+
+# QUOTING_STYLE does not affect redirected output.
+printf 'q name\n' > exp || framework_failure_
+for style in literal shell-always invalid; do
+  QUOTING_STYLE="$style" \
+    realpath -m --relative-to=. 'q name' > out 2> err || fail=1
+  compare exp out || fail=1
+  compare /dev/null err || fail=1
+done
+
+# --zero disables quoting, and does not inspect QUOTING_STYLE.
+QUOTING_STYLE=invalid \
+  realpath -zm --relative-to=. 'q name' > out 2> err || fail=1
+printf 'q name\0' > exp || framework_failure_
+compare exp out || fail=1
+compare /dev/null err || fail=1
 
 # symlink resolution
 this=$(realpath .)
@@ -110,5 +127,33 @@ if test $double_slash = //; then
 else
   test "$out" = ".$nl." || fail=1
 fi
+
+# A trailing slash only requires the operand to be a directory, which is a
+# stat-level check (search permission on the parent). A directory that is
+# searchable but not readable must still resolve, not fail with EACCES.
+mkdir noread && chmod a-r noread || framework_failure_
+test "$(realpath noread/)" = "$(realpath .)/noread" || fail=1
+test "$(realpath -e noread/)" = "$(realpath .)/noread" || fail=1
+
+# From coreutils 9.0 to 9.12, the following would loop until the
+# system ran out of memory.
+ln -s loop/a loop || framework_failure_
+vm=$(get_min_ulimit_v_ realpath .) && {
+  cat <<EOF >exp || framework_failure_
+realpath: loop: $ELOOP
+EOF
+  for opt in '' -E -e -m -s -L -P; do
+    (ulimit -v $(($vm+6000)) &&
+       returns_ 1 timeout 10 realpath $opt loop >out 2>err) || fail=1
+    compare /dev/null out || fail=1
+    compare exp err || fail=1
+  done
+}
+
+# This one doesn't need to touch the file.
+echo "$(realpath .)"/loop >exp || framework_failure_
+realpath -ms loop >out 2>err || fail=1
+compare exp out || fail=1
+compare /dev/null err || fail=1
 
 Exit $fail

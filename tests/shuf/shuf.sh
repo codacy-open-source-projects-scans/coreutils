@@ -100,6 +100,18 @@ shuf -n10 -i0-9 -n3 -n20 > exp || framework_failure_
 c=$(wc -l < exp) || framework_failure_
 test "$c" -eq 3 || { fail=1; echo "Multiple -n failed">&2 ; }
 
+# Test that the conversion from integer to string doesn't write past a buffer.
+# Note that the value is too large for shell arithmetic.
+v=$ULONG_MAX
+while :; do
+  v=$(echo $v | sed 's/^0/1/')
+  test -z "$v" && break
+  echo $v > exp
+  shuf -i $v-$v > out || fail=1
+  compare exp out || fail=1
+  v=$(echo $v | cut -b2-)
+done
+
 # Test error conditions
 
 # -i and -e must not be used together
@@ -123,6 +135,17 @@ done
 # multiple random-sources are forbidden
 { shuf -i0-9 --random-source A --random-source B || test $? -ne 1; } &&
   { fail=1; echo "shuf did not detect multiple --random-source usage.">&2 ; }
+
+# A failed run must leave an existing -o output file untouched rather than
+# truncating it before the failure is detected.
+printf 'precious\n' > exp || framework_failure_
+cp exp out || framework_failure_
+returns_ 1 shuf -o out missing-input || fail=1
+compare exp out || { fail=1; echo "shuf truncated -o on input error">&2 ; }
+cp exp out || framework_failure_
+returns_ 1 shuf -o out --random-source=missing-input in || fail=1
+compare exp out ||
+ { fail=1; echo "shuf truncated -o on random-source error">&2 ; }
 
 # Test --repeat option
 

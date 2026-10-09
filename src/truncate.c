@@ -190,7 +190,7 @@ do_ftruncate (int fd, char const *fname, off_t ssize, off_t rsize,
   if (ftruncate (fd, nsize) != 0)
     {
       error (0, errno, _("failed to truncate %s at %jd bytes"),
-             quoteaf (fname), (intmax_t) nsize);
+             quoteaf (fname), (intmax_t) {nsize});
       return false;
     }
 
@@ -326,7 +326,8 @@ main (int argc, char **argv)
         file_size = sb.st_size;
       else
         {
-          int ref_fd = open (ref_file, O_RDONLY);
+          /* O_NONBLOCK so we do not hang forever on a FIFO with no writer.  */
+          int ref_fd = open (ref_file, O_RDONLY | O_NONBLOCK);
           if (0 <= ref_fd)
             {
               off_t file_end = lseek (ref_fd, 0, SEEK_END);

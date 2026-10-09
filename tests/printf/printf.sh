@@ -134,4 +134,24 @@ EOF
 compare exp out || fail=1
 compare exp_err err || fail=1
 
+# Ensure large field widths and precisions produce fully padded output
+$prog '%70000d' 1 > out || fail=1
+test "$(wc -c < out)" = 70000 || fail=1
+test "$(tr -d ' ' < out)" = 1 || fail=1
+
+$prog '%500000s' x > out || fail=1
+test "$(wc -c < out)" = 500000 || fail=1
+test "$(tr -d ' ' < out)" = x || fail=1
+
+# Ensure a precision beyond 1000 digits is not truncated
+$prog '%.70000f' 1 > out || fail=1
+test "$(wc -c < out)" = 70002 || fail=1
+test "$(tr -d 0 < out)" = '1.' || fail=1
+
+# %a hex-float: round-trip rather than matching a particular hex form
+# (many valid representations of the same value exist).
+fv=0.0009765625
+test $($prog '%.10f' $($prog %a $fv)) = $fv || fail=1
+$prog %a $fv | grep '^0[xX]' || fail=1
+
 Exit $fail

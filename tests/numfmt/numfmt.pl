@@ -115,6 +115,15 @@ my @Tests =
      ['unit-10', '--to-unit=0 1',
              {ERR => "$prog: invalid unit size: '0'\n"},
              {EXIT => '1'}],
+     # Ensure a unit size whose suffix multiplication overflows uintmax_t
+     # is rejected.  18014398509481984Ki is 2^54.
+     # Multiplying by Ki (2^10) overflows to UINTMAX_MAX + 1.
+     ['unit-11', '--to-unit=18014398509481984Ki 1000',
+             {ERR => "$prog: invalid unit size: '18014398509481984Ki'\n"},
+             {EXIT => '1'}],
+     ['unit-12', '--from-unit='.$limits->{UINTMAX_MAX}.'K 1',
+             {ERR => "$prog: invalid unit size: '$limits->{UINTMAX_MAX}K'\n"},
+             {EXIT => '1'}],
 
      # Test Suffix logic
      ['suf-1', '4000',    {OUT=>'4000'}],
@@ -507,6 +516,11 @@ my @Tests =
              {IN_PIPE=>"hello\nworld\n"},
              {OUT=>"hello\nworld"}],
 
+     # --header takes an argument only via '=': a following operand
+     # must not be swallowed as the option's value.
+     ['header-10', '--header 7 8',
+             {OUT=>"7\n8"}],
+
 
      ## human_strtod testing
 
@@ -686,6 +700,10 @@ my @Tests =
      ['precision-4','--format=%.1f 1.12', {OUT=>"1.2"}],
      ['precision-5','--format=%.1f 9991239123 --to-unit=G', {OUT=>"10.0"}],
      ['precision-6','--format="% .1f" 9991239123 --to-unit=G', {OUT=>"10.0"}],
+     # Solaris 11 libc can incorrectly use exponential notation for a
+     # long double value at this precision.
+     ['precision-large', '--to=si --format=%.5119f 1',
+             {OUT=>'1.' . ('0' x 5119)}],
      ['precision-7','--format=%.-1f 1.1',
              {ERR => "$prog: invalid precision in format '%.-1f'\n"},
              {EXIT => 1}],

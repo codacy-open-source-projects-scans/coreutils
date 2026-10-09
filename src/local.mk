@@ -50,6 +50,7 @@ noinst_HEADERS =		\
   src/find-mount-point.h	\
   src/fs.h			\
   src/fs-is-local.h		\
+  src/fts-missing.h		\
   src/group-list.h		\
   src/ioblksize.h		\
   src/iopoll.h			\
@@ -57,6 +58,7 @@ noinst_HEADERS =		\
   src/ls.h			\
   src/octhexdigits.h		\
   src/operand2sig.h		\
+  src/printenv.h		\
   src/prog-fprintf.h		\
   src/remove.h			\
   src/set-fields.h		\
@@ -66,6 +68,8 @@ noinst_HEADERS =		\
   src/system.h			\
   src/temp-stream.h		\
   src/term-sig.h		\
+  src/test.h			\
+  src/true.h			\
   src/uname.h			\
   src/wc.h
 
@@ -140,7 +144,7 @@ src_env_LDADD = $(LDADD)
 src_expand_LDADD = $(LDADD)
 src_expr_LDADD = $(LDADD)
 src_factor_LDADD = $(LDADD)
-src_false_LDADD = $(LDADD)
+# See src_false_LDADD below
 src_fmt_LDADD = $(LDADD)
 src_fold_LDADD = $(LDADD)
 src_getlimits_LDADD = $(LDADD)
@@ -223,6 +227,7 @@ src_yes_LDADD = $(LDADD)
 
 # Synonyms.  Recall that Automake transliterates '[' and '/' to '_'.
 src___LDADD = $(src_test_LDADD)
+src_false_LDADD = $(src_true_LDADD)
 src_dir_LDADD = $(src_ls_LDADD)
 src_vdir_LDADD = $(src_ls_LDADD)
 src_chgrp_LDADD = $(src_chown_LDADD)
@@ -339,6 +344,7 @@ src_pinky_LDADD += $(READUTMP_LIB)
 src_uptime_LDADD += $(READUTMP_LIB)
 src_users_LDADD += $(READUTMP_LIB)
 src_who_LDADD += $(READUTMP_LIB)
+src_logname_LDADD += $(READUTMP_LIB)
 
 # for strsignal
 src_kill_LDADD += $(LIBTHREAD)
@@ -381,7 +387,8 @@ src_ginstall_SOURCES = src/install.c src/prog-fprintf.c $(copy_sources) \
 		       $(selinux_sources)
 
 # This is for the '[' program.  Automake transliterates '[' and '/' to '_'.
-src___SOURCES = src/lbracket.c
+src___SOURCES = src/test.c src/test-lbracket.c
+src_test_SOURCES = src/test.c src/test-test.c
 
 nodist_src_coreutils_SOURCES = src/coreutils.h
 src_coreutils_SOURCES = src/coreutils.c
@@ -393,7 +400,6 @@ src_cp_SOURCES = src/cp.c $(copy_sources) $(selinux_sources)
 src_date_SOURCES = src/date.c src/show-date.c
 src_dir_SOURCES = src/ls.c src/ls-dir.c
 src_du_SOURCES = src/du.c src/show-date.c
-src_env_SOURCES = src/env.c src/operand2sig.c
 src_vdir_SOURCES = src/ls.c src/ls-vdir.c
 src_id_SOURCES = src/id.c src/group-list.c
 src_groups_SOURCES = src/groups.c src/group-list.c
@@ -416,8 +422,14 @@ src_rmdir_SOURCES = src/rmdir.c src/prog-fprintf.c
 src_mkfifo_SOURCES = src/mkfifo.c $(selinux_sources)
 src_mknod_SOURCES = src/mknod.c $(selinux_sources)
 
+src_env_SOURCES = src/env.c src/operand2sig.c src/printenv.h
+src_printenv_SOURCES = src/printenv.c src/printenv.h
+
 src_df_SOURCES = src/df.c src/find-mount-point.c
 src_stat_SOURCES = src/stat.c src/find-mount-point.c
+
+src_true_SOURCES = src/true.c src/true-true.c
+src_false_SOURCES = src/true.c src/true-false.c
 
 src_uname_SOURCES = src/uname.c src/uname-uname.c
 src_arch_SOURCES = src/uname.c src/uname-arch.c
@@ -768,7 +780,7 @@ src/speedlist.h: src/termios.c lib/config.h src/speedgen
 #   SINGLE_BINARY_PROGRAM(program_name_str, main_name)
 # once for each program list on $(single_binary_progs). Note that
 # for [ the macro invocation is:
-#   SINGLE_BINARY_PROGRAM("[", _)
+#   SINGLE_BINARY_PROGRAM("[", lbracket)
 DISTCLEANFILES += src/coreutils.h
 src/coreutils.h: Makefile
 	$(AM_V_GEN)rm -f $@
@@ -776,7 +788,11 @@ src/coreutils.h: Makefile
 	$(AM_V_at)for prog in x $(single_binary_progs); do	\
 	  test $$prog = x && continue;				\
 	  prog=`basename $$prog`;				\
-	  main=`echo $$prog | tr '[' '_'`;			\
+	  main=`if test $$prog = '['; then			\
+		  echo lbracket;				\
+		else						\
+		  echo $$prog;					\
+		fi`;						\
 	  echo "SINGLE_BINARY_PROGRAM(\"$$prog\", $$main)";	\
 	done | sort > $@t
 	$(AM_V_at)chmod a-w $@t

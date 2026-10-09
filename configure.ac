@@ -35,7 +35,8 @@ AC_CONFIG_SRCDIR([src/ls.c])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_HEADERS([lib/config.h:lib/config.hin])
 
-AM_INIT_AUTOMAKE([1.11.2 dist-xz color-tests parallel-tests subdir-objects])
+AM_INIT_AUTOMAKE([1.16.2 no-dist-gzip dist-xz dist-zstd color-tests
+                  parallel-tests subdir-objects])
 AM_SILENT_RULES([yes]) # make --enable-silent-rules the default.
 
 dnl POSIXCHECK is worthwhile for maintainers, but adds several seconds
@@ -62,6 +63,10 @@ gl_EARLY
 gl_SET_CRYPTO_CHECK_DEFAULT([auto-gpl-compat])
 gl_INIT
 coreutils_MACROS
+
+# Translate Gnulib msgids ourselves, instead of using the gnulib-l10n module.
+AC_DEFINE([GNULIB_TEXT_DOMAIN], [PACKAGE],
+  [The text domainname for Gnulib messages.])
 
 # These are safe, since 'sort', coreutils's only multithreaded app,
 # does not use the relevant modules, or calls their code from one thread.
@@ -105,7 +110,7 @@ AC_DEFUN([gl_GCC_VERSION_IFELSE],
 )
 
 AC_ARG_ENABLE([single-binary],
-  [AS_HELP_STRING([--enable-single-binary=[shebangs|symlinks|hardlinks]],
+  [AS_HELP_STRING([--enable-single-binary@<:@=shebangs|symlinks|hardlinks@:>@],
      [Compile all the tools in a single binary, reducing the overall size.
       When compiled this way, shebangs (default when enabled), symlinks, or
       hardlinks are installed for each tool, which point to a single binary])],
@@ -230,6 +235,12 @@ if test $gl_gcc_warnings != no; then
   if test "$gl_single_binary" != no; then
     nw="$nw -Wsuggest-attribute=noreturn"
   fi
+
+  # Suppress warnings to add pure or const attributes,
+  # as these are currently inaccurate and dangerous.
+  # See https://gcc.gnu.org/PR115237
+  nw="$nw -Wsuggest-attribute=pure"
+  nw="$nw -Wsuggest-attribute=const"
 
   # Using -Wstrict-overflow is a pain, but the alternative is worse.
   # For an example, see the code that provoked this report:

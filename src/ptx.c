@@ -176,6 +176,9 @@ static BLOCK *text_buffers;	/* files to study */
   while (cursor > start && isspace (to_uchar (cursor[-1])))		\
     cursor--
 
+/* Always advance by at least one byte, lest a nullable word regexp
+   such as 'a*' match the empty string and loop forever.  */
+
 #define SKIP_SOMETHING(cursor, limit) \
   if (word_regex.string)						\
     {									\
@@ -184,7 +187,7 @@ static BLOCK *text_buffers;	/* files to study */
                         0, NULL);					\
       if (count == -2)							\
         matcher_error ();						\
-      cursor += count == -1 ? 1 : count;				\
+      cursor += count <= 0 ? 1 : count;					\
     }									\
   else if (word_fastmap[to_uchar (*cursor)])				\
     while (cursor < limit && word_fastmap[to_uchar (*cursor)])		\
@@ -280,7 +283,7 @@ static BLOCK reference;		/* reference field for input reference mode */
 
 /* Diagnose an error in the regular expression matcher.  Then exit.  */
 
-static void
+static _Noreturn void
 matcher_error (void)
 {
   error (EXIT_FAILURE, errno, _("error in regular expression matcher"));
@@ -1145,8 +1148,6 @@ fix_output_parameters (void)
          right side, or one on either side.  */
 
       before_max_width -= 2 * truncation_string_length;
-      if (before_max_width < 0)
-        before_max_width = 0;
       keyafter_max_width -= 2 * truncation_string_length;
     }
   else
@@ -1160,6 +1161,9 @@ fix_output_parameters (void)
 
       keyafter_max_width -= 2 * truncation_string_length + 1;
     }
+
+  if (before_max_width < 0)
+    before_max_width = 0;
 
   /* Compute which characters need special output processing.  Initialize
      by flagging any white space character.  Some systems do not consider

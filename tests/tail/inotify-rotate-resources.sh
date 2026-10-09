@@ -19,11 +19,7 @@
 . "${srcdir=.}/tests/init.sh"; path_prepend_ ./src
 print_ver_ tail
 
-# Inotify not used on remote file systems
-require_local_dir_
-
-grep '^#define HAVE_INOTIFY 1' "$CONFIG_HEADER" >/dev/null \
-  || skip_ 'inotify required'
+require_inotify_supported_
 
 require_strace_ 'inotify_add_watch,inotify_rm_watch'
 

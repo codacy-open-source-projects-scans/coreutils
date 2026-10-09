@@ -79,6 +79,7 @@ TESTS_ENVIRONMENT =				\
   MAKE=$(MAKE)					\
   PACKAGE_VERSION=$(PACKAGE_VERSION)		\
   PERL='$(PERL)'				\
+  PERL_UNICODE=0				\
   SHELL='$(PREFERABLY_POSIX_SHELL)'		\
   ; test -d /usr/xpg4/bin && PATH='/usr/xpg4/bin$(PATH_SEPARATOR)'"$$PATH"; \
   PATH='$(abs_top_builddir)/src$(PATH_SEPARATOR)'"$$PATH" \
@@ -121,6 +122,7 @@ all_root_tests =				\
   tests/du/bind-mount-dir-cycle.sh		\
   tests/du/bind-mount-dir-cycle-v2.sh		\
   tests/id/setgid.sh				\
+  tests/install/install-C-immutable.sh		\
   tests/install/install-C-root.sh		\
   tests/ls/capability.sh			\
   tests/ls/no-cap.sh				\
@@ -184,6 +186,11 @@ all_tests =					\
   tests/misc/io-errors.sh			\
   tests/misc/read-errors.sh			\
   tests/misc/responsive.sh			\
+  tests/misc/no-fork.sh				\
+  tests/misc/exec-bad-unicode.sh		\
+  tests/misc/traversal-missing.sh		\
+  tests/misc/tty-quoting.sh			\
+  tests/misc/uname-labeled.sh			\
   tests/misc/warning-errors.sh			\
   tests/misc/write-errors.sh			\
   tests/tail/basic-seek.sh			\
@@ -193,10 +200,12 @@ all_tests =					\
   tests/tail/F-vs-rename.sh			\
   tests/tail/F-headers.sh			\
   tests/tail/descriptor-vs-rename.sh		\
+  tests/tail/follow-symlink.sh			\
   tests/tail/inotify-rotate.sh			\
   tests/tail/inotify-rotate-resources.sh	\
   tests/tail/inotify-dir-recreate.sh		\
   tests/tail/inotify-only-regular.sh		\
+  tests/tail/quote-headers.sh			\
   tests/chmod/no-x.sh				\
   tests/chgrp/basic.sh				\
   tests/rm/dangling-symlink.sh			\
@@ -256,6 +265,7 @@ all_tests =					\
   tests/fmt/non-space.sh			\
   tests/fmt/width.sh				\
   tests/misc/echo.sh				\
+  tests/misc/empty-backup-suffix.sh		\
   tests/env/env.sh				\
   tests/env/env-signal-handler.sh		\
   tests/ptx/ptx.pl				\
@@ -275,6 +285,7 @@ all_tests =					\
   tests/date/date.pl				\
   tests/date/date-next-dow.pl			\
   tests/ptx/ptx-overrun.sh			\
+  tests/ptx/word-regex-loop.sh			\
   tests/misc/xstrtol.pl				\
   tests/tail/overlay-headers.sh			\
   tests/tail/pid.sh				\
@@ -289,15 +300,19 @@ all_tests =					\
   tests/mktemp/write-error.sh			\
   tests/misc/arch.sh				\
   tests/pr/bounded-memory.sh			\
+  tests/pr/options.sh				\
   tests/pr/pr-tests.pl				\
   tests/pwd/argument.sh				\
   tests/pwd/pwd-option.sh			\
   tests/chcon/chcon-fail.sh			\
+  tests/chcon/traversal-missing.sh		\
   tests/misc/coreutils.sh			\
   tests/cut/cut.pl				\
   tests/cut/mb-non-utf8.sh			\
   tests/cut/bounded-memory.sh			\
   tests/cut/cut-huge-range.sh			\
+  tests/wc/mb-non-utf8.sh			\
+  tests/wc/page-size.sh				\
   tests/wc/wc.pl				\
   tests/wc/wc-cpu.sh				\
   tests/wc/wc-files0-from.pl			\
@@ -305,7 +320,9 @@ all_tests =					\
   tests/wc/wc-nbsp.sh				\
   tests/wc/wc-parallel.sh			\
   tests/wc/wc-proc.sh				\
+  tests/wc/wc-sjis.sh				\
   tests/wc/wc-total.sh				\
+  tests/cat/cat-distinct-err.sh			\
   tests/cat/cat-E.sh				\
   tests/cat/cat-proc.sh				\
   tests/cat/cat-buf.sh				\
@@ -316,6 +333,7 @@ all_tests =					\
   tests/basenc/basenc.pl			\
   tests/basenc/bounded-memory.sh		\
   tests/basenc/large-input.sh			\
+  tests/misc/close-stdin.sh			\
   tests/misc/close-stdout.sh			\
   tests/chroot/chroot-fail.sh			\
   tests/cksum/cksum.sh				\
@@ -343,9 +361,11 @@ all_tests =					\
   tests/date/date-tz.sh				\
   tests/misc/dircolors.pl			\
   tests/misc/dirname.pl				\
+  tests/env/env0-from.sh			\
   tests/env/env-null.sh				\
   tests/env/env-S.pl				\
   tests/env/env-S-script.sh			\
+  tests/env/printenv.sh				\
   tests/expand/expand.pl			\
   tests/expand/bounded-memory.sh		\
   tests/expand/mb.sh				\
@@ -364,8 +384,10 @@ all_tests =					\
   tests/groups/groups-process-all.sh		\
   tests/groups/groups-version.sh		\
   tests/head/head-c.sh				\
+  tests/head/head-n0.sh				\
   tests/head/head-pos.sh			\
   tests/head/head-write-error.sh		\
+  tests/head/quote-headers.sh			\
   tests/misc/kill.sh				\
   tests/cksum/b2sum.sh				\
   tests/cksum/md5sum.pl				\
@@ -374,6 +396,7 @@ all_tests =					\
   tests/cksum/md5sum-parallel.sh		\
   tests/join/join.pl				\
   tests/join/join-utf8.sh			\
+  tests/misc/just-created.sh			\
   tests/misc/mknod.sh				\
   tests/nice/nice.sh				\
   tests/nice/nice-fail.sh			\
@@ -392,7 +415,6 @@ all_tests =					\
   tests/od/od-multiple-t.sh			\
   tests/od/od-x8.sh				\
   tests/misc/pathchk.sh				\
-  tests/misc/printenv.sh			\
   tests/paste/paste.pl				\
   tests/paste/multi-byte.sh			\
   tests/printf/printf.sh			\
@@ -416,6 +438,7 @@ all_tests =					\
   tests/cksum/sha384sum.pl			\
   tests/cksum/sha512sum.pl			\
   tests/cksum/cksum-sha3.sh			\
+  tests/shred/fifo.sh				\
   tests/shred/shred-exact.sh			\
   tests/shred/shred-passes.sh			\
   tests/shred/shred-remove.sh			\
@@ -426,6 +449,7 @@ all_tests =					\
   tests/cksum/sm3sum.pl				\
   tests/sort/sort.pl				\
   tests/sort/sort-benchmark-random.sh		\
+  tests/sort/sort-buffer-size.sh		\
   tests/sort/sort-compress.sh			\
   tests/sort/sort-compress-hang.sh		\
   tests/sort/sort-compress-proc.sh		\
@@ -486,7 +510,9 @@ all_tests =					\
   tests/tac/tac-2-nonseekable.sh		\
   tests/tail/tail.pl				\
   tests/tee/append.sh				\
+  tests/tee/short-write.sh			\
   tests/tee/tee.sh				\
+  tests/tee/write-eagain.sh			\
   tests/test/test-N.sh				\
   tests/test/test-diag.pl			\
   tests/test/test-file.sh			\
@@ -519,7 +545,7 @@ all_tests =					\
   tests/uniq/uniq.pl				\
   tests/uniq/uniq-perf.sh			\
   tests/uniq/uniq-collate.sh			\
-  tests/misc/xattr.sh				\
+  tests/uniq/uniq-c-width.sh			\
   tests/misc/yes.sh				\
   tests/tail/wait.sh				\
   tests/tail/retry.sh				\
@@ -600,6 +626,7 @@ all_tests =					\
   tests/cp/src-base-dot.sh			\
   tests/cp/symlink-slash.sh			\
   tests/cp/thru-dangling.sh			\
+  tests/cp/xattr.sh				\
   tests/df/header.sh				\
   tests/df/df-P.sh				\
   tests/df/df-output.sh				\
@@ -638,6 +665,7 @@ all_tests =					\
   tests/du/apparent.sh				\
   tests/du/basic.sh				\
   tests/du/bigtime.sh				\
+  tests/du/block-size.sh			\
   tests/du/deref.sh				\
   tests/du/deref-args.sh			\
   tests/du/exclude.sh				\
@@ -673,6 +701,7 @@ all_tests =					\
   tests/install/install-C.sh			\
   tests/install/install-C-selinux.sh		\
   tests/install/install-Z-selinux.sh		\
+  tests/install/stdin.sh			\
   tests/install/strip-program.sh		\
   tests/install/trap.sh				\
   tests/ln/backup-1.sh				\
@@ -696,6 +725,7 @@ all_tests =					\
   tests/ls/color-norm.sh			\
   tests/ls/color-term.sh			\
   tests/ls/color-ext.sh				\
+  tests/ls/color-symlink-target.sh		\
   tests/ls/dangle.sh				\
   tests/ls/dired.sh				\
   tests/ls/file-type.sh				\
@@ -781,6 +811,7 @@ all_tests =					\
   tests/mv/no-target-dir.sh			\
   tests/mv/part-fail.sh				\
   tests/mv/part-hardlink.sh			\
+  tests/mv/part-hardlink-symlink.sh		\
   tests/mv/part-rename.sh			\
   tests/mv/part-symlink.sh			\
   tests/mv/partition-perm.sh			\

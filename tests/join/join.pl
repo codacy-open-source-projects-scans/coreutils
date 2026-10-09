@@ -56,6 +56,7 @@ my @tv = (
  "a x y\nb . .\nc . .\n", 0],
 ['2c', '-a1 -e . -o 2.1,2.2,2.3',  ["a\nb\nc\nd\n", "a x y\nb\nc\n"],
  "a x y\nb . .\nc . .\n. . .\n", 0],
+['2d', '-e "c"',     ["\n\na", "\n\nb"], "c\nc\nc\nc\n", 0],
 
 ['3a', '-t:', ["a:1\nb:1\n", "a:2:\nb:2:\n"], "a:1:2:\nb:1:2:\n", 0],
 
@@ -154,6 +155,17 @@ my @tv = (
 ['10f', '-t, -o auto',
  ["a,1,,2\nb,1,2\n", "a,3,4\nb,3,4\n"],
  "a,1,,2,3,4\nb,1,2,,3,4\n"],
+
+# A repeated -o accumulates the field specs of every occurrence, in order.
+# 'auto' only takes effect if all -o arguments are 'auto'.
+['multi-o-1', '-o 2.3 -o 1.2 -o 0',
+ ["k p q\n", "k y z\n"], "z p k\n", 0],
+['multi-o-2', '-t: -a1 -e X -o 1.2 -o 2.2,2.3',
+ ["k:p\nm:r\n", "k:y:z\n"], "p:y:z\nr:X:X\n", 0],
+['multi-o-auto', '-o auto -o auto',
+ ["k p q\n", "k y z\n"], "k p q y z\n", 0],
+['multi-o-auto-mixed', '-o auto -o 1.3',
+ ["k p q\n", "k y z\n"], "q\n", 0],
 
 # For -v2, print the match field correctly with the default output format,
 # when that match field is different between file 1 and file 2.  Fixed in 8.10
@@ -310,7 +322,28 @@ my @tv = (
 ['z6', '-z -t ""',
  ["a\n1\n\0", "a\n1\n\0"], "a\n1\n\0"],
 
+# Test multiple -e options.
+['ee1', '-a1 -e "d" -e "d" -o 1.1,1.2,2.2',
+ ["1 a\n2 b\n", "1 c\n"], "1 a c\n2 b d\n"],
+['ee2', '-a1 -e "d" -e "e" -o 1.1,1.2,2.2',
+ ["1 a\n2 b\n", "1 c\n"], "", 1,
+ "$prog: conflicting empty-field replacement strings\n"],
 );
+
+# Test that the format specified by -o works when separated by commas,
+# quoted whitespace, or unquoted whitespace.
+my @fields = qw(1.1 1.2 1.3 2.1 2.2 2.3);
+push @tv,
+  map {my ($name, $sep, $quote) = @$_;
+       ['o-sep-' . do { my $s = $name; $s =~ tr/_/-/; $s },
+        '-o ' . ($quote ? "'@{[join $sep, @fields]}'" : join $sep, @fields),
+        ["1 a x\n2 b y\n3 c z\n", "1 d u\n2 e v\n3 f w\n"],
+        "1 a x 1 d u\n2 b y 2 e v\n3 c z 3 f w\n"]}
+  [commas => ',', 0],
+  [quoted_spaces => ' ', 1],
+  [unquoted_spaces => ' ', 0],
+  [quoted_tabs => "\t", 1],
+  [unquoted_tabs => "\t", 0];
 
 # Convert the above old-style test vectors to the newer
 # format used by Coreutils.pm.
@@ -340,6 +373,11 @@ foreach my $t (@tv)
       and push @$new_ent, {EXIT=>$ret}, {ERR=>$err_msg};
     push @Tests, $new_ent;
   }
+
+# Test that we don't confuse the file name for part of the format given by -o.
+push @Tests,
+  ['o-sep-space-enoent', '-o 1.1 1.2 2.2 f1', {EXIT=>1},
+   {ERR=>"$prog: 2.2: $limits->{ENOENT}\n"}];
 
 if ($mb_locale ne 'C')
   {

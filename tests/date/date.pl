@@ -173,9 +173,9 @@ my @Tests =
 
      # test for RFC-822 conformance
      ['rfc822-1', "-R -d '$d1'", {OUT=>"Sun, 19 Jan 1997 08:17:48 +0000"},
-      # Solaris 5.9's /bin/sh emits this diagnostic to stderr
-      # if you don't have support for the named locale.
-      {ERR_SUBST => q!s/^couldn't set locale correctly\n//!},
+      # Solaris 5.9's /bin/sh can emit "couldn't set locale"
+      # NetBSD 12 sh can emit "setlocale failed"
+      {ERR_SUBST => q!s/.*(?:couldn't set locale|failed setlocale).*\n//!},
       {ENV => 'LC_ALL=de_DE TZ=UTC0'}],
 
      # Relative seconds, with time.  fixed in 2.0j
@@ -236,6 +236,13 @@ my @Tests =
      ['tz-4', '+%:::z', {OUT=>"+12"}, {ENV=>'TZ=XXX-12'}],
 
      ['tz-5', '+%:z', {OUT=>"-00:01"}, {ENV=>'TZ=XXX0:01'}],
+
+     # Test time zone format strings with space padding.
+     ['tz-underscore-1', '+%_z', {OUT=>'   +0'}],
+     ['tz-underscore-2', '+%_:z', {OUT=>' +0:00'}],
+     ['tz-underscore-3', '+%_::z', {OUT=>' +0:00:00'}],
+     ['tz-underscore-4', '+%_:::z', {OUT=>' +0'}],
+     ['tz-underscore-5', '+%_::::z', {OUT=>'%_::::z'}],
 
      # Accept %:z with a field width before the ':'.
      ['tz-5w','+%8:z', {OUT=>"-0000:01"}, {ENV=>'TZ=XXX0:01'}],
@@ -305,6 +312,25 @@ my @Tests =
      ['zero-override-space-1', '-d 1999-06-05 +%0e', {OUT=>'05'}],
      ['zero-override-space-2', '-d "1999-06-01 05:00:00" +%0k', {OUT=>'05'}],
      ['zero-override-space-3', '-d "1999-06-01 05:00:00" +%0l', {OUT=>'05'}],
+
+     # Composite specifiers are atomic: the '-' (no padding) flag is
+     # ignored, as there is no whole-expansion padding to suppress and
+     # it does not reach the sub-fields they expand to.
+     ['composite-dash-D', "-d '2004-06-15 07:08:09' +%-D", {OUT=>'06/15/04'}],
+     ['composite-dash-F', "-d '2004-06-15 07:08:09' +%-F", {OUT=>'2004-06-15'}],
+     ['composite-dash-T', "-d '2004-06-15 07:08:09' +%-T", {OUT=>'07:08:09'}],
+     ['composite-dash-R', "-d '2004-06-15 07:08:09' +%-R", {OUT=>'07:08'}],
+     ['composite-dash-r', "-d '2004-06-15 07:08:09' +%-r",
+      {OUT=>'07:08:09 AM'}],
+     ['composite-dash-x', "-d '2004-06-15 07:08:09' +%-x", {OUT=>'06/15/04'}],
+     ['composite-dash-X', "-d '2004-06-15 07:08:09' +%-X", {OUT=>'07:08:09'}],
+     # Other flags and the width still apply to the whole expansion.
+     ['composite-underscore-D', "-d '2004-06-15' +%_D", {OUT=>'06/15/04'}],
+     ['composite-zero-D', "-d '2004-06-15' +%0D", {OUT=>'06/15/04'}],
+     ['composite-width-D', "-d '2004-06-15' +%10D", {OUT=>'  06/15/04'}],
+     # For comparison, '-' does suppress padding for simple specifiers.
+     ['dash-simple-m', "-d '2004-06-15' +%-m", {OUT=>'6'}],
+     ['dash-simple-d', "-d '2004-06-05' +%-d", {OUT=>'5'}],
 
      # Test plus flag without width (should not add sign for 4-digit year)
      ['plus-no-width-1', '-d 1999-06-01 +%+Y', {OUT=>'1999'}],
@@ -379,6 +405,72 @@ my @Tests =
      # "10:30 UTC-05" should convert to "15:30 UTC", not "10:30 UTC"
      ['tz-conversion-est', "-u -d '10:30 UTC-05' +'%H:%M'", {OUT=>"15:30"}],
 
+     # Test multiple --iso-8601 options.
+     ['multiple-iso1', "--iso-8601 --iso-8601 -d '2026-05-11'",
+      {OUT=>"2026-05-11"}],
+     ['multiple-iso2', "--iso-8601=hours --iso-8601=minutes -d '2026-05-11'",
+      {OUT=>"2026-05-11T00:00+00:00"}],
+     ['multiple-iso3', "--iso-8601=minutes --iso-8601=hours -d '2026-05-11'",
+      {OUT=>"2026-05-11T00+00:00"}],
+
+     # Test that using both a format string and format option fails.
+     ['multiple-fmt1', "--iso-8601 -d '2026-05-15' +'%Y'",
+      {ERR => "date: multiple output formats specified\n"},
+      {EXIT => 1},
+     ],
+     ['multiple-fmt2', "--rfc-email -d '2026-05-15' +'%Y'",
+      {ERR => "date: multiple output formats specified\n"},
+      {EXIT => 1},
+     ],
+     ['multiple-fmt3', "--rfc-3339=date -d '2026-05-15' +'%Y'",
+      {ERR => "date: multiple output formats specified\n"},
+      {EXIT => 1},
+     ],
+
+     # A leading day-of-week name must not shift an explicit calendar date.
+     ['dow-prefix', "-d 'Mon, 2024-06-15 12:00:00' '+%Y-%m-%dT%T'",
+      {OUT=>"2024-06-15T12:00:00"}],
+
+     # Out-of-range zone minutes carry into the hours (99' == 1h39').
+     ['zone-min-99', "-d '2024-06-15 12:00 +05:99' '+%Y-%m-%dT%T%z'",
+      {OUT=>"2024-06-15T05:21:00+0000"}],
+
+     # Two timezone tokens in one operand is an error.
+     ['double-zone', "-d '2024-06-15 12:00 EST PST' '+%T'",
+      {ERR=>"date: invalid date '2024-06-15 12:00 EST PST'\n"},
+      {EXIT=>1}],
+
+     # A bare sign is the empty relative offset: midnight today.
+     ['bare-plus', "-d '+' '+%H:%M:%S'", {OUT=>"00:00:00"}],
+     ['bare-minus', "-d '-' +%H:%M:%S", {OUT=>"00:00:00"}],
+
+     # A trailing token after an \@epoch operand is an error.
+     ['epoch-trailing', "-d '\@5 UTC' '+%T'",
+      {ERR=>"date: invalid date '\@5 UTC'\n"},
+      {EXIT=>1}],
+
+     # The diagnostic reproduces the operand verbatim, surrounding blanks
+     # included.
+     ['quote-blanks', "-d '  noon  '",
+      {ERR=>"date: invalid date '  noon  '\n"},
+      {EXIT=>1}],
+
+     # Non-ASCII bytes in a rejected operand are octal-escaped (U+2212 here).
+     ['quote-nonascii', "-d '\xe2\x88\x921 day'",
+      {ERR=>"date: invalid date '\\342\\210\\2221 day'\n"},
+      {EXIT=>1}],
+
+     # '+N unit' after a complete HH:MM:SS time is not a relative addition.
+     # One needs to use "HH:MM:SS today" so that the relative portion
+     # is not interpreted as a timezone.
+     ['plus-unit-noadd', "-d '2024-06-15 12:00:00 +1 hour' '+%Y-%m-%dT%T%z'",
+      {OUT=>"2024-06-15T12:00:00+0000"}],
+
+     # Test -d with multiple time zone abbreviations.
+     ['multiple-tz-abbrev1',  "-d 'PDT PDT'",
+      {ERR=>"date: invalid date 'PDT PDT'\n"}, {EXIT=>1}],
+     ['multiple-tz-abbrev2',  "-d '2026-06-14 PDT PDT'",
+      {ERR=>"date: invalid date '2026-06-14 PDT PDT'\n"}, {EXIT=>1}],
     );
 
 $limits->{TIME_T_MAX} == $limits->{INTMAX_MAX}
@@ -392,6 +484,26 @@ push @Tests,
    {ERR => "date: invalid date '$large_year_out_of_range-01-01'\n"},
    {EXIT => 1},
   ];
+
+# Test that the weekday is ignored when explicit dates are given.
+# However, a invalid weekday will still result in an error.
+my @weekdays = ('Mond', 'Tuesd', 'Wedn', 'Thursd', 'Frid', 'Satu', 'Sund');
+my (@bad, @good);
+for my $i (1..$#weekdays + 1)
+  {
+    my $weekday = $weekdays[$i - 1];
+    my $iso_date = "2026-07-" . ($weekday eq 'Wedn' ? '21' : '22');
+    my $date = "$weekday, $iso_date";
+    push @bad,
+      ["bad-weekday-explict-date$i", "-u -d '$date' +'%Y-%m-%d'",
+       {ERR=>"date: invalid date '$date'\n"}, {EXIT=>1}];
+    chop $weekday;
+    my $date = "$weekday, $iso_date";
+    push @good,
+      ["good-weekday-explict-date$i", "-u -d '$date' +'%Y-%m-%d'",
+       {OUT=>"$iso_date"}];
+  }
+push @Tests, @bad, @good;
 
 # Repeat the cross-dst test, using Jan 1, 2005 and every interval from 1..364.
 foreach my $i (1..364)

@@ -461,7 +461,7 @@ write_header (char const *prettyname)
 {
   static bool first_file = true;
 
-  printf ("%s==> %s <==\n", first_file ? "" : "\n", prettyname);
+  printf ("%s==> %s <==\n", first_file ? "" : "\n", quotef (prettyname));
   first_file = false;
 }
 
@@ -1176,6 +1176,10 @@ tail_forever (struct File_spec *f, int n_files, double sleep_interval)
   int last = n_files - 1;
 
   static bool debugged;
+
+  /* Flush initial output, in case reading blocks below.  */
+  if (fflush (stdout) < 0)
+    write_error ();
 
   while (true)
     {

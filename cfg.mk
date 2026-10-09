@@ -51,7 +51,16 @@ export VERBOSE = yes
 # 4914152 9e
 export XZ_OPT = -8e
 
-old_NEWS_hash = 6be180da274a8719bdb5bf771502ef5b
+# -T0 uses all CPUs,
+# -18 output is only 2% larger but compresses twice as fast as -19
+# Tested with:
+#   for t in '' '-T0'; do for l in $(seq 15 19); do
+#     echo == $t -$l ==; env time -f 'elapsed=%E CPU=%Us Mem=%MKB' \
+#      zstd -c $t -$l < coreutils-9.12.tar | wc -c
+#   done; done
+export ZSTD_OPT = -T0 -18
+
+old_NEWS_hash = 078ebe66312fe06ceac192cd5a8423ec
 
 # Add an exemption for sc_makefile_at_at_check.
 _makefile_at_at_check_exceptions = \
@@ -667,6 +676,7 @@ sc_prohibit_test_backticks:
 
 # Ensure that compare is used to check empty files
 # so that the unexpected contents are displayed
+# Use `returns_ 1 test -s ... || fail=1` to avoid this check.
 sc_prohibit_test_empty:
 	@prohibit='test -s.*&&' in_vc_files='^tests/'			\
 	halt='use `compare /dev/null ...`, not `test -s ...` in tests/'	\
@@ -794,6 +804,12 @@ sc_space_before_open_paren:
 sc_prohibit_strncmp:
 	@prohibit='^[^#].*str''ncmp *\('				\
 	halt='use STREQ_LEN or STRPREFIX instead of str''ncmp'		\
+	  $(_sc_search_regexp)
+
+# Prefer memeq() to memcmp() where appropriate
+sc_prohibit_memcmp:
+	@prohibit='^[^#].*memcmp *\(.*= 0'				\
+	halt='use memeq() instead of memcmp() =='			\
 	  $(_sc_search_regexp)
 
 # Enforce recommended preprocessor indentation style.
@@ -928,8 +944,9 @@ _x_system_c := (libstdbuf|make-prime-list)\.c
 exclude_file_name_regexp--sc_system_h_headers = \
   ^src/($(_x_system_h)|$(_x_system_c))$$
 
-_src := (false|lbracket|chown-(chgrp|chown)
-_src := $(_src)|ls-(dir|ls|vdir)|make-prime-list|tac-pipe|uname-(arch|uname))
+_src := (false|chown-(chgrp|chown)
+_src := $(_src)|ls-(dir|ls|vdir)|make-prime-list|tac-pipe|test-(lbracket|test)
+_src := $(_src)|true-(false|true)|uname-(arch|uname))
 _gl_src = (xdecto.max|cl-strtold)
 exclude_file_name_regexp--sc_require_config_h_first = \
   (^lib/buffer-lcm\.c|gl/lib/$(_gl_src)\.c|src/$(_src)\.c)$$
@@ -948,7 +965,7 @@ exclude_file_name_regexp--sc_prohibit_always_true_header_tests = \
   ^m4/stat-prog\.m4$$
 exclude_file_name_regexp--sc_prohibit_fail_0 = \
   (^.*/git-hooks/commit-msg|^tests/init\.sh|Makefile\.am|\.mk|.*\.texi)$$
-exclude_file_name_regexp--sc_prohibit_test_minus_ao = doc/.*\.texi$$
+exclude_file_name_regexp--sc_prohibit_test_minus_ao = NEWS|doc/.*\.texi$$
 exclude_file_name_regexp--sc_prohibit_atoi_atof = ^lib/euidaccess-stat\.c$$
 
 # longlong.h is maintained elsewhere.
@@ -963,7 +980,7 @@ exclude_file_name_regexp--sc_prohibit_tab_based_indentation = \
   $(tbi_1)|$(tbi_2)|$(tbi_3)
 
 exclude_file_name_regexp--sc_preprocessor_indentation = \
-  ^(gl/lib/(rand-isaac|mbbuf)\.[ch]|gl/tests/test-rand-isaac\.c)$$|$(_ll)
+  ^(gl/lib/(rand-isaac|mbbuf|utf8)\.[ch]|gl/tests/test-rand-isaac\.c)$$|$(_ll)
 exclude_file_name_regexp--sc_prohibit_stat_st_blocks = \
   ^(src/system\.h|tests/du/2g\.sh)$$
 
@@ -971,7 +988,7 @@ exclude_file_name_regexp--sc_prohibit_continued_string_alpha_in_column_1 = \
   ^src/(system\.h|od\.c|printf\.c|getlimits\.c)$$
 
 _cksum = ^tests/cksum/cksum-base64\.pl$$
-_tb_misc = misc/(stdbuf|responsive)
+_tb_misc = misc/(exec-bad-unicode|stdbuf|responsive)
 exclude_file_name_regexp--sc_prohibit_test_backticks = \
   ^tests/(local\.mk|(init|$(_tb_misc)|factor/create-test)\.sh)$$|$(_cksum)
 
@@ -1025,4 +1042,4 @@ csiwl_2 = kno,ois,afile,whats,hda,indx,ot,nam,ist
 codespell_ignore_words_list = $(csiwl_1),$(csiwl_2)
 exclude_file_name_regexp--sc_codespell = \
   ^(THANKS\.in|tests/pr/.*(F|tn?|l(o|m|i)|bl))$$
-exclude_file_name_regexp--sc_GPL_version = ^(gl/lib/mbbuf\.[hc])$$
+exclude_file_name_regexp--sc_GPL_version = ^(gl/lib/(mbbuf|utf8)\.[hc])$$

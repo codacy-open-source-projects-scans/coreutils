@@ -139,12 +139,15 @@ copy_debug_string (enum copy_debug_val debug_val)
     case COPY_DEBUG_NO: return "no";
     case COPY_DEBUG_YES: return "yes";
     case COPY_DEBUG_AVOIDED: return "avoided";
-    case COPY_DEBUG_UNSUPPORTED: return "unsupported";
     case COPY_DEBUG_UNKNOWN: return "unknown";
 
     case COPY_DEBUG_EXTERNAL:
     case COPY_DEBUG_EXTERNAL_INTERNAL:
-    default: unreachable ();
+    case COPY_DEBUG_MAX:
+    default:
+      if (0 < debug_val)
+        return strerror (debug_val);
+      affirm (false);
     }
 }
 
@@ -160,8 +163,8 @@ copy_debug_sparse_string (enum copy_debug_val debug_val)
     case COPY_DEBUG_UNKNOWN: return "unknown";
 
     case COPY_DEBUG_AVOIDED:
-    case COPY_DEBUG_UNSUPPORTED:
-    default: unreachable ();
+    case COPY_DEBUG_MAX:
+    default: affirm (false);
     }
 }
 
@@ -210,17 +213,6 @@ follow_fstatat (int dirfd, char const *filename, struct stat *st, int flags)
     }
 
   return result;
-}
-
-/* Whether an errno value ERR, set by FICLONE or copy_file_range,
-   indicates that the copying operation has terminally failed, even
-   though it was invoked correctly (so that, e.g, EBADF cannot occur)
-   and even though !is_CLONENOTSUP (ERR).  */
-
-static bool
-is_terminal_error (int err)
-{
-  return err == EIO || err == ENOMEM || err == ENOSPC || err == EDQUOT;
 }
 
 /* Perform the O(1) btrfs clone operation, if possible.
@@ -679,34 +671,34 @@ fd_has_acl (int fd)
 static bool
 handle_clone_fail (int dst_dirfd, char const *dst_relname,
                    char const *src_name, char const *dst_name,
-                   int dest_desc, bool new_dst, enum Reflink_type reflink_mode)
+                   bool new_dst, enum Reflink_type reflink_mode)
 {
-  /* When the clone operation fails, report failure only with errno values
-     known to mean trouble when the clone is supported and called properly.
-     Do not report failure merely because !is_CLONENOTSUP (errno),
-     as systems may yield oddball errno values here with FICLONE,
-     and is_CLONENOTSUP is not appropriate for fclonefileat.  */
-  bool report_failure = is_terminal_error (errno);
+  /* Record errno for debugging, but diagnose the failure and return
+     false only if either --reflink=always, or errno is so serious
+     that we should not fall back on read+write copying,
+     which can succeed even if cloning fails due to ENOSPC etc.
+     E.g., XFS has Allocation Groups where a clone may fail but a copy
+     (to other groups) may succeed.  The only known potentially
+     serious errno value is EIO, due to Linux kernel bugs reported
+     in 2023 <https://bugs.gnu.org/60489>.  */
 
-  if (reflink_mode == REFLINK_ALWAYS || report_failure)
-    error (0, errno, _("failed to clone %s from %s"),
-           quoteaf_n (0, dst_name), quoteaf_n (1, src_name));
+  copy_debug.reflink = errno;
+  if (! (reflink_mode == REFLINK_ALWAYS || errno == EIO))
+    return true;
 
-  /* Remove the destination if cp --reflink=always created it
-     but cloned no data.  */
+  error (0, errno, _("failed to clone %s from %s"),
+         quoteaf_n (0, dst_name), quoteaf_n (1, src_name));
+
+  /* Remove the destination if cloning created it but later failed,
+     either due to EIO, or to any error if --reflink=always.  The need
+     for removal is a Linux kernel bug, as ioctl with FICLONE is
+     supposed to be atomic.  We don't know whether currently supported
+     kernels have the problem, so play it safe.  */
   if (new_dst /* currently not for fclonefileat().  */
-      && reflink_mode == REFLINK_ALWAYS
-      && ((! report_failure) || lseek (dest_desc, 0, SEEK_END) == 0)
-      && unlinkat (dst_dirfd, dst_relname, 0) != 0 && errno != ENOENT)
+      && unlinkat (dst_dirfd, dst_relname, 0) < 0 && errno != ENOENT)
     error (0, errno, _("cannot remove %s"), quoteaf (dst_name));
 
-  if (! report_failure)
-    copy_debug.reflink = COPY_DEBUG_UNSUPPORTED;
-
-  if (reflink_mode == REFLINK_ALWAYS || report_failure)
-    return false;
-
-  return true;
+  return false;
 }
 
 /* Copy a regular file from SRC_NAME to DST_NAME aka DST_DIRFD+DST_RELNAME.
@@ -923,7 +915,7 @@ copy_reg (char const *src_name, char const *dst_name,
                 }
               if (! handle_clone_fail (dst_dirfd, dst_relname, src_name,
                                        dst_name,
-                                       -1, false /* We didn't create dst  */,
+                                       false /* We didn't create dst  */,
                                        x->reflink_mode))
                 {
                   return_val = false;
@@ -1013,7 +1005,7 @@ copy_reg (char const *src_name, char const *dst_name,
       else
         {
           if (! handle_clone_fail (dst_dirfd, dst_relname, src_name, dst_name,
-                                   dest_desc, *new_dst, x->reflink_mode))
+                                   *new_dst, x->reflink_mode))
            {
              return_val = false;
              goto close_src_and_dst_desc;
@@ -1086,7 +1078,7 @@ copy_reg (char const *src_name, char const *dst_name,
   if (preserve_xattr)
     {
       if (!copy_attr (src_name, source_desc, dst_name, dest_desc, x)
-          && x->require_preserve_xattr)
+          && x->require_preserve_xattr && ! x->move_mode)
         return_val = false;
     }
 
@@ -2672,7 +2664,7 @@ skip:
 
   /* Set xattrs after ownership as changing owners will clear capabilities.  */
   if (x->preserve_xattr && ! copy_attr (src_name, -1, dst_name, -1, x)
-      && x->require_preserve_xattr)
+      && x->require_preserve_xattr && ! x->move_mode)
     return false;
 
   /* The operations beyond this point may dereference a symlink.  */

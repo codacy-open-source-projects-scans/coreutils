@@ -26,12 +26,13 @@
 #include <config.h>
 #include <getopt.h>
 #include <sys/types.h>
-#include "argmatch.h"
+#include "argmatch.h"  /* argmatch($QUOTING_STYLE).  */
 #include "system.h"
 #include "argv-iter.h"
 #include "assure.h"
 #include "di-set.h"
 #include "exclude.h"
+#include "fts-missing.h"
 #include "human.h"
 #include "mountlist.h"
 #include "quote.h"
@@ -133,6 +134,9 @@ static bool hash_all;
 
 /* If true, output the NUL byte instead of a newline at the end of each line. */
 static bool opt_nul_terminate_output = false;
+
+/* If true, quote output pathnames according to the selected quoting style.  */
+static bool quote_output;
 
 /* If true, print a grand total at the end.  */
 static bool print_grand_total = false;
@@ -444,10 +448,11 @@ print_only_size (uintmax_t n_bytes)
          stdout);
 }
 
-/* Print size (and optionally time) indicated by *PDUI, followed by STRING.  */
+/* Print size (and optionally time) indicated by *PDUI, followed by STRING,
+   quoting STRING if QUOTE is true.  */
 
 static void
-print_size (const struct duinfo *pdui, char const *string)
+print_size (const struct duinfo *pdui, char const *string, bool quote)
 {
   print_only_size (opt_inodes
                    ? pdui->inodes
@@ -465,7 +470,7 @@ print_size (const struct duinfo *pdui, char const *string)
         }
     }
   putchar ('\t');
-  fputs (string, stdout);
+  fputs (quote ? quoteN (string) : string, stdout);
   putchar (opt_nul_terminate_output ? '\0' : '\n');
   if (fflush (stdout) < 0)
     write_error ();
@@ -554,6 +559,10 @@ process_file (FTS *fts, FTSENT *ent)
   char const *file = ent->fts_path;
   const struct stat *sb = ent->fts_statp;
   int info = ent->fts_info;
+  bool ignore_missing = ignore_missing_fts_entry (ent);
+
+  if (ignore_missing && ignorable_fts_error (ent))
+    return true;
 
   if (info == FTS_DNR)
     {
@@ -574,6 +583,9 @@ process_file (FTS *fts, FTSENT *ent)
               MAYBE_UNUSED FTSENT const *e = fts_read (fts);
               affirm (e == ent);
               info = ent->fts_info;
+
+              if (ignore_missing && ignorable_fts_error (ent))
+                return true;
             }
 
           if (info == FTS_NS || info == FTS_SLNONE)
@@ -710,7 +722,7 @@ process_file (FTS *fts, FTSENT *ent)
       if (opt_threshold < 0
           ? v <= -opt_threshold
           : v >= opt_threshold)
-        print_size (&dui_to_print, file);
+        print_size (&dui_to_print, file, quote_output);
     }
 
   return ok;
@@ -860,11 +872,8 @@ main (int argc, char **argv)
           {
             intmax_t tmp;
             if (xstrtoimax (optarg, NULL, 0, &tmp, "") == LONGINT_OK
-                && tmp <= IDX_MAX)
-              {
-                max_depth_specified = true;
-                max_depth = tmp;
-              }
+                && ! ckd_add (&max_depth, tmp, 0) && 0 <= max_depth)
+              max_depth_specified = true;
             else
               {
                 error (0, 0, _("invalid maximum depth %s"),
@@ -977,6 +986,18 @@ main (int argc, char **argv)
 
   if (!ok)
     usage (EXIT_FAILURE);
+
+  if (!opt_nul_terminate_output && isatty (STDOUT_FILENO))
+    {
+      int qs = getenv_quoting_style ();
+      if (qs < 0)
+        qs = shell_escape_quoting_style;
+      if (qs != literal_quoting_style)
+        {
+          set_quoting_style (NULL, qs);
+          quote_output = true;
+        }
+    }
 
   if (opt_all && opt_summarize_only)
     {
@@ -1187,7 +1208,7 @@ main (int argc, char **argv)
     error (EXIT_FAILURE, 0, _("error reading %s"), quoteaf (files_from));
 
   if (print_grand_total)
-    print_size (&tot_dui, _("total"));
+    print_size (&tot_dui, _("total"), false);
 
   return ok ? EXIT_SUCCESS : EXIT_FAILURE;
 }

@@ -261,7 +261,7 @@ Output of parts of files
 
 Summarizing files
 
-* wc invocation::                Print newline, word, and byte counts
+* wc invocation::                Print line, word, and character counts
 * sum invocation::               Print checksum and block counts
 * cksum invocation::             Print CRC checksum and byte counts
 * md5sum invocation::            Print or check MD5 digests
@@ -1606,9 +1606,6 @@ time using various configure variables, which currently include:
 
 External library detection is automatic for OpenSSL, so you must use the
 @samp{--with-openssl=no} configure option to disable this if desired.
-Conversely, the Linux kernel cryptographic API is not used automatically and
-must be explicitly enabled with the @samp{--with-linux-crypto} configure
-option.
 
 @subsection Runtime Configuration
 
@@ -2905,6 +2902,8 @@ characters.
 @optItemx{fold,--characters,}
 Count characters rather than columns, meaning that lines containing
 characters wider than one column will be visually longer.
+Also a backspace character will account for the whole width of the
+previous character rather than one column.
 
 @optItem{fold,-s,}
 @optItemx{fold,--spaces,}
@@ -3696,7 +3695,7 @@ These commands generate just a few numbers representing entire
 contents of files.
 
 @menu
-* wc invocation::               Print newline, word, and byte counts.
+* wc invocation::               Print line, word, and character counts.
 * sum invocation::              Print checksum and block counts.
 * cksum invocation::            Print CRC checksum and byte counts.
 * md5sum invocation::           Print or check MD5 digests.
@@ -3707,7 +3706,7 @@ contents of files.
 
 
 @node wc invocation
-@section @command{wc}: Print newline, word, and byte counts
+@section @command{wc}: Print newline, word, and byte or character counts
 
 @pindex wc
 @cindex byte count
@@ -6261,6 +6260,10 @@ With @option{-f}, separate fields with a run of blank characters
 (usually space or TAB).  With @samp{trimmed} do not consider
 leading and trailing blanks as field separators.
 @option{-w} is implied with the @option{-F} option.
+Note efficiency of this mode can be improved if the input
+fields are separated by runs of only ASCII blank characters (space or TAB).
+Even if fields contain arbitrary other characters, you can efficiently
+search for ASCII blanks by invoking @command{cut} like @samp{LC_ALL=C cut}.
 
 @optZeroTerminated{cut}
 
@@ -8469,8 +8472,10 @@ backslash sequences like those used in C.
 @opindex --quoting-style
 Do not quote file names.  However, with @command{ls} nongraphic
 characters are still printed as question marks if the output is a
-terminal and you do not specify the @option{--show-control-chars}
-option.
+terminal and you do not specify the @option{--show-control-chars} option.
+Also newline characters in file names are printed as question marks
+if ambiguous with separators, irrespective of whether output
+is a terminal or not.
 
 @optItem{ls,-q,}
 @optItemx{ls,--hide-control-chars,}
@@ -8494,8 +8499,10 @@ be one of the following:
 @macro quotingStyles
 @table @samp
 @item literal
-Output strings as-is; this is the same as the @option{--literal} (@option{-N})
-option.
+Output strings as-is;
+@ifset LS_COMMAND
+this is the same as the @option{--literal} (@option{-N}) option.
+@end ifset
 @item shell
 Quote strings for the shell if they contain shell metacharacters or would
 cause ambiguous output.
@@ -8509,8 +8516,10 @@ Like @samp{shell}, but also quote non-printable characters using the POSIX
 @samp{$''} syntax suitable for most shells. This is the most general format
 as any file name is represented unambiguously and safely.  I.e., the full
 quoted string can be pasted back to the shell to refer to any file.
+@ifset LS_COMMAND
 Consequently, this is the default format used when @command{ls}
 is outputting to a tty.
+@end ifset
 Note also that specifying the C locale with @code{LC_ALL=C} can be useful
 with this output format, to avoid character set conversion issues
 with some terminals; e.g., xterm always converting to unicode composed form.
@@ -8521,15 +8530,19 @@ Like @samp{shell-escape}, but quote strings even if they would
 normally not require quoting.
 @item c
 Quote strings as for C character string literals, including the
-surrounding double-quote characters; this is the same as the
-@option{--quote-name} (@option{-Q}) option.
+surrounding double-quote characters;
+@ifset LS_COMMAND
+this is the same as the @option{--quote-name} (@option{-Q}) option.
+@end ifset
 @item c-maybe
 Quote strings as for C character string literals, except omit the
 surrounding double-quote if no escaping is required.
 @item escape
 Quote strings as for C character string literals, except omit the
-surrounding double-quote
-characters; this is the same as the @option{--escape} (@option{-b}) option.
+surrounding double-quote characters;
+@ifset LS_COMMAND
+this is the same as the @option{--escape} (@option{-b}) option.
+@end ifset
 @item clocale
 Quote strings as for C character string literals, except use
 surrounding quotation marks appropriate for the
@@ -8542,7 +8555,9 @@ surrounding quotation marks appropriate for the locale, and quote
 this"} in the default C locale.  This looks nicer on many displays.
 @end table
 @end macro
+@set LS_COMMAND
 @quotingStyles
+@clear LS_COMMAND
 
 @optItem{ls,--show-control-chars,}
 Print nongraphic characters as-is in file names.
@@ -8868,15 +8883,24 @@ to cause @command{cp} write to arbitrary target directories.
 @optItemx{cp,--link,}
 Make hard links instead of copies of non-directories.
 
-@optItem{cp,-n,}
-@optItemx{cp,--no-clobber,}
+@macro noClobberOption{cmd}
+@optItem{\cmd\,-n,}
+@optItemx{\cmd\,--no-clobber,}
+@cindex prompts, omitting
 Do not overwrite an existing file; silently skip instead.
+@ifset MV_COMMAND
+@mvOptsIfn
+@end ifset
+@ifclear MV_COMMAND
 This option overrides a previous @option{-i} option.
+@end ifclear
 This option is mutually exclusive with @option{-b} or @option{--backup} option.
 This option is deprecated due to having a different exit status from
 other platforms.  See also the @option{--update} option which will
 give more control over how to deal with existing files in the destination,
 and over the exit status in particular.
+@end macro
+@noClobberOption{cp}
 
 @optItem{cp,-p,}
 @optItemx{cp,--preserve,[=@var{attribute_list}]}
@@ -9819,7 +9843,9 @@ This option is best used in conjunction with @option{--user},
 incorrectly determines the default attributes that installed files would have
 (as it doesn't consider setgid directories and POSIX default ACLs for example).
 This could result in redundant copies or attributes that are not reset to the
-correct defaults.
+correct defaults.  Note the @option{--preserve-timestamps} option may
+lose some of the speed benefits with repeated builds, as timestamps
+would be updated for each build.
 
 @optItem{install,-c,}
 Ignored; for compatibility with old Unix versions of @command{install}.
@@ -9961,7 +9987,8 @@ original file system.
 @cindex extended attributes, xattr
 @command{mv} always tries to copy extended attributes (xattr), which may
 include SELinux context, ACLs or Capabilities.
-Upon failure all but @samp{Operation not supported} warnings are output.
+Upon failure all warnings are emitted, but do not modify the exit
+status.
 
 @cindex prompting, and @command{mv}
 If a destination file exists but is normally unwritable, standard input
@@ -10008,14 +10035,9 @@ Prompt whether to overwrite each existing destination file, regardless
 of its permissions, and fail if the response is not affirmative.
 @mvOptsIfn
 
-@optItem{mv,-n,}
-@optItemx{mv,--no-clobber,}
-@cindex prompts, omitting
-Do not overwrite an existing file; silently fail instead.
-@mvOptsIfn
-This option is mutually exclusive with @option{-b} or @option{--backup} option.
-See also the @option{--update=none} option which will
-skip existing files but not fail.
+@set MV_COMMAND
+@noClobberOption{mv}
+@clear MV_COMMAND
 
 @optItem{mv,--no-copy,}
 @cindex renaming files without copying them
@@ -10043,7 +10065,7 @@ using @code{--no-copy} will prevent future versions of @command{mv}
 from implementing the exchange by copying.
 
 @optItem{mv,-u,}
-@optItemx{mv,--update,}
+@optItemx{mv,--update,[=@var{which}]}
 @cindex newer files, moving only
 Do not move a non-directory that has an existing destination with the
 same or newer modification timestamp;
@@ -10371,6 +10393,10 @@ to destroy using @command{shred}, be sure that it is not backed up or mirrored.
 @example
 shred [@var{option}]@dots{} @var{file}[@dots{}]
 @end example
+
+If @var{file} is a FIFO, socket, or terminal, @command{shred} skips it
+and emit a diagnostic message because the contents of these file types
+do not reside on disk.
 
 The program accepts the following options.  Also see @ref{Common options}.
 
@@ -11081,6 +11107,16 @@ variable is set.
 
 @end table
 
+@c This is also used by basename and dirname.
+@macro terminalQuoted
+When standard output is a terminal, output is quoted using the
+@samp{shell-escape} style.  The environment variable
+@env{QUOTING_STYLE} specifies the quoting style.  Valid quoting styles
+are:
+@quotingStyles
+@end macro
+@terminalQuoted
+
 The @command{readlink} utility first appeared in OpenBSD 2.1.
 
 The @command{realpath} command without options, operates like
@@ -11641,8 +11677,8 @@ chmod 644 foo
 chmod a=r,u+w foo
 
 # Add user and group execute permissions to FOO.
-chmod +110 file
-chmod ug+x file
+chmod +110 foo
+chmod ug+x foo
 
 # Set file permissions of DIR and subsidiary files to
 # be the umask default, assuming execute permissions for
@@ -11722,12 +11758,32 @@ Do not warn about or create files that do not exist.
 @optItem{touch,-d,@w{ }@var{time}}
 @optItemx{touch,--date,=@var{time}}
 @opindex time
-Use @var{time} instead of the current time.  It can contain month names,
+Use @var{time} instead of the current time.
+The standard format for @var{time} is:
+
+@example
+@var{yyyy}-@var{mm}-@var{dd}T@var{hh}:@var{mm}:@var{ss}[.@var{frac}][Z]
+@end example
+
+giving the year, month, day, hours, minutes, seconds,
+along with optional fractional seconds and trailing
+letter @samp{Z} denoting UTC rather than local time;
+also, @samp{,} can separate @var{ss} from @var{frac} instead of @samp{.}.
+@var{yyyy} must have at least four digits;
+@var{frac}, if present, must have at least one digit;
+and the other numbers must have exactly two digits
+and must be in their usual ranges.
+GNU @command{touch} allows @var{ss} to be 60 only for a leap second
+on the rare non-POSIX platforms where @code{time_t} counts leap seconds.
+
+As a GNU extension, @var{time} can use a space rather than @samp{T},
+and can also contain month names, other
 time zones, @samp{am} and @samp{pm}, @samp{yesterday}, etc.  For
 example, @option{--date="2020-07-21 14:19:13.489392193 +0530"}
 specifies the instant of time that is 489,392,193 nanoseconds after
 July 21, 2020 at 2:19:13 PM in a time zone that is 5 hours and 30
 minutes east of UTC@.  @xref{Date input formats}.
+
 File systems that do not support high-resolution timestamps
 silently ignore any excess precision here.
 
@@ -12392,6 +12448,11 @@ the argument being processed is on.
 
 @end table
 
+When standard output is a terminal, file names are quoted using
+the @samp{shell-escape} style.  The environment variable
+@env{QUOTING_STYLE} can select the quoting style.  Valid quoting styles are:
+@quotingStyles
+
 Since @command{du} relies on information reported by the operating
 system, its output might not reflect the space consumed in the
 underlying devices.  For example;
@@ -12525,13 +12586,13 @@ also identifies the items printed (in fuller form) in the default format.
 The format string would include another @samp{%C} at the end with an
 active SELinux security context.
 @example
-$ stat --format="%n %s %b %f %u %g %D %i %h %t %T %X %Y %Z %W %o" ...
+$ stat --format="%Qn %s %b %f %u %g %D %i %h %t %T %X %Y %Z %W %o" ...
 $ stat --terse ...
 @end example
 
 The same illustrating terse output in @option{--file-system} mode:
 @example
-$ stat -f --format="%n %i %l %t %s %S %b %f %a %c %d" ...
+$ stat -f --format="%Qn %i %l %t %s %S %b %f %a %c %d" ...
 $ stat -f --terse ...
 @end example
 @end table
@@ -12557,6 +12618,7 @@ The valid @var{format} directives for files with @option{--format} and
 @item %i -- Inode number
 @item %m -- Mount point (see selow)
 @item %n -- File name
+@item %Qn -- Quoted file name (see below)
 @item %N -- Quoted file name with dereference if symbolic link (see below)
 @item %o -- Optimal I/O transfer size hint
 @item %s -- Total size, in bytes
@@ -12583,9 +12645,9 @@ to control the zero padding of the output with the @samp{#} and @samp{0}
 printf flags. For example to pad to at least 3 wide while making larger
 numbers unambiguously octal, you can use @samp{%#03a}.
 
-The @samp{%N} format can be set with the environment variable
+The @samp{%N} and @samp{%Qn} formats can be set with the environment variable
 @env{QUOTING_STYLE}@.  If that environment variable is not set,
-the default value is @samp{shell-escape-always}.  Valid quoting styles are:
+the default value is @samp{shell-escape}.  Valid quoting styles are:
 @quotingStyles
 
 The @samp{r}, @samp{R}, @samp{%t}, and @samp{%T} formats operate on the st_rdev
@@ -12647,6 +12709,7 @@ you must use a different set of @var{format} directives:
 @item %i -- File System ID in hex
 @item %l -- Maximum length of file names
 @item %n -- File name
+@item %Qn -- Quoted file name
 @item %s -- Block size (for faster transfers)
 @item %S -- Fundamental block size (for block counts)
 @item %t -- Type in hex
@@ -12834,39 +12897,54 @@ Do not output the trailing newline.
 Enable interpretation of the following backslash-escaped characters in
 each @var{string}:
 
+@macro escapeSequences
 @table @samp
-@item \a
-alert (bell)
-@item \b
-backspace
-@item \c
-produce no further output
-@item \e
-escape
-@item \f
-form feed
-@item \n
-newline
-@item \r
-carriage return
-@item \t
-horizontal tab
-@item \v
-vertical tab
-@item \\
+@item \\\\
 backslash
-@item \0@var{nnn}
+@ifset PRINTF_COMMAND
+@item \\"
+double quote
+@end ifset
+@item \\a
+alert (bell)
+@item \\b
+backspace
+@item \\c
+produce no further output
+@item \\e
+escape
+@item \\f
+form feed
+@item \\n
+newline
+@item \\r
+carriage return
+@item \\t
+horizontal tab
+@item \\v
+vertical tab
+@ifclear PRINTF_COMMAND
+@item \\0@var{nnn}
 the eight-bit value that is the octal number @var{nnn}
 (zero to three octal digits), if @var{nnn} is
 a nine-bit value, the ninth bit is ignored
-@item \@var{nnn}
+@end ifclear
+@item \\@var{nnn}
 the eight-bit value that is the octal number @var{nnn}
 (one to three octal digits), if @var{nnn} is
 a nine-bit value, the ninth bit is ignored
-@item \x@var{hh}
+@item \\x@var{hh}
 the eight-bit value that is the hexadecimal number @var{hh}
 (one or two hexadecimal digits)
+@ifset PRINTF_COMMAND
+@item \\u@var{hhhh}
+Unicode (ISO/IEC 10646) character with hex value HHHH (4 digits)
+@item \\U@var{hhhhhhhh}
+Unicode character with hex value HHHHHHHH (8 digits)
+@end ifset
 @end table
+@end macro
+@escapeSequences
 
 @optItem{echo,-E,}
 @cindex backslash escapes
@@ -12911,12 +12989,45 @@ in a way that is mostly similar to the C @samp{printf} function,
 and C language escape sequence processing.
 @xref{Output Conversion Syntax,, @command{printf} format directives,
 libc, The GNU C Library Reference Manual}, for details.
-See also @uref{https://en.cppreference.com/w/c/language/escape,
-C99 string escapes:}.  The differences are listed below.
 
 @mayConflictWithShellBuiltIn{printf}
 
+Supported escape sequences are:
+
+@indentedblock
+@set PRINTF_COMMAND
+@escapeSequences
+@clear PRINTF_COMMAND
+@end indentedblock
+
+Supported conversion specifiers with examples are:
+
+@example
+CONVERSION  Shell format example        Output
+
+%s          '[%10s]' 'left pad'         [  left pad]
+%s          '[%-10s]' 'right pad'       [right pad ]
+%c %s       '%c %.3s' un unibyte        u uni
+
+%d %i       "%'d ;%04i" 1234 '-1'       1,234 ;-001
+%o          '%#o' $((2#110100100))      0644
+%u          '%u' 0xFFFFFFFF             4294967295
+%x          '0x%08x' 11259375           0x00abcdef
+
+%a %f       '%1$a %1$f' 0.0009765625    0x8p-13 0.000977
+%e %f       '%1$e %1$f' 123.456789      1.234568e+02 123.456789
+%g          '%1$g %1$.2g' 1.2345678e3   1234.57 1.2e+03
+
+%b          '%bfoo' 'bar\cbaz' qux      bar
+%q          '%q ' 'a' \;b $'c\n'        a ';b' 'c'$'\n'
+@end example
+
+The differences from the C @samp{printf} function are:
+
 @itemize @bullet
+
+@item
+Only the @samp{diouxXfaAeEgGcs} conversion specifiers are supported.
 
 @item
 The @var{format} argument is reused as necessary to convert all the
@@ -14104,6 +14215,8 @@ This option implies the @option{-a} option.
 
 @end table
 
+@terminalQuoted
+
 @exitstatus
 
 Examples:
@@ -14158,6 +14271,8 @@ The program accepts the following option.  Also see @ref{Common options}.
 @optZero{dirname}
 
 @end table
+
+@terminalQuoted
 
 @exitstatus
 
@@ -14506,6 +14621,11 @@ only on the file name, and does not touch any actual file.
 @optZero{realpath}
 
 @end table
+
+When standard output is a terminal, file names are quoted using
+the @samp{shell-escape} style.  The environment variable
+@env{QUOTING_STYLE} can select the quoting style.  Valid quoting styles are:
+@quotingStyles
 
 @cindex exit status of @command{realpath}
 Exit status:
@@ -15398,8 +15518,21 @@ The program accepts the following option.  Also see @ref{Common options}.
 @table @samp
 
 @optNull{printenv}
+This option implies @option{--quoting-style=literal}.
+
+@optItem{printenv,--quoting-style,=@var{word}}
+@cindex quoting style
+Use style @var{word} to quote names and values that might
+contain arbitrary characters.  The @var{word} should
+be one of the following:
+
+@quotingStyles
 
 @end table
+
+If standard output is a terminal, you can specify the default value of
+the @option{--quoting-style} option with the environment variable
+@env{QUOTING_STYLE}, which defaults to @samp{shell-escape} if not set.
 
 @cindex exit status of @command{printenv}
 Exit status:
@@ -16825,6 +16958,11 @@ The program accepts the following options.  Also see @ref{Common options}.
 Print all of the below information, except omit the processor type
 and the hardware platform name if they are unknown.
 
+@optItem{uname,-A,}
+@optItemx{uname,--all-labeled,}
+Like @option{-a}, print all of the below information,
+in a vertical, labeled format: @var{label}: @var{value}.
+
 @optItem{uname,-i,}
 @optItemx{uname,--hardware-platform,}
 @cindex implementation, hardware
@@ -17364,6 +17502,10 @@ If no command name is specified following the environment
 specifications, the resulting environment is printed.  This is like
 specifying the @command{printenv} program.
 
+If standard output is a terminal, you can specify the default value of
+the @option{--quoting-style} option with the environment variable
+@env{QUOTING_STYLE}, which defaults to @samp{shell-escape} if not set.
+
 For some examples, suppose the environment passed to @command{env}
 contains @samp{LOGNAME=rms}, @samp{EDITOR=emacs}, and
 @samp{PATH=.:/gnubin:/hacks}:
@@ -17423,6 +17565,7 @@ Options must precede operands.
 @table @samp
 
 @optNull{env}
+This option implies @option{--quoting-style=literal}.
 
 @optItem{env,-a,@w{ }@var{arg}}
 @optItemx{env,--argv0,=@var{arg}}
@@ -17438,6 +17581,24 @@ environment.
 @optItemx{env,-i,}
 @optItemx{env,--ignore-environment,}
 Start with an empty environment, ignoring the inherited environment.
+
+@optItem{env,--env0-from,=@var{file}}
+Read NUL-terminated environment entries from @var{file}.  If @var{file}
+is @samp{-}, read from standard input.  The file must either be empty or
+end with a NUL byte.
+
+Without @option{--ignore-environment}, entries of the form
+@samp{@var{name}=@var{value}} replace inherited variables with the same
+name, and a later assignment in @var{file} takes precedence over an earlier
+one.  Entries without an @samp{=} byte, including empty entries, are
+appended to the environment without replacing another entry.
+
+With @option{--ignore-environment}, the entries replace the environment
+directly.  Their order and contents are preserved, including duplicate
+names, empty entries, and entries without an @samp{=} byte.  Thus this
+mode can round-trip the output from @samp{env -0} exactly.  Variables
+specified by @option{--unset} are then removed, and command-line
+assignments are then applied.
 
 @optItem{env,-C,@w{ }@var{dir}}
 @optItemx{env,--chdir,=@var{dir}}
@@ -17518,6 +17679,14 @@ An empty @var{sig} argument is a no-op.
 
 @optItem{env,--list-signal-handling,}
 List blocked or ignored signals to standard error, before executing a command.
+
+@optItem{env,--quoting-style,=@var{word}}
+@cindex quoting style
+Use style @var{word} to quote names and values that might
+contain arbitrary characters.  The @var{word} should
+be one of the following:
+
+@quotingStyles
 
 @optItem{env,-v,}
 @optItemx{env,--debug,}
@@ -19107,21 +19276,26 @@ doesn't change, nor does it modify the file, so the mtime doesn't
 change.  Yet, something about the file itself has changed, and this
 must be noted somewhere.  This is the job of the ctime field.  This is
 necessary, so that, for example, a backup program can make a fresh
-copy of the file, including the new permissions value.  Another
-operation that modifies a file's ctime without affecting the others is
-renaming.
+copy of the file, including the new permissions value.
+For ctime purposes a file's status includes its mtime but not its atime,
+which means reading updates atime but writing updates both mtime and ctime.
+It is unspecified whether merely renaming a file updates its ctime,
+though renaming does update the mtime and ctime of the parent
+directory or directories involved.
 
 Naively, a file's atime, mtime, and ctime are set to the current time
 whenever you read, write, or change the attributes of the file
-respectively, and searching a directory counts as reading it.  A
-file's atime and mtime can also be set directly, via the
+respectively.  A file's timestamps can also be set directly, via the
 @command{touch} command (@pxref{touch invocation}).  In practice,
 though, timestamps are not updated quite that way.
 
 For efficiency reasons, many systems are lazy about updating atimes:
 when a program accesses a file, they may delay updating the file's
 atime, or may not update the file's atime if the file has been
-accessed recently, or may not update the atime at all.  Similar
+accessed recently, or may not update the atime at all if the file system
+is read-only or is configured to ignore atime updates.
+When a directory is searched as part of file name resolution,
+no modern system updates the directory's atime.  Similar
 laziness, though typically not quite so extreme, applies to mtimes and
 ctimes.
 
@@ -19130,8 +19304,11 @@ and these emulations may disagree with the naive interpretation.  For
 example, a system may fake an atime or ctime by using the mtime.
 
 @cindex clock skew
-The determination of what time is ``current'' depends on the
-platform.  Platforms with network file systems often use different
+The determination of what time is ``current'' depends on the situation.
+If the file is open by any process, the ``current'' time might be any
+time before the file ceases to be open, so long as the time precedes
+any inspection of or further change to the file's timestamp.
+Also, platforms with network file systems often use different
 clocks for the operating system and for file systems; because
 updates typically uses file systems' clocks by default, clock
 skew can cause the resulting file timestamps to appear to be in a
@@ -19141,7 +19318,8 @@ program's ``future'' or ``past''.
 When the system updates a file timestamp to a desired time @var{t}
 (which is either the current time, or a time specified via the
 @command{touch} command), there are several reasons the file's
-timestamp may be set to a value that differs from @var{t}.  First,
+timestamp may be set to a value that loses low-order information
+and is therefore slightly less than @var{t}.  First,
 @var{t} may have a higher resolution than supported.  Second, a file
 system may use different resolutions for different types of times.
 Third, file timestamps may use a different resolution than operating

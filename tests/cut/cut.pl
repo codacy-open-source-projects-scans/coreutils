@@ -307,6 +307,25 @@ if ($mb_locale ne 'C')
        {ENV => "LC_ALL=$mb_locale"}],
       ['mb-char-5', '-c1-2', {IN=>"\xc3x\n"}, {OUT=>"\xc3x\n"},
        {ENV => "LC_ALL=$mb_locale"}],
+      # Skip lines whose remaining bytes cannot reach the next selection.
+      ['mb-char-short-line', '-c4',
+       {IN=>"\xc3\xa9\n\nabcX\nab\xffY\nz"}, {OUT=>"\n\nX\nY\n\n"},
+       {ENV => "LC_ALL=$mb_locale"}],
+      # Count multibyte prefixes across buffers, including invalid bytes.
+      ['mb-char-prefix-ascii', '-c' . $IO_BUFSIZE,
+       {IN=>("a" x ($IO_BUFSIZE - 2)) . "\xc3\xa9X"},
+       {OUT=>"X\n"}, {ENV => "LC_ALL=$mb_locale"}],
+      ['mb-char-prefix', '-c' . ($IO_BUFSIZE + 4),
+       {IN=>("\xc3\xa9" x $IO_BUFSIZE)
+            . "\xe2\x82\xac\xf0\x9f\x98\x80\xffX\nshort"},
+       {OUT=>"X\n\n"}, {ENV => "LC_ALL=$mb_locale"}],
+      ['mb-char-prefix-nul', '-z', '-c5',
+       {IN=>"\xc3\xa9\xe2\x82\xac\xf0\x9f\x98\x80\xffX\0short"},
+       {OUT=>"X\0t\0"}, {ENV => "LC_ALL=$mb_locale"}],
+      # Skip unselected suffixes across input buffers and reset at line ends.
+      ['mb-char-suffix', '-c1',
+       {IN=>"\xc3\xa9" . ("\xff" x (2 * $IO_BUFSIZE)) . "\nbignored"},
+       {OUT=>"\xc3\xa9\nb\n"}, {ENV => "LC_ALL=$mb_locale"}],
       # Note mb-byte-n-1 and mb-byte-n-4 differ from coreutils-i18n patch,
       # which outputs a character if any byte is selected.
       # I.e., the i18n patch may output more bytes that the requested range.
@@ -359,6 +378,9 @@ if ($mb_locale ne 'C')
        {ENV => "LC_ALL=$mb_locale"}],
       ['mb-delim-10', '-s', '-d', "\xc3\xa9", '-f2',
        {IN=>"a\0b\0"}, {OUT=>""},
+       {ENV => "LC_ALL=$mb_locale"}],
+      ['mb-delim-11', '-f1', '-d', "\xF0\x9F\x98\x80",  # MCEL_LEN_MAX
+       {IN=>"a\xF0\x9F\x98\x80b\n"}, {OUT=>"a\n"},
        {ENV => "LC_ALL=$mb_locale"}],
       ['mb-w-delim-1', '-w', '-f2', {IN=>"a\xe2\x80\x83b\n"}, {OUT=>"b\n"},
        {ENV => "LC_ALL=$mb_locale"}],
@@ -422,6 +444,19 @@ if ($mb_locale ne 'C')
        {OUT=>"\xc3\xa9\t\xc3\xbc\n"},
        {ENV => "LC_ALL=$mb_locale"}],
 
+      # Stop decoding fields once the finite selection is exhausted.
+      ['mb-w-exhausted-1', '-w', '-f1',
+       {IN=>"a\xe2\x80\x83ignored\nb\xe2\x80\x83ignored"},
+       {OUT=>"a\nb\n"}, {ENV => "LC_ALL=$mb_locale"}],
+      ['mb-w-exhausted-2', '-w', '-f1', {IN=>"a  \nb  "},
+       {OUT=>"a\nb\n"}, {ENV => "LC_ALL=$mb_locale"}],
+      ['mb-w-exhausted-initial', '-s', '-w', '--complement', '-f1-',
+       {IN=>"a\xe2\x80\x83ignored\nplain"}, {OUT=>"\n"},
+       {ENV => "LC_ALL=$mb_locale"}],
+      ['mb-delim-exhausted', '-d', "\xa9", '-f1',
+       {IN=>"A\xc3\xa9B\xa9ignored\nC\xa9ignored"},
+       {OUT=>"A\xc3\xa9B\nC\n"}, {ENV => "LC_ALL=$mb_locale"}],
+
       # -b -n with output delimiter
       ['mb-bn-odelim', qw(-b1,3 -n), '--output-d=:',
        {IN=>"\xc3\xa9x\n"}, {OUT=>"x\n"},
@@ -438,6 +473,11 @@ if ($mb_locale ne 'C')
       # -F in multi-byte locale
       ['mb-F-1', '-F', '2', {IN=>"\xc3\xa9\t\xc3\xbc\n"},
        {OUT=>"\xc3\xbc\n"},
+       {ENV => "LC_ALL=$mb_locale"}],
+
+      # In coreutils-9.11 this corrupted the delimiter "string"
+      ['mb-mismatch', '-f1', '-d', "\xF0\x9F\x98\x80", '-d', "\xEF\xBC\x8C",
+       {IN=>"a\xEF\xBC\x8Cb\n"}, {OUT=>"a\n"},
        {ENV => "LC_ALL=$mb_locale"}];
   }
 
@@ -445,6 +485,10 @@ defined $single_byte_locale
   and push @Tests,
     ['mb-delim-C', '-d', "\xc3\xa9", '-f1',
      {EXIT=>1}, {ERR=>$single_char},
+     {ENV => "LC_ALL=$single_byte_locale"}],
+    ['c-locale-byte', '-c2', {IN=>"a\xC3\xA9b\n"}, {OUT=>"\xC3\n"},
+     {ENV => "LC_ALL=$single_byte_locale"}],
+    ['c-locale-nosplit', qw(-b2 -n), {IN=>"a\xC3\xA9b\n"}, {OUT=>"\xC3\n"},
      {ENV => "LC_ALL=$single_byte_locale"}];
 
 

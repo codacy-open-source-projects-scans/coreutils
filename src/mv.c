@@ -145,7 +145,7 @@ cp_option_init (struct cp_options *x)
   x->require_preserve = false;  /* FIXME: maybe make this an option */
   x->require_preserve_context = false;
   x->preserve_xattr = true;
-  x->require_preserve_xattr = false;
+  x->require_preserve_xattr = true;
   x->recursive = true;
   x->sparse_mode = SPARSE_AUTO;  /* FIXME: maybe make this an option */
   x->symbolic_link = false;
@@ -288,7 +288,7 @@ Rename SOURCE to DEST, or move SOURCE(s) to DIRECTORY.\n\
 "));
       oputs (_("\
   -n, --no-clobber\n\
-         do not overwrite an existing file\n\
+         (deprecated) silently skip existing files.  See also --update\n\
 "));
       fputs (_("\
 If you specify more than one of -i, -f, -n, only the final one takes effect.\n\

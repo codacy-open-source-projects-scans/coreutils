@@ -14,6 +14,7 @@ lib/getopt.c
 lib/mkdir-p.c
 lib/obstack.c
 lib/openat-die.c
+lib/parse-datetime.y
 lib/quotearg.c
 lib/randread.c
 lib/regcomp.c
@@ -63,7 +64,6 @@ src/expand-common.c
 src/expand.c
 src/expr.c
 src/factor.c
-src/false.c
 src/find-mount-point.c
 src/fmt.c
 src/fold.c

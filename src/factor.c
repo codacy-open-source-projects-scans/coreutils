@@ -175,6 +175,11 @@ typedef uint64_t UDItype;
 # if defined ASSERT || defined __GMP_DECLSPEC || defined __GMP_GNUC_PREREQ
 # endif
 
+/* longlong.h uses casts even when useless.  */
+# if 14 <= __GNUC__
+#  pragma GCC diagnostic ignored "-Wuseless-cast"
+# endif
+
 # if _ARCH_PPC
 #  define HAVE_HOST_CPU_FAMILY_powerpc 1
 # endif
@@ -287,11 +292,12 @@ struct mp_factor
 /* Prime factors of an mpz_t.  */
 struct mp_factors
 {
-  /* A vector of distinct prime factors, a count of the factors,
-     and the number of allocated slots in the vector.  */
-  struct mp_factor *f;
   idx_t nfactors;
   idx_t nalloc;
+
+  /* A vector of distinct prime factors, a count of the factors,
+     and the number of allocated slots in the vector.  */
+  struct mp_factor *f COUNTED_BY (nalloc);
 };
 
 static void factor (struct factors *, mp_limb_t, mp_limb_t);
@@ -659,7 +665,7 @@ static struct mp_factors mp_factor (mpz_t);
 static struct mp_factors
 mp_no_factors (void)
 {
-  return (struct mp_factors) {NULL,};
+  return (struct mp_factors) {0};
 }
 
 /* Free storage allocated for FACTORS, making it uninitialized.  */
@@ -880,6 +886,8 @@ factor_using_division (struct factors *factors, mp_limb_t t1, mp_limb_t t0,
       t0 = divblock (factors, t0, pd, i, 6);
       t0 = divblock (factors, t0, pd, i, 7);
 
+      if (PRIMES_PTAB_ENTRIES <= i + 8)
+        break;
       int_least32_t p = primes_ptab[i + 8];
       if (p * p > t0)
         break;

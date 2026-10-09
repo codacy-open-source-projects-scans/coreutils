@@ -29,7 +29,6 @@
 #include "fadvise.h"
 #include "quote.h"
 #include "xstrtol.h"
-#include "xdectoint.h"
 #include "xbinary-io.h"
 
 #if BASE_TYPE == 42
@@ -289,9 +288,9 @@ struct z85_decode_context
 
 struct base58_context
 {
-  unsigned char *buf;
   idx_t size;
   idx_t capacity;
+  unsigned char *buf COUNTED_BY (capacity);
 };
 
 struct base2_decode_context
@@ -1290,7 +1289,6 @@ base58_encode (char const *data, size_t data_len,
   if (data_len - zeros)
     {
       mpz_import (num, data_len - zeros, 1, 1, 0, 0, data + zeros);
-      affirm (mpz_sizeinbase (num, 58) + 1 <= *outlen);
       for (p = mpz_get_str (p, 58, num); *p; p++)
         *p = gmp_to_base58[to_uchar (*p)];
     }
@@ -1317,6 +1315,8 @@ base58_encode_ctx_finalize (struct base_encode_context *ctx,
 
   free (ctx->ctx.base58.buf);
   ctx->ctx.base58.buf = NULL;
+  ctx->ctx.base58.size = 0;
+  ctx->ctx.base58.capacity = 0;
 
   return true;
 }
@@ -1431,6 +1431,8 @@ base58_decode_ctx_finalize (struct base_decode_context *ctx,
 
   free (ctx->ctx.base58.buf);
   ctx->ctx.base58.buf = NULL;
+  ctx->ctx.base58.size = 0;
+  ctx->ctx.base58.capacity = 0;
 
   return ret;
 }

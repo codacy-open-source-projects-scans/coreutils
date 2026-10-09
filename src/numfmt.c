@@ -22,12 +22,14 @@
 #include <langinfo.h>
 
 #include "argmatch.h"
+#include "assure.h"
 #include "c-ctype.h"
 #include "mbswidth.h"
 #include "mcel.h"
 #include "quote.h"
 #include "skipchars.h"
 #include "system.h"
+#include "utf8.h"
 #include "xstrtol.h"
 
 #include "set-fields.h"
@@ -330,7 +332,7 @@ suffix_power_char (int power)
 
 /* Similar to 'powl(3)' but without requiring 'libm'.  */
 static long double
-powerld (long double base, int x)
+powerld (long double base, ptrdiff_t x)
 {
   long double result = base;
   if (x == 0)
@@ -588,9 +590,9 @@ simple_strtod_float (char const *input_str,
         return SSE_INVALID_NUMBER;
 
       /* number of digits in the fractions.  */
-      size_t exponent = ptr2 - *endptr;
+      ptrdiff_t exponent = ptr2 - *endptr;
 
-      val_frac = ((long double) val_frac) / powerld (10, exponent);
+      val_frac /= powerld (10, exponent);
 
       /* TODO: detect loss of precision (only really 18 digits
          of precision across all digits (before and after '.')).  */
@@ -740,11 +742,6 @@ simple_strtod_fatal (enum simple_strtod_error err, char const *input_str)
 
   switch (err)
     {
-    case SSE_OK_PRECISION_LOSS:
-    case SSE_OK:
-      /* should never happen - this function isn't called when OK.  */
-      unreachable ();
-
     case SSE_OVERFLOW:
       msgid = N_("value too large to be converted: %s");
       break;
@@ -765,6 +762,10 @@ simple_strtod_fatal (enum simple_strtod_error err, char const *input_str)
       msgid = N_("missing 'i' suffix in input: %s (e.g Ki/Mi/Gi)");
       break;
 
+    case SSE_OK_PRECISION_LOSS:
+    case SSE_OK:
+      /* should never happen - this function isn't called when OK.  */
+      affirm (false);
     }
 
   if (inval_style != inval_ignore)

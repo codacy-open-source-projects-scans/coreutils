@@ -46,6 +46,8 @@
 /coreutils-*.tar.gz.sig
 /coreutils-*.tar.xz
 /coreutils-*.tar.xz.sig
+/coreutils-*.tar.zst
+/coreutils-*.tar.zst.sig
 /doc/coverage
 /doc/manual
 /gnulib-tests
@@ -53,6 +55,7 @@
 /lib/.gitignore
 /lib/alloca.h
 /lib/arg-nonnull.h
+/lib/argz.h
 /lib/arpa/inet.h
 /lib/assert.h
 /lib/byteswap.h
@@ -120,6 +123,7 @@
 /lib/strings.h
 /lib/sys/
 /lib/termios.h
+/lib/thread-creators.h
 /lib/time.h
 /lib/uchar.h
 /lib/unicase.h

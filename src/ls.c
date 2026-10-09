@@ -279,7 +279,7 @@ static void attach (char *dest, char const *dirname, char const *name);
 static void clear_files (void);
 static void extract_dirs_from_files (char const *dirname,
                                      bool command_line_arg);
-static void get_link_name (char const *filename, struct fileinfo *f,
+static bool get_link_name (char const *filename, struct fileinfo *f,
                            bool command_line_arg);
 static void indent (size_t from, size_t to);
 static idx_t calculate_columns (bool by_columns);
@@ -305,8 +305,6 @@ static void queue_directory (char const *name, char const *realname,
                              bool command_line_arg);
 static void sort_files (void);
 static void parse_ls_color (void);
-
-static int getenv_quoting_style (void);
 
 static size_t quote_name_width (char const *name,
                                 struct quoting_options const *options,
@@ -741,6 +739,11 @@ static struct ignore_pattern *hide_patterns;
    quoting methods pass through control chars as-is.  */
 static bool qmark_funny_chars;
 
+/* True means extra replacement of newline with '?'
+   in cases where a newline in a file name would be
+   ambiguous with newline separators.  */
+static bool qmark_newline;
+
 /* Quoting options for file and dir name output.  */
 
 static struct quoting_options *filename_quoting_options;
@@ -993,8 +996,8 @@ static struct column_info *column_info;
 /* Maximum number of columns ever possible for this display.  */
 static size_t max_idx;
 
-/* The minimum width of a column is 3: 1 character for the name and 2
-   for the separating white space.  */
+/* The minimum width of a non-final column is 3: 1 character for the name
+   and 2 for the separating white space.  The final column is not padded.  */
 enum { MIN_COLUMN_WIDTH = 3 };
 
 
@@ -1425,7 +1428,7 @@ static size_t
 dev_ino_hash (void const *x, size_t table_size)
 {
   struct dev_ino const *p = x;
-  return (uintmax_t) p->st_ino % table_size;
+  return (uintmax_t) {p->st_ino} % table_size;
 }
 
 static bool
@@ -2335,6 +2338,12 @@ decode_switches (int argc, char **argv)
                        ? ls_mode == LS_LS && stdout_isatty ()
                        : hide_control_chars_opt);
 
+  qmark_newline = hide_control_chars_opt != false && eolbyte == '\n'
+                  && ((line_length
+                       && (format == with_commas
+                           || format == many_per_line || format == horizontal))
+                      || format == one_per_line || format == long_format);
+
   int qs = quoting_style_opt;
   if (qs < 0)
     qs = getenv_quoting_style ();
@@ -2359,6 +2368,12 @@ decode_switches (int argc, char **argv)
       for (char const *p = &"*=>@|"[indicator_style - file_type]; *p; p++)
         set_char_quoting (filename_quoting_options, *p, 1);
     }
+  if (format == with_commas
+      && (qs == shell_quoting_style
+          || qs == shell_escape_quoting_style
+          || qs == c_maybe_quoting_style
+          || qs == escape_quoting_style))
+    set_char_quoting (filename_quoting_options, ',', 1);
 
   dirname_quoting_options = clone_quoting_options (NULL);
   set_char_quoting (dirname_quoting_options, ':', 1);
@@ -2651,7 +2666,7 @@ get_funky_string (char **dest, char const **src, bool equals_end,
           break;
 
         case ST_END: case ST_ERROR: default:
-          unreachable ();
+          affirm (false);
         }
     }
 
@@ -2830,6 +2845,7 @@ parse_ls_color (void)
           free (e2);
         }
       print_with_color = false;
+      return;
     }
   else
     {
@@ -2877,27 +2893,6 @@ parse_ls_color (void)
   if (color_indicator[C_LINK].len == 6
       && !STRNCMP_LIT (color_indicator[C_LINK].string, "target"))
     color_symlink_as_referent = true;
-}
-
-/* Return the quoting style specified by the environment variable
-   QUOTING_STYLE if set and valid, -1 otherwise.  */
-
-static int
-getenv_quoting_style (void)
-{
-  char const *q_style = getenv ("QUOTING_STYLE");
-  if (!q_style)
-    return -1;
-  int i = ARGMATCH (q_style, quoting_style_args, quoting_style_vals);
-  if (i < 0)
-    {
-      error (0, 0,
-             _("ignoring invalid value"
-               " of environment variable QUOTING_STYLE: %s"),
-             quote (q_style));
-      return -1;
-    }
-  return quoting_style_vals[i];
 }
 
 /* Set the exit status to report a failure.  If SERIOUS, it is a
@@ -2961,7 +2956,8 @@ print_dir (char const *name, char const *realname, bool command_line_arg)
   dirp = opendir (name);
   if (!dirp)
     {
-      file_failure (command_line_arg, _("cannot open directory %s"), name);
+      if (command_line_arg || ! ignorable_traversal_errno (errno))
+        file_failure (command_line_arg, _("cannot open directory %s"), name);
       return;
     }
 
@@ -2975,8 +2971,9 @@ print_dir (char const *name, char const *realname, bool command_line_arg)
            ? fstat_for_ino (fd, &dir_stat)
            : stat_for_ino (name, &dir_stat)) < 0)
         {
-          file_failure (command_line_arg,
-                        _("cannot determine device and inode of %s"), name);
+          if (! ignorable_traversal_errno (errno))
+            file_failure (command_line_arg,
+                          _("cannot determine device and inode of %s"), name);
           closedir (dirp);
           return;
         }
@@ -3008,7 +3005,8 @@ print_dir (char const *name, char const *realname, bool command_line_arg)
       if (print_hyperlink)
         {
           absolute_name = canonicalize_filename_mode (name, CAN_MISSING);
-          if (! absolute_name)
+          if (! absolute_name
+              && ! ignorable_traversal_errno (errno))
             file_failure (command_line_arg,
                           _("error canonicalizing %s"), name);
         }
@@ -3064,12 +3062,9 @@ print_dir (char const *name, char const *realname, bool command_line_arg)
           int err = errno;
           if (err == 0)
             break;
-          /* Some readdir()s do not absorb ENOENT (dir deleted but open).
-             This bug was fixed in glibc 2.3 (2002).  */
-#if ! (2 < __GLIBC__ + (3 <= __GLIBC_MINOR__))
-          if (err == ENOENT)
+          /* Ignore errors indicating that the directory was removed.  */
+          if (ignorable_traversal_errno (err))
             break;
-#endif
           file_failure (command_line_arg, _("reading directory %s"), name);
           if (err != EOVERFLOW)
             break;
@@ -3391,7 +3386,9 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
         {
           f->absolute_name = canonicalize_filename_mode (full_name,
                                                          CAN_MISSING);
-          if (! f->absolute_name)
+          if (! f->absolute_name
+              && (command_line_arg
+                  || ! ignorable_traversal_errno (errno)))
             file_failure (command_line_arg,
                           _("error canonicalizing %s"), full_name);
         }
@@ -3434,11 +3431,27 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
           break;
 
         case DEREF_UNDEFINED: default:
-          unreachable ();
+          affirm (false);
         }
 
       if (err != 0)
         {
+          if (! command_line_arg && ignorable_traversal_errno (errno))
+            {
+              int stat_errno = errno;
+              struct stat linkstat;
+              bool dangling_link = (do_deref
+                                    && (type == symbolic_link
+                                        || type == unknown)
+                                    && do_lstat (full_name, &linkstat) == 0);
+              errno = stat_errno;
+              if (! dangling_link)
+                {
+                  free_ent (f);
+                  return 0;
+                }
+            }
+
           /* Failure to stat a command line argument leads to
              an exit status of 2.  For other files, stat failure
              provokes an exit status of 1.  */
@@ -3446,7 +3459,10 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
                         _("cannot access %s"), full_name);
 
           if (command_line_arg)
-            return 0;
+            {
+              free_ent (f);
+              return 0;
+            }
 
           f->name = xstrdup (name);
           cwd_n_used++;
@@ -3483,7 +3499,8 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
          Also if a file is removed while we're reading ACL info,
          ACL_T_UNKNOWN is sufficient indication for that edge case.  */
       bool cannot_access_acl = n < 0
-           && (errno == EACCES || errno == ENOENT);
+           && (errno == EACCES
+               || ignorable_traversal_errno (errno));
 
       f->acl_type = (!have_scontext && !have_acl
                      ? (cannot_access_acl ? ACL_T_UNKNOWN : ACL_T_NONE)
@@ -3501,6 +3518,7 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
              isn't on the right type of file system.  I.e., a getfilecon
              failure isn't in the same class as a stat failure.  */
           if (print_scontext && ai.scontext_err
+              && ! ignorable_traversal_errno (ai.scontext_err)
               && (! (is_ENOTSUP (ai.scontext_err)
                      || ai.scontext_err == ENODATA)))
             error (0, ai.scontext_err, "%s", quotef (full_name));
@@ -3522,7 +3540,11 @@ gobble_file (char const *name, enum filetype type, ino_t inode,
     {
       struct stat linkstats;
 
-      get_link_name (full_name, f, command_line_arg);
+      if (! get_link_name (full_name, f, command_line_arg))
+        {
+          free_ent (f);
+          return 0;
+        }
 
       /* Use the slower quoting path for this entry, though
          don't update CWD_SOME_QUOTED since alignment not affected.  */
@@ -3648,13 +3670,19 @@ is_linked_directory (const struct fileinfo *f)
    into the LINKNAME field of 'f'.  COMMAND_LINE_ARG indicates whether
    FILENAME is a command-line argument.  */
 
-static void
+static bool
 get_link_name (char const *filename, struct fileinfo *f, bool command_line_arg)
 {
   f->linkname = areadlink_with_size (filename, f->stat.st_size);
   if (f->linkname == NULL)
-    file_failure (command_line_arg, _("cannot read symbolic link %s"),
-                  filename);
+    {
+      if (! command_line_arg
+          && ignorable_traversal_errno (errno))
+        return false;
+      file_failure (command_line_arg, _("cannot read symbolic link %s"),
+                    filename);
+    }
+  return true;
 }
 
 /* Return true if the last component of NAME is '.' or '..'
@@ -4459,10 +4487,21 @@ quote_name_buf (char **inbuf, size_t bufsize, char *name,
   bool quoted;
 
   enum quoting_style qs = get_quoting_style (options);
-  bool needs_further_quoting = qmark_funny_chars
-                               && (qs == shell_quoting_style
-                                   || qs == shell_always_quoting_style
-                                   || qs == literal_quoting_style);
+  bool partial_quoting = qs == shell_quoting_style
+                         || qs == shell_always_quoting_style
+                         || qs == literal_quoting_style;
+  bool needs_further_quoting = qmark_funny_chars && partial_quoting;
+
+  /* Note we provide extra protection only for newline separators.
+     I.e., we don't bother protecting "double space" or "comma space"
+     separated entries, as for interactive output, shell escape quoting
+     is best to disambiguate, and for programmatic, --zero is best.
+     Extra processing to mark ', ' and '  ' would be overkill
+     as interactively there will still be ambiguities with multi-byte spaces,
+     and marked characters impact programmatic processing anyway.  */
+  bool extra_newline_protection = (!needs_further_quoting
+                                   && qmark_newline && partial_quoting
+                                   && !dired && strchr (name, '\n'));
 
   if (needs_general_quoting != 0)
     {
@@ -4475,7 +4514,7 @@ quote_name_buf (char **inbuf, size_t bufsize, char *name,
 
       quoted = (*name != *buf) || strlen (name) != len;
     }
-  else if (needs_further_quoting)
+  else if (needs_further_quoting || extra_newline_protection)
     {
       len = strlen (name);
       if (bufsize <= len)
@@ -4490,6 +4529,13 @@ quote_name_buf (char **inbuf, size_t bufsize, char *name,
       buf = name;
       quoted = false;
     }
+
+  /* It's safe to replace newlines without multi-byte iteration, as newlines
+     do not appear as part of any multi-byte encoded character.  */
+  if (extra_newline_protection)
+    for (char *p = buf; p < buf + len; p++)
+      if (eolbyte && *p == '\n')
+        *p = '?';
 
   if (needs_further_quoting)
     {
@@ -5028,7 +5074,9 @@ get_color_indicator (const struct fileinfo *f, bool symlink_target)
   return s->string ? s : NULL;
 }
 
-/* Output a color indicator (which may contain nulls).  */
+/* Output a color indicator (which may contain nulls).
+   Note we don't update dired_pos here as emacs can be configured
+   to handle color codes by stripping/converting them.  */
 static void
 put_indicator (const struct bin_str *ind)
 {
@@ -5170,10 +5218,12 @@ print_with_separator (char sep)
       if (filesno != 0)
         {
           char separator;
+          size_t next_pos = 2 + (sep == ',' && filesno < cwd_n_used - 1);
 
           if (! line_length
-              || ((pos + len + 2 < line_length)
-                  && (pos <= SIZE_MAX - len - 2)))
+              || (! ckd_add (&next_pos, next_pos, pos)
+                  && ! ckd_add (&next_pos, next_pos, len)
+                  && next_pos <= line_length))
             {
               pos += 2;
               separator = ' ';
@@ -5276,9 +5326,10 @@ init_column_info (idx_t max_cols)
   for (idx_t i = 0; i < max_cols; ++i)
     {
       column_info[i].valid_len = true;
-      column_info[i].line_len = (i + 1) * MIN_COLUMN_WIDTH;
-      for (idx_t j = 0; j <= i; ++j)
+      column_info[i].line_len = i * MIN_COLUMN_WIDTH + 1;
+      for (idx_t j = 0; j < i; ++j)
         column_info[i].col_arr[j] = MIN_COLUMN_WIDTH;
+      column_info[i].col_arr[i] = 1;
     }
 }
 
@@ -5316,7 +5367,7 @@ calculate_columns (bool by_columns)
                                               - column_info[i].col_arr[idx]);
                   column_info[i].col_arr[idx] = real_length;
                   column_info[i].valid_len = (column_info[i].line_len
-                                              < line_length);
+                                              <= line_length);
                 }
             }
         }

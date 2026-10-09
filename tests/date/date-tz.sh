@@ -29,4 +29,25 @@ case $? in
   *) grep '^date: invalid date' err || fail=1 ;;
 esac
 
+# A fixed-offset keyword (here 'UTC') anchors the instant before relative
+# items are applied.  With a DST-observing zone the epoch base is in winter
+# while the result lands in summer, so adding the seconds must not pick up the
+# DST hour: '1970-01-01 UTC N seconds' is always exactly N seconds past the
+# epoch, regardless of TZ.
+secs=1780318971
+TZ='Europe/Berlin' date -d "1970-01-01 UTC $secs seconds" +%s > out || fail=1
+echo "$secs" > exp
+compare exp out || fail=1
+
+# If TZ database available (Belize doesn't have DST)
+if test "$(TZ=America/Belize date +%z)" = '-0600'; then
+
+  # A nonexistent local time in the spring-forward gap is rejected.
+  returns_ 1 env \
+   TZ=America/New_York date -d '2024-03-10 02:30' +%T 2>err || fail=1
+  printf "date: invalid date '2024-03-10 02:30'\n" > exp || framework_failure_
+  compare exp err || fail=1
+
+fi
+
 Exit $fail

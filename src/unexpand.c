@@ -131,7 +131,7 @@ unexpand (void)
   /* The worst case is a non-blank character, then one blank, then a
      tab stop, then MAX_COLUMN_WIDTH - 1 blanks, then a non-blank; so
      allocate MAX_COLUMN_WIDTH bytes to store the blanks.  */
-  pending_blank = ximalloc (max_column_width * sizeof (char) * MB_LEN_MAX);
+  pending_blank = xinmalloc (max_column_width, MB_CUR_MAX);
 
   while (true)
     {
@@ -199,9 +199,10 @@ unexpand (void)
                         }
                       else
                         {
-                          column += c32width (g.ch);
+                          int width = c32width (g.ch);
+                          column += width < 0 ? 1 : width;
 
-                          if (! (prev_blank && column == next_tab_column))
+                          if (! (prev_blank && column >= next_tab_column))
                             {
                               /* It is not yet known whether the pending blanks
                                  will be replaced by tabs.  */
@@ -319,7 +320,7 @@ main (int argc, char **argv)
               have_tabval = true;
             }
           if (!DECIMAL_DIGIT_ACCUMULATE (tabval, c - '0'))
-            error (EXIT_FAILURE, 0, _("tab stop value is too large"));
+            error (EXIT_FAILURE, 0, _("tab stop is too large"));
           break;
         }
     }

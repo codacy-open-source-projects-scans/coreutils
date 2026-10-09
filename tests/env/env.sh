@@ -21,7 +21,7 @@
 print_ver_ env pwd nice
 
 # A simple shebang program to call "echo" from symlinks like "./-u" or "./--".
-echo '#!'"$(command -v env | sed 's|/env|/echo|')"' foo' > show_args \
+echo '#!'"$(cmd_exe echo)"' foo' > show_args \
   || framework_failure_
 chmod a+x show_args || framework_failure_
 
@@ -91,12 +91,15 @@ EOF
 compare exp out || fail=1
 
 # env shouldn't care what encoding name or value is
-for nv in 'NON_UTF8_TEST=\240' 'NON_UTF8_TEST\240=1'; do
-  env $(printf "$nv") env > all || fail=1
-  grep '^NON_UTF8_TEST' all | LC_ALL=C sort > out || framework_failure_
-  printf "$nv\\n" > exp || framework_failure_
-  compare exp out || fail=1
-done
+printf 'NON_UTF8_TEST=\240\n' > exp || framework_failure_
+env $(printf 'NON_UTF8_TEST=\240') env > all || fail=1
+grep '^NON_UTF8_TEST' all | LC_ALL=C sort > out || framework_failure_
+compare exp out || fail=1
+
+printf 'NON_UTF8_TEST\240=1\n' > exp || framework_failure_
+env $(printf 'NON_UTF8_TEST\240=1') env > all || fail=1
+grep "^NON_UTF8_TEST" all | LC_ALL=C sort > out || framework_failure_
+compare exp out || fail=1
 
 # PATH modifications affect exec.
 mkdir unlikely_name || framework_failure_
@@ -180,10 +183,34 @@ for arg in 'argv0' ''; do
 env -v -a short --argv0=$arg ./truetrue 2>err || fail=1
 cat <<EOF >err_exp || framework_failure_
 argv0:     '$arg'
-executing: ./truetrue
+executing: './truetrue'
    arg[0]= '$arg'
 EOF
 compare err_exp err || fail=1
+done
+
+# QUOTING_STYLE does not affect redirected output.
+# --quoting-style does affect redirected output.
+cat <<\EOF >exp-noargs-literal || framework_failure_
+a b=c d
+EOF
+cat <<\EOF >exp-noargs-shell || framework_failure_
+'a b'='c d'
+EOF
+tr "'" '"' <exp-noargs-shell >exp-noargs-c || framework_failure_
+for qs in '' literal shell c; do
+  if test "$qs"; then
+    qs_opt="--quoting-style=$qs"
+  else
+    qs_opt=''; qs='literal'
+  fi
+  env -i PATH="$PATH" QUOTING_STYLE=c 'a b'='c d' \
+    env $qs_opt >out-t 2>err || fail=1
+  grep -vE '^["'"'"']?'\
+'(__CF_USER_TEXT_ENCODING|QUOTING_STYLE|(LD_ORIGIN_)?PATH)["'"'"']?=' \
+    out-t >out || framework_failure_
+  compare exp-noargs-$qs out || fail=1
+  compare /dev/null err || fail=1
 done
 
 Exit $fail

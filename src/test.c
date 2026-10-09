@@ -26,16 +26,8 @@
 
 #define TEST_STANDALONE 1
 
-#ifndef LBRACKET
-# define LBRACKET 0
-#endif
-
 /* The official name of this program (e.g., no 'g' prefix).  */
-#if LBRACKET
-# define PROGRAM_NAME "["
-#else
-# define PROGRAM_NAME "test"
-#endif
+#define PROGRAM_NAME (test_mode == TEST_TEST ? "test" : "[")
 
 #include "system.h"
 #include "assure.h"
@@ -44,6 +36,7 @@
 #include "quote.h"
 #include "stat-time.h"
 #include "strnumcmp.h"
+#include "test.h"
 
 #include <stdarg.h>
 
@@ -272,7 +265,8 @@ term (void)
     value = binary_operator (false, bop);
 
   /* It might be a switch type argument.  */
-  else if (argv[pos][0] == '-' && argv[pos][1] && argv[pos][2] == '\0')
+  else if (argv[pos][0] == '-' && argv[pos][1] && argv[pos][1] != 'a'
+           && argv[pos][1] != 'o' && argv[pos][2] == '\0')
     value = unary_operator ();
   else
     {
@@ -759,7 +753,7 @@ EXPRESSION is true or false and sets exit status.  It is one of:\n\
   -f FILE     FILE exists and is a regular file\n\
 "));
       oputs (_("\
-  -g FILE     FILE exists and is set-group-ID\n\
+  -g FILE     FILE exists and its set-group-ID bit is set\n\
 "));
       oputs (_("\
   -G FILE     FILE exists and is owned by the effective group ID\n\
@@ -864,7 +858,7 @@ main (int margc, char **margv)
 
   argv = margv;
 
-  if (LBRACKET)
+  if (test_mode == TEST_LBRACKET)
     {
       /* Recognize --help or --version, but only when invoked in the
          "[" form, when the last argument is not "]".  Use direct

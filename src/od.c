@@ -847,7 +847,7 @@ decode_one_format (char const *s_orig, char const *s, char const **next,
           break;
 
         default:
-          unreachable ();
+          affirm (false);
         }
 
       /* Prefer INT, prefer LONG to longer types,
@@ -1519,8 +1519,8 @@ dump (void)
   bool ok = true;
   idx_t n_bytes_read;
 
-  block[0] = xinmalloc (2, bytes_per_block);
-  block[1] = block[0] + bytes_per_block;
+  block[0] = xinmalloc (1 + abbreviate_duplicate_blocks, bytes_per_block);
+  block[1] = block[0] + abbreviate_duplicate_blocks * bytes_per_block;
 
   intmax_t current_offset = n_bytes_to_skip;
 
@@ -2048,7 +2048,7 @@ main (int argc, char **argv)
       idx_t fields_per_block = bytes_per_block / width_bytes[spec[i].size];
       affirm (bytes_per_block % width_bytes[spec[i].size] == 0);
       affirm (1 <= spec[i].pad_width / fields_per_block);
-      printf ("%d: fmt=\"%s\" in_width=%d out_width=%d pad=%d\n",
+      printf ("%td: fmt=\"%s\" in_width=%d out_width=%d pad=%td\n",
               i, spec[i].fmt_string, width_bytes[spec[i].size],
               spec[i].field_width, spec[i].pad_width);
     }

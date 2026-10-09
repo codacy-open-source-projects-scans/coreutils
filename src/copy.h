@@ -234,12 +234,11 @@ struct cp_options
      while with 'cp --preserve=all' or 'cp -a', it is "false". */
   bool require_preserve_xattr;
 
-  /* This allows us to output warnings in cases 2 and 4 below,
+  /* This allows us to output warnings in case 2 below,
      while being quiet for case 1 (when reduce_diagnostics is true).
        1. cp -a                       try to copy xattrs with no errors
        2. cp --preserve=all           copy xattrs with all but ENOTSUP warnings
        3. cp --preserve=xattr,context copy xattrs with all errors
-       4. mv                          copy xattrs with all but ENOTSUP warnings
    */
   bool reduce_diagnostics;
 
@@ -298,19 +297,29 @@ struct cp_options
      this feature.  */
   Hash_table *dest_info;
 
-  /* FIXME */
+  /* This is a set of dev/inode pairs.  This allows 'cp' to warn when the
+     same file is given multiple times on the command line. E.g., with
+     invocations like this:
+       rm -rf a b; touch a; mkdir b; cp a a ./a b
+     Use src_info_init to initialize it, or set it to NULL to disable
+     this feature.  */
   Hash_table *src_info;
 };
 
 enum copy_debug_val
   {
-   COPY_DEBUG_UNKNOWN,
-   COPY_DEBUG_NO,
-   COPY_DEBUG_YES,
-   COPY_DEBUG_EXTERNAL,
-   COPY_DEBUG_EXTERNAL_INTERNAL,
-   COPY_DEBUG_AVOIDED,
-   COPY_DEBUG_UNSUPPORTED,
+   /* COPY_DEBUG_MAX is a dummy that ensures that any errno
+      value can be assigned to an enum copy_debug_val.
+      The other enum constants are negative,
+      so that they do not collide with errno values.  */
+   COPY_DEBUG_MAX = INT_MAX,
+
+   COPY_DEBUG_UNKNOWN = -1,
+   COPY_DEBUG_NO = -2,
+   COPY_DEBUG_YES = -3,
+   COPY_DEBUG_EXTERNAL = -4,
+   COPY_DEBUG_EXTERNAL_INTERNAL = -5,
+   COPY_DEBUG_AVOIDED = -6,
   };
 
 /* debug info about the last file copy.  */

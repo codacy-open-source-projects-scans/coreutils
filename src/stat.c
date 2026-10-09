@@ -55,10 +55,10 @@
 #include <selinux/selinux.h>
 #include <getopt.h>
 
+#include "argmatch.h"  /* argmatch($QUOTING_STYLE).  */
 #include "system.h"
 
 #include "areadlink.h"
-#include "argmatch.h"
 #include "c-ctype.h"
 #include "file-type.h"
 #include "filemode.h"
@@ -179,10 +179,10 @@ static char const digits[] = "0123456789";
 static char const printf_flags[] = "'-+ #0I";
 
 /* Formats for the --terse option.  */
-static char const fmt_terse_fs[] = "%n %i %l %t %s %S %b %f %a %c %d\n";
-static char const fmt_terse_regular[] = "%n %s %b %f %u %g %D %i %h %t %T"
+static char const fmt_terse_fs[] = "%Qn %i %l %t %s %S %b %f %a %c %d\n";
+static char const fmt_terse_regular[] = "%Qn %s %b %f %u %g %D %i %h %t %T"
                                         " %X %Y %Z %W %o\n";
-static char const fmt_terse_selinux[] = "%n %s %b %f %u %g %D %i %h %t %T"
+static char const fmt_terse_selinux[] = "%Qn %s %b %f %u %g %D %i %h %t %T"
                                         " %X %Y %Z %W %o %C\n";
 
 #define PROGRAM_NAME "stat"
@@ -371,6 +371,8 @@ human_fstype (STRUCT_STATVFS const *statfsbuf)
       return "ext2";
     case S_MAGIC_F2FS: /* 0xF2F52010 local */
       return "f2fs";
+    case S_MAGIC_FAIL_FS: /* 0x4641494C local */
+      return "failfs";
     case S_MAGIC_FAT: /* 0x4006 local */
       return "fat";
     case S_MAGIC_FHGFS: /* 0x19830326 remote */
@@ -451,6 +453,8 @@ human_fstype (STRUCT_STATVFS const *statfsbuf)
       return "nsfs";
     case S_MAGIC_NTFS: /* 0x5346544E local */
       return "ntfs";
+    case S_MAGIC_NULL_FS: /* 0x4E554C4C local */
+      return "nullfs";
     case S_MAGIC_OPENPROM: /* 0x9FA1 local */
       return "openprom";
     case S_MAGIC_OCFS2: /* 0x7461636F remote */
@@ -855,6 +859,19 @@ out_file_context (char *pformat, size_t prefix_len, char const *filename)
   return fail;
 }
 
+/* Set the quoting style once it is needed.  */
+static void
+initialize_quoting_style (void)
+{
+  static bool initialized;
+  if (!initialized)
+    {
+      initialized = true;
+      int qs = getenv_quoting_style ();
+      set_quoting_style (NULL, 0 <= qs ? qs : shell_escape_quoting_style);
+    }
+}
+
 /* Print statfs info.  Return zero upon success, nonzero upon failure.  */
 NODISCARD
 static bool
@@ -868,6 +885,11 @@ print_statfs (char *pformat, size_t prefix_len, MAYBE_UNUSED char mod, char m,
   switch (m)
     {
     case 'n':
+      if (mod == 'Q')
+        {
+          initialize_quoting_style ();
+          filename = quoteN (filename);
+        }
       out_string (pformat, prefix_len, filename);
       break;
 
@@ -1044,32 +1066,6 @@ neg_to_zero (struct timespec ts)
   return z;
 }
 
-/* Set the quoting style default if the environment variable
-   QUOTING_STYLE is set.  */
-
-static void
-getenv_quoting_style (void)
-{
-  char const *q_style = getenv ("QUOTING_STYLE");
-  if (q_style)
-    {
-      int i = ARGMATCH (q_style, quoting_style_args, quoting_style_vals);
-      if (0 <= i)
-        set_quoting_style (NULL, quoting_style_vals[i]);
-      else
-        {
-          set_quoting_style (NULL, shell_escape_always_quoting_style);
-          error (0, 0, _("ignoring invalid value of environment "
-                         "variable QUOTING_STYLE: %s"), quote (q_style));
-        }
-    }
-  else
-    set_quoting_style (NULL, shell_escape_always_quoting_style);
-}
-
-/* Equivalent to quotearg(), but explicit to avoid syntax checks.  */
-#define quoteN(x) quotearg_style (get_quoting_style (NULL), x)
-
 /* Output a single-character \ escape.  */
 
 static void
@@ -1175,10 +1171,13 @@ print_it (char const *format, int fd, char const *filename,
                 break;
               case 'H':
               case 'L':
+              case 'Q':
                 mod_char = fmt_char;
                 fmt_char = *(b + 1);
-                if (print_func == print_stat
-                    && (fmt_char == 'd' || fmt_char == 'r'))
+                if ((mod_char == 'Q' && fmt_char == 'n')
+                    || (print_func == print_stat
+                        && (mod_char == 'H' || mod_char == 'L')
+                        && (fmt_char == 'd' || fmt_char == 'r')))
                   {
                     b++;
                   }
@@ -1512,9 +1511,15 @@ print_stat (char *pformat, size_t prefix_len, char mod, char m,
   switch (m)
     {
     case 'n':
+      if (mod == 'Q')
+        {
+          initialize_quoting_style ();
+          filename = quoteN (filename);
+        }
       out_string (pformat, prefix_len, filename);
       break;
     case 'N':
+      initialize_quoting_style ();
       out_string (pformat, prefix_len, quoteN (filename));
       if (S_ISLNK (statbuf->st_mode))
         {
@@ -1668,7 +1673,7 @@ default_format (bool fs, bool terse, bool device)
         {
           /* TRANSLATORS: This string uses format specifiers from
              'stat --help' with --file-system, and NOT from printf.  */
-          format = xstrdup (_("  File: \"%n\"\n"
+          format = xstrdup (_("  File: %Qn\n"
                               "    ID: %-8i Namelen: %-7l Type: %T\n"
                               "Block size: %-10s Fundamental block size: %S\n"
                               "Blocks: Total: %-10b Free: %-10f Available: %a\n"
@@ -1821,6 +1826,7 @@ The valid format sequences for files (without --file-system):\n\
   %i   inode number\n\
   %m   mount point\n\
   %n   file name\n\
+  %Qn  quoted file name\n\
   %N   quoted file name with dereference if symbolic link\n\
   %o   optimal I/O transfer size hint\n\
   %s   total size, in bytes\n\
@@ -1858,6 +1864,7 @@ Valid format sequences for file systems:\n\
   %i   file system ID in hex\n\
   %l   maximum length of filenames\n\
   %n   file name\n\
+  %Qn  quoted file name\n\
   %s   block size (for faster transfers)\n\
   %S   fundamental block size (for block counts)\n\
   %t   file system type in hex\n\
@@ -1970,18 +1977,6 @@ main (int argc, char *argv[])
 
   if (format)
     {
-      bool need_quoting_style = false;
-      for (char const *p = format; (p = strchr (p, '%'));
-           p += (p[1] == '%') + 1)
-        {
-          if (p[1] == 'N')
-            {
-              need_quoting_style = true;
-              break;
-            }
-        }
-      if (need_quoting_style)
-        getenv_quoting_style ();
       format2 = format;
     }
   else
