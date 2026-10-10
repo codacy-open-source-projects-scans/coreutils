@@ -48,7 +48,14 @@ GNU coreutils NEWS                                    -*- outline -*-
   'env' and 'printenv' now support the --quoting-style option
   to control the format of printed environment variables.
 
+  'tr' accepts the undocumented -u option to operate in unbuffered mode,
+  for compatibility with FreeBSD and macOS tr(1).
+
 ** Changes in behavior
+
+  command --help output will no longer be marked up with bold or hyperlinks
+  when output is not a tty.  E.g. paged --help output will no longer
+  contain URLs to the full online manual.
 
   'env' and 'printenv' now quote printed environment variables only when
   outputting to a terminal.  The previous release enabled this for all
